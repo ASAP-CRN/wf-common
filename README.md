@@ -1,2 +1,2 @@
 # wf-common
-Workflows, tasks, and scripts reused across harmonized ASAP workflows
+Workflows and tasks reused across harmonized ASAP workflows.
