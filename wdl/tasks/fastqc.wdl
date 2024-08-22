@@ -13,12 +13,12 @@ task fastqc {
 		String zones
 	}
 
+	Array[File] paired_fastqs = flatten([fastq_R1s, fastq_R2s])
+	String first_fastq_basename = basename(paired_fastqs[0])
+
 	Int threads = 4
 	Int mem_gb = ceil(threads * 2)
 	Int disk_size = ceil((size(fastq_R1s, "GB") + size(fastq_R2s, "GB") + 20))
-
-	Array[File] paired_fastqs = flatten([fastq_R1s, fastq_R2s])
-	String first_fastq_basename = basename(paired_fastqs[0])
 
 	command <<<
 		set -euo pipefail
