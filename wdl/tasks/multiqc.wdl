@@ -2,7 +2,7 @@ version 1.0
 
 task multiqc {
 	input {
-		String cohort_id
+		String project_id
 		Array[File] output_files
 
 		String output_name
@@ -28,23 +28,23 @@ task multiqc {
 		done < ~{write_lines(output_files)}
 
 		multiqc . \
-			--filename ~{cohort_id}.~{output_name} \
+			--filename ~{project_id}.~{output_name} \
 			--flat \
 			--zip-data-dir
 
-		tar -czvf ~{cohort_id}.~{output_name}_data.tar.gz ~{cohort_id}.~{output_name}_data
+		tar -czvf ~{project_id}.~{output_name}_data.tar.gz ~{project_id}.~{output_name}_data
 
 		upload_outputs \
 			-b ~{billing_project} \
 			-d ~{raw_data_path} \
 			-i ~{write_tsv(workflow_info)} \
-			-o "~{cohort_id}.~{output_name}.html" \
-			-o "~{cohort_id}.~{output_name}_data.tar.gz"
+			-o "~{project_id}.~{output_name}.html" \
+			-o "~{project_id}.~{output_name}_data.tar.gz"
 	>>>
 
 	output {
-		String multiqc_report_html =  "~{raw_data_path}/~{cohort_id}.~{output_name}.html"
-		String multiqc_data_tar_gz =  "~{raw_data_path}/~{cohort_id}.~{output_name}_data.tar.gz"
+		String multiqc_report_html =  "~{raw_data_path}/~{project_id}.~{output_name}.html"
+		String multiqc_data_tar_gz =  "~{raw_data_path}/~{project_id}.~{output_name}_data.tar.gz"
 	}
 
 	runtime {
