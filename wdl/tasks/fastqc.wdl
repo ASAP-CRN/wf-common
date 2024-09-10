@@ -33,14 +33,14 @@ task fastqc {
 
 		trimmed_fastqs=$(echo ~{first_fastq_basename} | grep "trimmed" || [[ $? == 1 ]])
 		if [[ -z "$trimmed_fastqs" ]]; then
-			tar -czvf "~{sample_id}_fastqc_reports.tar.gz" "~{sample_id}_fastqc_reports/*.zip"
+			tar -czvf "~{sample_id}.fastqc_reports.tar.gz" "~{sample_id}_fastqc_reports/*.zip"
 			upload_outputs \
 				-b ~{billing_project} \
 				-d ~{raw_data_path} \
 				-i ~{write_tsv(workflow_info)} \
-				-o "~{sample_id}_fastqc_reports.tar.gz"
+				-o "~{sample_id}.fastqc_reports.tar.gz"
 		else
-			tar -czvf "~{sample_id}_trimmed_fastqc_reports.tar.gz" "~{sample_id}_fastqc_reports/*.zip"
+			tar -czvf "~{sample_id}.trimmed_fastqc_reports.tar.gz" "~{sample_id}_fastqc_reports/*.zip"
 			upload_outputs \
 				-b ~{billing_project} \
 				-d ~{raw_data_path} \
@@ -50,8 +50,8 @@ task fastqc {
 	>>>
 
 	output {
-		String fastqc_reports_tar_gz =  "~{raw_data_path}/~{sample_id}_fastqc_reports.tar.gz"
-		String trimmed_fastqc_reports_tar_gz =  "~{raw_data_path}/~{sample_id}_trimmed_fastqc_reports.tar.gz"
+		String fastqc_reports_tar_gz =  "~{raw_data_path}/~{sample_id}.fastqc_reports.tar.gz"
+		String trimmed_fastqc_reports_tar_gz =  "~{raw_data_path}/~{sample_id}.trimmed_fastqc_reports.tar.gz"
 	}
 
 	runtime {
