@@ -44,7 +44,7 @@ task fastqc {
 				-b ~{billing_project} \
 				-d ~{raw_data_path} \
 				-i ~{write_tsv(workflow_info)} \
-				-o "~{sample_id}_trimmed_fastqc_reports.tar.gz"
+				-o "~{sample_id}.trimmed_fastqc_reports.tar.gz"
 		fi
 	>>>
 
