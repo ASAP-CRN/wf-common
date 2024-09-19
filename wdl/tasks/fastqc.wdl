@@ -26,21 +26,20 @@ task fastqc {
 		mkdir -p ~{sample_id}_fastqc_reports
 
 		fastqc \
-			--extract \
 			--outdir ~{sample_id}_fastqc_reports \
 			--threads ~{threads} \
 			~{sep=' ' paired_fastqs}
 
 		trimmed_fastqs=$(echo ~{first_fastq_basename} | grep "trimmed" || [[ $? == 1 ]])
 		if [[ -z "$trimmed_fastqs" ]]; then
-			tar -czvf "~{sample_id}.fastqc_reports.tar.gz" "~{sample_id}_fastqc_reports/*.zip"
+			tar -czvf "~{sample_id}.fastqc_reports.tar.gz" ~{sample_id}_fastqc_reports/*.zip
 			upload_outputs \
 				-b ~{billing_project} \
 				-d ~{raw_data_path} \
 				-i ~{write_tsv(workflow_info)} \
 				-o "~{sample_id}.fastqc_reports.tar.gz"
 		else
-			tar -czvf "~{sample_id}.trimmed_fastqc_reports.tar.gz" "~{sample_id}_fastqc_reports/*.zip"
+			tar -czvf "~{sample_id}.trimmed_fastqc_reports.tar.gz" ~{sample_id}_fastqc_reports/*.zip
 			upload_outputs \
 				-b ~{billing_project} \
 				-d ~{raw_data_path} \
