@@ -14,9 +14,9 @@ task multiqc {
 		String zones
 	}
 
-	Int threads = 12
+	Int threads = 4
 	Int mem_gb = ceil(threads * 2)
-	Int disk_size = ceil(size(output_files, "GB") * 5 + 100)
+	Int disk_size = ceil(size(output_files, "GB") * 5 + 20)
 
 	command <<<
 		set -euo pipefail
@@ -32,19 +32,17 @@ task multiqc {
 			--flat \
 			--zip-data-dir
 
-		tar -czvf ~{project_id}.~{output_name}_data.tar.gz ~{project_id}.~{output_name}_data
-
 		upload_outputs \
 			-b ~{billing_project} \
 			-d ~{raw_data_path} \
 			-i ~{write_tsv(workflow_info)} \
 			-o "~{project_id}.~{output_name}.html" \
-			-o "~{project_id}.~{output_name}_data.tar.gz"
+			-o "~{project_id}.~{output_name}_data.zip"
 	>>>
 
 	output {
 		String multiqc_report_html =  "~{raw_data_path}/~{project_id}.~{output_name}.html"
-		String multiqc_data_tar_gz =  "~{raw_data_path}/~{project_id}.~{output_name}_data.tar.gz"
+		String multiqc_data_zip =  "~{raw_data_path}/~{project_id}.~{output_name}_data.zip"
 	}
 
 	runtime {
