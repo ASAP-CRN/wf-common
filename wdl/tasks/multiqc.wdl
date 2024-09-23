@@ -14,9 +14,9 @@ task multiqc {
 		String zones
 	}
 
-	Int threads = 4
+	Int threads = 12
 	Int mem_gb = ceil(threads * 2)
-	Int disk_size = ceil(size(output_files, "GB") + 20)
+	Int disk_size = ceil(size(output_files, "GB") * 5 + 100)
 
 	command <<<
 		set -euo pipefail
@@ -53,6 +53,7 @@ task multiqc {
 		memory: "~{mem_gb} GB"
 		disks: "local-disk ~{disk_size} HDD"
 		preemptible: 3
+		bootDiskSizeGb: 30
 		zones: zones
 	}
 }
