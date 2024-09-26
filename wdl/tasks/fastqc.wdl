@@ -18,7 +18,7 @@ task fastqc {
 
 	Int threads = 4
 	Int mem_gb = ceil(threads * 2)
-	Int disk_size = ceil(size(paired_fastqs, "GB") + 20)
+	Int disk_size = ceil(size(paired_fastqs, "GB") * 2 + 20)
 
 	command <<<
 		set -euo pipefail
