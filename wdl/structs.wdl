@@ -14,6 +14,8 @@ struct Project {
 	String project_id
 	Array[Sample] samples
 
+	File? project_sample_metadata_csv
+
 	Boolean run_project_cohort_analysis
 
 	String raw_data_bucket
