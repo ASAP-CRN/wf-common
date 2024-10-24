@@ -23,7 +23,6 @@ cat << EOF
     $(tput bold)-t$(tput sgr0)  Comma-separated set of teams to promote data for
     $(tput bold)-s$(tput sgr0)  Source name; example is 'pmdbs'
     $(tput bold)-d$(tput sgr0)  Dataset name; example is 'sc-rnaseq'
-    $(tput bold)-b$(tput sgr0)  Specific dataset name; example is 'pfc-sc-rnaseq'
     $(tput bold)-f$(tput sgr0)  Prefix. Option to filter files
     $(tput bold)-p$(tput sgr0)  Promote data. If this option is not selected, data that would be copied or deleted is printed out, but files are not actually changed (dry run)
 
@@ -53,20 +52,19 @@ gsync() {
 # Default to dry run if promotion is not selected
 DRY_RUN_ARG="-n"
 
-while getopts "ht:s:d:b:f:p" OPTION; do
+while getopts "ht:s:d:f:p" OPTION; do
   case $OPTION in
     h) usage; exit ;;
     t) read -ra TEAMS <<< "$(echo "${OPTARG}" | tr ',' ' ')" ;;
     s) SOURCE=${OPTARG} ;;
     d) DATASET=${OPTARG} ;;
-    b) SPECIFIC_DATASET=${OPTARG} ;;
     f) PREFIX=${OPTARG} ;;
     p) DRY_RUN_ARG="" ;;
     \?) usage; exit ;;
   esac
 done
 
-if [[ -z "${TEAMS:-}" ]] || [[ -z "${SOURCE:-}" ]] || [[ -z "${DATASET:-}" ]]|| [[ -z "${SPECIFIC_DATASET:-}" ]]; then
+if [[ -z "${TEAMS:-}" ]] || [[ -z "${SOURCE:-}" ]] || [[ -z "${DATASET:-}" ]]; then
   usage
   exit
 fi
@@ -78,9 +76,9 @@ for team in "${TEAMS[@]}"; do
   else
     raw_bucket=gs://asap-raw-data-${team}/${PREFIX}
   fi
-  raw_dataset_bucket=gs://asap-raw-${team}-${SOURCE}-${DATASET}/${SPECIFIC_DATASET}
+  raw_dataset_bucket=gs://asap-raw-${team}-${SOURCE}-${DATASET}
 
-  log "Transferring [${team}] raw data to ${SPECIFIC_DATASET} folder in ${SOURCE} ${DATASET} bucket"
+  log "Transferring [${team}] raw data to ${SOURCE} ${DATASET} bucket"
   log "\tRaw bucket:\t\t[${raw_bucket}]"
   log "\tRaw dataset bucket:\t[${raw_dataset_bucket}]"
 
