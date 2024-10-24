@@ -1,0 +1,90 @@
+#!/bin/bash
+#
+# Transfer data in generic raw buckets to dataset-specific raw buckets
+
+set -eEuo pipefail
+
+usage() {
+cat << EOF
+
+  Transfer data in generic raw buckets to dataset-specific raw buckets.
+
+  Generic raw buckets are only accessible by respective teams, whereas dataset-specific raw buckets are accessible by verified researchers.
+  This will allow for us to control permissions for unreleased and released data in the same or different datasets/pipelines.
+  
+  Generic raw bucket naming: gs://asap-raw-data-{team}
+  Dataset-specific raw bucket naming: gs://asap-raw-{team}-{source}-{dataset_name}
+
+  Usage: $0 [OPTIONS]
+
+  OPTIONS
+  ───────
+    $(tput bold)-h$(tput sgr0)  Display this message and exit
+    $(tput bold)-t$(tput sgr0)  Comma-separated set of teams to promote data for
+    $(tput bold)-s$(tput sgr0)  Source name; example is 'pmdbs'
+    $(tput bold)-d$(tput sgr0)  Dataset name; example is 'sc-rnaseq'
+    $(tput bold)-b$(tput sgr0)  Specific dataset name; example is 'pfc-sc-rnaseq'
+    $(tput bold)-f$(tput sgr0)  Prefix. Option to filter files
+    $(tput bold)-p$(tput sgr0)  Promote data. If this option is not selected, data that would be copied or deleted is printed out, but files are not actually changed (dry run)
+
+EOF
+}
+
+log() {
+  echo -e "$(tput bold)$(tput setaf 110)[$(date +'%Y-%m-%d %H:%M:%S')] $*$(tput sgr0)" >&1
+}
+
+err() {
+  echo -e "$(tput bold)$(tput setaf 203)[$(date +'%Y-%m-%d %H:%M:%S')]: $*$(tput sgr0)" >&2
+}
+
+gsync() {
+  source_path="${1#/}/"
+  destination_path="${2#/}/"
+
+  gsutil -m rsync \
+    -d \
+    -r \
+    ${DRY_RUN_ARG} \
+    "${source_path}" \
+    "${destination_path}"
+}
+
+# Default to dry run if promotion is not selected
+DRY_RUN_ARG="-n"
+
+while getopts "ht:s:d:b:f:p" OPTION; do
+  case $OPTION in
+    h) usage; exit ;;
+    t) read -ra TEAMS <<< "$(echo "${OPTARG}" | tr ',' ' ')" ;;
+    s) SOURCE=${OPTARG} ;;
+    d) DATASET=${OPTARG} ;;
+    b) SPECIFIC_DATASET=${OPTARG} ;;
+    f) PREFIX=${OPTARG} ;;
+    p) DRY_RUN_ARG="" ;;
+    \?) usage; exit ;;
+  esac
+done
+
+if [[ -z "${TEAMS:-}" ]] || [[ -z "${SOURCE:-}" ]] || [[ -z "${DATASET:-}" ]]|| [[ -z "${SPECIFIC_DATASET:-}" ]]; then
+  usage
+  exit
+fi
+
+# Try syncing raw data
+for team in "${TEAMS[@]}"; do
+  if [[ -z "${PREFIX}" ]]; then
+    raw_bucket=gs://asap-raw-data-${team}
+  else
+    raw_bucket=gs://asap-raw-data-${team}/${PREFIX}
+  fi
+  raw_dataset_bucket=gs://asap-raw-${team}-${SOURCE}-${DATASET}/${SPECIFIC_DATASET}
+
+  log "Transferring [${team}] raw data to ${SPECIFIC_DATASET} folder in ${SOURCE} ${DATASET} bucket"
+  log "\tRaw bucket:\t\t[${raw_bucket}]"
+  log "\tRaw dataset bucket:\t[${raw_dataset_bucket}]"
+
+  gsync \
+    "${raw_bucket}" \
+    "${raw_dataset_bucket}"
+done
