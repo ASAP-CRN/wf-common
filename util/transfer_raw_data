@@ -23,7 +23,7 @@ cat << EOF
     $(tput bold)-t$(tput sgr0)  Comma-separated set of teams to promote data for
     $(tput bold)-s$(tput sgr0)  Source name; example is 'pmdbs'
     $(tput bold)-d$(tput sgr0)  Dataset name; example is 'sc-rnaseq'
-    $(tput bold)-f$(tput sgr0)  File type; example is 'fastq'
+    $(tput bold)-f$(tput sgr0)  Folder/file type; example is 'fastq' or 'metadata'
     $(tput bold)-b$(tput sgr0)  Generic raw bucket prefix. Option to filter files from source destination (i.e. generic raw bucket)
     $(tput bold)-p$(tput sgr0)  Promote data. If this option is not selected, data that would be copied or deleted is printed out, but files are not actually changed (dry run)
 
@@ -60,14 +60,14 @@ while getopts "ht:s:d:f:b:p" OPTION; do
     t) read -ra TEAMS <<< "$(echo "${OPTARG}" | tr ',' ' ')" ;;
     s) SOURCE=${OPTARG} ;;
     d) DATASET=${OPTARG} ;;
-    f) FILE_TYPE=${OPTARG} ;;
+    f) FOLDER_TYPE=${OPTARG} ;;
     b) PREFIX=${OPTARG} ;;
     p) DRY_RUN_ARG="" ;;
     \?) usage; exit ;;
   esac
 done
 
-if [[ -z "${TEAMS:-}" ]] || [[ -z "${SOURCE:-}" ]] || [[ -z "${DATASET:-}" ]] || [[ -z "${FILE_TYPE:-}" ]]; then
+if [[ -z "${TEAMS:-}" ]] || [[ -z "${SOURCE:-}" ]] || [[ -z "${DATASET:-}" ]] || [[ -z "${FOLDER_TYPE:-}" ]]; then
   usage
   exit
 fi
@@ -78,6 +78,35 @@ for i in "${!TEAMS[@]}"; do
   fi
 done
 
+ALL_SOURCES=(pmdbs human ipsc mouse)
+found=false
+for data_source in "${ALL_SOURCES[@]}"; do
+  if [[ "${SOURCE}" == "$data_source" ]]; then
+    found=true
+    break
+  fi
+done
+if [[ "$found" == false ]]; then
+  err "Folder type [${FOLDER_TYPE}] is invalid"
+  log "Valid folder types: [${ALL_SOURCES[@]}]"
+  exit 1
+fi
+
+# More file types will be added as more modalities are included
+ALL_FOLDERS=(fastq metadata artifacts)
+found=false
+for folder in "${ALL_FOLDERS[@]}"; do
+  if [[ "${FOLDER_TYPE}" == "$folder" ]]; then
+    found=true
+    break
+  fi
+done
+if [[ "$found" == false ]]; then
+  err "Folder type [${FOLDER_TYPE}] is invalid"
+  log "Valid folder types: [${ALL_FOLDERS[@]}]"
+  exit 1
+fi
+
 # Try syncing raw data
 for team in "${TEAMS[@]}"; do
   if [[ -z "${PREFIX}" ]]; then
@@ -85,9 +114,9 @@ for team in "${TEAMS[@]}"; do
   else
     raw_bucket=gs://asap-raw-data-${team}/${PREFIX}
   fi
-  raw_dataset_bucket=gs://asap-raw-${team}-${SOURCE}-${DATASET}/${FILE_TYPE}
+  raw_dataset_bucket=gs://asap-raw-${team}-${SOURCE}-${DATASET}/${FOLDER_TYPE}
 
-  log "Transferring [${team}] raw data in ${FILE_TYPE} folder to ${SOURCE} ${DATASET} bucket"
+  log "Transferring [${team}] raw data in [${FOLDER_TYPE}] folder to [${SOURCE}-${DATASET}] bucket"
   log "\tRaw bucket:\t\t[${raw_bucket}]"
   log "\tRaw dataset bucket:\t[${raw_dataset_bucket}]"
 
