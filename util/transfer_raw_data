@@ -24,7 +24,7 @@ cat << EOF
     $(tput bold)-s$(tput sgr0)  Source name; example is 'pmdbs'
     $(tput bold)-d$(tput sgr0)  Dataset name; example is 'sc-rnaseq'
     $(tput bold)-f$(tput sgr0)  File type; example is 'fastq'
-    $(tput bold)-b$(tput sgr0)  Generic raw bucket prefix. Option to filter files from source desintation (i.e. generic raw bucket)
+    $(tput bold)-b$(tput sgr0)  Generic raw bucket prefix. Option to filter files from source destination (i.e. generic raw bucket)
     $(tput bold)-p$(tput sgr0)  Promote data. If this option is not selected, data that would be copied or deleted is printed out, but files are not actually changed (dry run)
 
 EOF
