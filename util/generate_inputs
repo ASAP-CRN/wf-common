@@ -60,6 +60,9 @@ def main(args):
                     "raw_data_bucket": f"gs://asap-raw-{project_id}-{args.source}-{args.team_dataset}",
                     "staging_data_buckets": staging_data_buckets,
                 }
+
+                if args.workflow_name == "pmdbs_bulk_rnaseq":
+                    projects[project_id]["project_sample_metadata_csv"] = f"gs://asap-raw-{project_id}-{args.source}-{args.team_dataset}/metadata/SAMPLE.csv"
             else:
                 projects[project_id]["samples"].append(sample)
 
