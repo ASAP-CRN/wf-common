@@ -52,6 +52,7 @@ gsync() {
 
 # Default to dry run if promotion is not selected
 DRY_RUN_ARG="-n"
+PREFIX=""
 
 while getopts "ht:s:d:f:b:p" OPTION; do
   case $OPTION in
@@ -59,8 +60,8 @@ while getopts "ht:s:d:f:b:p" OPTION; do
     t) read -ra TEAMS <<< "$(echo "${OPTARG}" | tr ',' ' ')" ;;
     s) SOURCE=${OPTARG} ;;
     d) DATASET=${OPTARG} ;;
-    b) FILE_TYPE=${OPTARG} ;;
-    f) PREFIX=${OPTARG} ;;
+    f) FILE_TYPE=${OPTARG} ;;
+    b) PREFIX=${OPTARG} ;;
     p) DRY_RUN_ARG="" ;;
     \?) usage; exit ;;
   esac
@@ -70,6 +71,12 @@ if [[ -z "${TEAMS:-}" ]] || [[ -z "${SOURCE:-}" ]] || [[ -z "${DATASET:-}" ]] ||
   usage
   exit
 fi
+
+for i in "${!TEAMS[@]}"; do
+  if [[ ${TEAMS[$i]} != team* ]]; then
+    TEAMS[$i]="team-${TEAMS[$i]}"
+  fi
+done
 
 # Try syncing raw data
 for team in "${TEAMS[@]}"; do
