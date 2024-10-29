@@ -52,6 +52,7 @@ gsync() {
 
 # Default to dry run if promotion is not selected
 DRY_RUN_ARG="-n"
+FOLDER_TYPE=""
 PREFIX=""
 
 while getopts "ht:s:d:f:b:p" OPTION; do
@@ -67,7 +68,7 @@ while getopts "ht:s:d:f:b:p" OPTION; do
   esac
 done
 
-if [[ -z "${TEAMS:-}" ]] || [[ -z "${SOURCE:-}" ]] || [[ -z "${DATASET:-}" ]] || [[ -z "${FOLDER_TYPE:-}" ]]; then
+if [[ -z "${TEAMS:-}" ]] || [[ -z "${SOURCE:-}" ]] || [[ -z "${DATASET:-}" ]]; then
   usage
   exit
 fi
@@ -87,24 +88,26 @@ for data_source in "${ALL_SOURCES[@]}"; do
   fi
 done
 if [[ "$found" == false ]]; then
-  err "Folder type [${FOLDER_TYPE}] is invalid"
-  log "Valid folder types: [${ALL_SOURCES[@]}]"
+  err "Source [${SOURCE}] is invalid"
+  log "Valid source types: [${ALL_SOURCES[@]}]"
   exit 1
 fi
 
 # More file types will be added as more modalities are included
-ALL_FOLDERS=(fastqs metadata artifacts)
-found=false
-for folder in "${ALL_FOLDERS[@]}"; do
-  if [[ "${FOLDER_TYPE}" == "$folder" ]]; then
-    found=true
-    break
+if [[ -n "${FOLDER_TYPE}" ]]; then
+  ALL_FOLDERS=(fastqs metadata artifacts)
+  found=false
+  for folder in "${ALL_FOLDERS[@]}"; do
+    if [[ "${FOLDER_TYPE}" == "$folder" ]]; then
+      found=true
+      break
+    fi
+  done
+  if [[ "$found" == false ]]; then
+    err "Folder type [${FOLDER_TYPE}] is invalid"
+    log "Valid folder types: [${ALL_FOLDERS[@]}]"
+    exit 1
   fi
-done
-if [[ "$found" == false ]]; then
-  err "Folder type [${FOLDER_TYPE}] is invalid"
-  log "Valid folder types: [${ALL_FOLDERS[@]}]"
-  exit 1
 fi
 
 # Try syncing raw data
@@ -114,9 +117,14 @@ for team in "${TEAMS[@]}"; do
   else
     raw_bucket=gs://asap-raw-data-${team}/${PREFIX}
   fi
-  raw_dataset_bucket=gs://asap-raw-${team}-${SOURCE}-${DATASET}/${FOLDER_TYPE}
+  if [[ -z "${FOLDER_TYPE}" ]]; then
+    raw_dataset_bucket=gs://asap-raw-${team}-${SOURCE}-${DATASET}
+    log "Transferring [${team}] raw data to [${SOURCE}-${DATASET}] bucket"
+  else
+    raw_dataset_bucket=gs://asap-raw-${team}-${SOURCE}-${DATASET}/${FOLDER_TYPE}
+    log "Transferring [${team}] raw data in [${FOLDER_TYPE}] folder to [${SOURCE}-${DATASET}] bucket"
+  fi
 
-  log "Transferring [${team}] raw data in [${FOLDER_TYPE}] folder to [${SOURCE}-${DATASET}] bucket"
   log "\tRaw bucket:\t\t[${raw_bucket}]"
   log "\tRaw dataset bucket:\t[${raw_dataset_bucket}]"
 
