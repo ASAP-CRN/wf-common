@@ -5,9 +5,9 @@ import sys
 from datetime import datetime
 from common import (
 	list_teams,
+	list_gs_files,
 	gsync,
 )
-
 
 ALL_TEAMS = [
 	"cohort",
@@ -54,7 +54,7 @@ if __name__ == "__main__":
 		"-t",
 		"--teams",
 		type=str,
-	  nargs='+',
+		nargs='+',
 		required=True,
 		help="Space-separated set of teams to promote data for."
 	)
@@ -71,6 +71,20 @@ if __name__ == "__main__":
 		action="store_true",
 		required=False,
 		help="List available teams."
+	)
+	parser.add_argument(
+		"-s",
+		"--source",
+		type=str,
+		required=True,
+		help="Source name in bucket name."
+	)
+	parser.add_argument(
+		"-d",
+		"--dataset",
+		type=str,
+		required=True,
+		help="Dataset name in team bucket name."
 	)
 	parser.add_argument(
 		"-p",
