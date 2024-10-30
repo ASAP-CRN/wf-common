@@ -103,7 +103,7 @@ fi
 
 # More file types will be added as more modalities are included
 if [[ -n "${FOLDER_TYPE}" ]]; then
-  ALL_FOLDERS=(fastqs metadata artifacts scripts)
+  ALL_FOLDERS=(fastqs metadata artifacts)
   found=false
   for folder in "${ALL_FOLDERS[@]}"; do
     if [[ "${FOLDER_TYPE}" == "$folder" ]]; then
