@@ -55,6 +55,7 @@ gsync() {
 DRY_RUN_ARG="-n"
 FOLDER_TYPE=""
 PREFIX=""
+DELETE=""
 
 while getopts "ht:s:d:f:b:pr" OPTION; do
   case $OPTION in
@@ -80,6 +81,11 @@ for i in "${!TEAMS[@]}"; do
     TEAMS[$i]="team-${TEAMS[$i]}"
   fi
 done
+
+if [[ "${DRY_RUN_ARG}" == -n ]] && [[ "${DELETE}" ]]; then
+  err "Data cannot be deleted without -p flag"
+  exit 1
+fi
 
 ALL_SOURCES=(pmdbs human ipsc mouse)
 found=false
@@ -135,15 +141,17 @@ for team in "${TEAMS[@]}"; do
     "${raw_dataset_bucket}"
 
   if [[ "${DELETE}" ]]; then
+    log "Preparing to delete data in [$raw_bucket]"
     read -p "Do you want to continue with deletion? (yes/no): " response
     response=$(echo "$response" | tr '[:upper:]' '[:lower:]')
     if [[ "$response" == "yes" ]]; then
       log "Starting deletion..."
-      gsutil -m rm -r "$raw_source"
+      gsutil -m rm -r "$raw_bucket"
     elif [[ "$response" == "no" ]]; then
       log "Deletion canceled"
     else
       err "Invalid response. Please enter 'yes' or 'no'"
       exit
     fi
+  fi
 done
