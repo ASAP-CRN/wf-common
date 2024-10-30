@@ -143,7 +143,7 @@ for team in "${TEAMS[@]}"; do
     elif [[ "$response" == "no" ]]; then
       log "Deletion canceled"
     else
-      err "Invalid response. Please enter 'yes' or 'no'."
+      err "Invalid response. Please enter 'yes' or 'no'"
       exit
     fi
 done
