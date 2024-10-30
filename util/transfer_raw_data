@@ -26,6 +26,7 @@ cat << EOF
     $(tput bold)-f$(tput sgr0)  Folder/file type; example is 'fastqs' or 'metadata'
     $(tput bold)-b$(tput sgr0)  Generic raw bucket prefix. Option to filter files from source destination (i.e. generic raw bucket)
     $(tput bold)-p$(tput sgr0)  Promote data. If this option is not selected, data that would be copied or deleted is printed out, but files are not actually changed (dry run)
+    $(tput bold)-r$(tput sgr0)  Delete data from source (generic raw bucket) after rsync
 
 EOF
 }
@@ -55,7 +56,7 @@ DRY_RUN_ARG="-n"
 FOLDER_TYPE=""
 PREFIX=""
 
-while getopts "ht:s:d:f:b:p" OPTION; do
+while getopts "ht:s:d:f:b:pr" OPTION; do
   case $OPTION in
     h) usage; exit ;;
     t) read -ra TEAMS <<< "$(echo "${OPTARG}" | tr ',' ' ')" ;;
@@ -64,6 +65,7 @@ while getopts "ht:s:d:f:b:p" OPTION; do
     f) FOLDER_TYPE=${OPTARG} ;;
     b) PREFIX=${OPTARG} ;;
     p) DRY_RUN_ARG="" ;;
+    r) DELETE=true ;;
     \?) usage; exit ;;
   esac
 done
@@ -131,4 +133,17 @@ for team in "${TEAMS[@]}"; do
   gsync \
     "${raw_bucket}" \
     "${raw_dataset_bucket}"
+
+  if [[ "${DELETE}" ]]; then
+    read -p "Do you want to continue with deletion? (yes/no): " response
+    response=$(echo "$response" | tr '[:upper:]' '[:lower:]')
+    if [[ "$response" == "yes" ]]; then
+      log "Starting deletion..."
+      gsutil -m rm -r "$raw_source"
+    elif [[ "$response" == "no" ]]; then
+      log "Deletion canceled"
+    else
+      err "Invalid response. Please enter 'yes' or 'no'."
+      exit
+    fi
 done
