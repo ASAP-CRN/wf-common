@@ -1,0 +1,157 @@
+#!/bin/bash
+#
+# Transfer data in generic raw buckets to dataset-specific raw buckets
+
+set -eEuo pipefail
+
+usage() {
+cat << EOF
+
+  Transfer data in generic raw buckets to dataset-specific raw buckets.
+
+  Generic raw buckets are only accessible by respective teams, whereas dataset-specific raw buckets are accessible by verified researchers.
+  This will allow for us to control permissions for unreleased and released data in the same or different datasets/pipelines.
+  
+  Generic raw bucket naming: gs://asap-raw-data-{team}
+  Dataset-specific raw bucket naming: gs://asap-raw-{team}-{source}-{dataset_name}
+
+  Usage: $0 [OPTIONS]
+
+  OPTIONS
+  ───────
+    $(tput bold)-h$(tput sgr0)  Display this message and exit
+    $(tput bold)-t$(tput sgr0)  Comma-separated set of teams to promote data for
+    $(tput bold)-s$(tput sgr0)  Source name; example is 'pmdbs'
+    $(tput bold)-d$(tput sgr0)  Dataset name; example is 'sc-rnaseq'
+    $(tput bold)-f$(tput sgr0)  Folder/file type; example is 'fastqs' or 'metadata'
+    $(tput bold)-b$(tput sgr0)  Generic raw bucket prefix. Option to filter files from source destination (i.e. generic raw bucket)
+    $(tput bold)-p$(tput sgr0)  Promote data. If this option is not selected, data that would be copied or deleted is printed out, but files are not actually changed (dry run)
+    $(tput bold)-r$(tput sgr0)  Delete data from source (generic raw bucket) after rsync
+
+EOF
+}
+
+log() {
+  echo -e "$(tput bold)$(tput setaf 110)[$(date +'%Y-%m-%d %H:%M:%S')] $*$(tput sgr0)" >&1
+}
+
+err() {
+  echo -e "$(tput bold)$(tput setaf 203)[$(date +'%Y-%m-%d %H:%M:%S')]: $*$(tput sgr0)" >&2
+}
+
+gsync() {
+  source_path="${1#/}/"
+  destination_path="${2#/}/"
+
+  gsutil -m rsync \
+    -d \
+    -r \
+    ${DRY_RUN_ARG} \
+    "${source_path}" \
+    "${destination_path}"
+}
+
+# Default to dry run if promotion is not selected
+DRY_RUN_ARG="-n"
+FOLDER_TYPE=""
+PREFIX=""
+DELETE=""
+
+while getopts "ht:s:d:f:b:pr" OPTION; do
+  case $OPTION in
+    h) usage; exit ;;
+    t) read -ra TEAMS <<< "$(echo "${OPTARG}" | tr ',' ' ')" ;;
+    s) SOURCE=${OPTARG} ;;
+    d) DATASET=${OPTARG} ;;
+    f) FOLDER_TYPE=${OPTARG} ;;
+    b) PREFIX=${OPTARG} ;;
+    p) DRY_RUN_ARG="" ;;
+    r) DELETE=true ;;
+    \?) usage; exit ;;
+  esac
+done
+
+if [[ -z "${TEAMS:-}" ]] || [[ -z "${SOURCE:-}" ]] || [[ -z "${DATASET:-}" ]]; then
+  usage
+  exit
+fi
+
+for i in "${!TEAMS[@]}"; do
+  if [[ ${TEAMS[$i]} != team* ]]; then
+    TEAMS[$i]="team-${TEAMS[$i]}"
+  fi
+done
+
+if [[ "${DRY_RUN_ARG}" == -n ]] && [[ "${DELETE}" ]]; then
+  err "Data cannot be deleted without -p flag"
+  exit 1
+fi
+
+ALL_SOURCES=(pmdbs human ipsc mouse)
+found=false
+for data_source in "${ALL_SOURCES[@]}"; do
+  if [[ "${SOURCE}" == "$data_source" ]]; then
+    found=true
+    break
+  fi
+done
+if [[ "$found" == false ]]; then
+  err "Source [${SOURCE}] is invalid"
+  log "Valid source types: [${ALL_SOURCES[@]}]"
+  exit 1
+fi
+
+# More file types will be added as more modalities are included
+if [[ -n "${FOLDER_TYPE}" ]]; then
+  ALL_FOLDERS=(fastqs metadata artifacts)
+  found=false
+  for folder in "${ALL_FOLDERS[@]}"; do
+    if [[ "${FOLDER_TYPE}" == "$folder" || ("${folder}" == "artifacts" && "${FOLDER_TYPE}" =~ ^artifacts/.*$) ]]; then
+      found=true
+      break
+    fi
+  done
+  if [[ "$found" == false ]]; then
+    err "Folder type [${FOLDER_TYPE}] is invalid"
+    log "Valid folder types: [${ALL_FOLDERS[@]}]"
+    exit 1
+  fi
+fi
+
+# Try syncing raw data
+for team in "${TEAMS[@]}"; do
+  if [[ -z "${PREFIX}" ]]; then
+    raw_bucket=gs://asap-raw-data-${team}
+  else
+    raw_bucket=gs://asap-raw-data-${team}/${PREFIX}
+  fi
+  if [[ -z "${FOLDER_TYPE}" ]]; then
+    raw_dataset_bucket=gs://asap-raw-${team}-${SOURCE}-${DATASET}
+    log "Transferring [${team}] raw data to [${SOURCE}-${DATASET}] bucket"
+  else
+    raw_dataset_bucket=gs://asap-raw-${team}-${SOURCE}-${DATASET}/${FOLDER_TYPE}
+    log "Transferring [${team}] raw data in [${FOLDER_TYPE}] folder to [${SOURCE}-${DATASET}] bucket"
+  fi
+
+  log "\tRaw bucket:\t\t[${raw_bucket}]"
+  log "\tRaw dataset bucket:\t[${raw_dataset_bucket}]"
+
+  gsync \
+    "${raw_bucket}" \
+    "${raw_dataset_bucket}"
+
+  if [[ "${DELETE}" ]]; then
+    log "Preparing to delete data in [$raw_bucket]"
+    read -p "Do you want to continue with deletion? (yes/no): " response
+    response=$(echo "$response" | tr '[:upper:]' '[:lower:]')
+    if [[ "$response" == "yes" ]]; then
+      log "Starting deletion..."
+      gsutil -m rm -r "$raw_bucket"
+    elif [[ "$response" == "no" ]]; then
+      log "Deletion canceled"
+    else
+      err "Invalid response. Please enter 'yes' or 'no'"
+      exit
+    fi
+  fi
+done
