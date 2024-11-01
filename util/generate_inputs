@@ -29,7 +29,7 @@ def main(args):
                 cohort_staging_bucket_type = "dev"
         for index, row in project_df.iterrows():
             project_id = row.project_id
-            sample_id = row[args.sample_id_key]
+            sample_id = row.ASAP_sample_id
             batch = str(row.batch)
             fastq_R1s = literal_eval(row.fastq_R1s)
             fastq_R2s = literal_eval(row.fastq_R2s)
@@ -93,7 +93,7 @@ def main(args):
 
     output_file = f"{args.output_file_prefix}.{cohort_staging_bucket_type}.json"
     with open(output_file, "w") as f:
-        json.dump(inputs_json, f)
+        json.dump(inputs_json, f, indent=4)
     print(f"Wrote input JSON file: {output_file}")
 
 
@@ -110,13 +110,6 @@ if __name__ == "__main__":
         action="append",
         required=True,
         help="Project TSV including information for samples present in the project; columns project_id, sample_id, batch, fastq_path. Can provide one per project, or include all samples in a single TSV.",
-    )
-    parser.add_argument(
-        "-s",
-        "--sample-id-key",
-        type=str,
-        required=True,
-        help="Sample ID key/column name used in metadata",
     )
     parser.add_argument(
         "-i",
