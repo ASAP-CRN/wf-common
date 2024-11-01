@@ -13,7 +13,7 @@ ALL_TEAMS = [
 	"cohort",
 	"team-hafler",
 	"team-hardy",
-	"team-jakobsson", 
+	"team-jakobsson",
 	"team-lee",
 	"team-scherzer",
 	"team-sulzer",
@@ -26,17 +26,16 @@ def main(args):
 		list_teams()
 		sys.exit(0)
 
-	teams = ALL_TEAMS if args.all else args.teams
-	for team in teams:
+	for team in args.teams:
 		if team not in ALL_TEAMS:
 			print(f"Team [{team}] is not one of the available teams")
 			list_teams()
 			sys.exit(1)
 
 	dry_run = not args.promote
-	for team in teams:
-		staging_bucket = f"gs://asap-{args.staging}-data-{team}"
-		production_bucket = f"gs://asap-curated-data-{team}"
+	for team, dataset in zip(args.teams, args.dataset):
+		staging_bucket = f"gs://asap-{args.staging}-{team}-{args.source}-{dataset}"
+		production_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}"
 
 		print(f"Promoting [{team}] data to production")
 		print(f"\tStaging bucket:\t\t[{staging_bucket}]")
@@ -56,14 +55,7 @@ if __name__ == "__main__":
 		type=str,
 		nargs='+',
 		required=True,
-		help="Space-separated set of teams to promote data for."
-	)
-	parser.add_argument(
-		"-a",
-		"--all",
-		action="store_true",
-		required=False,
-		help="Promote all teams' data."
+		help="Space-delimited team(s) to promote data for."
 	)
 	parser.add_argument(
 		"-l",
@@ -83,8 +75,9 @@ if __name__ == "__main__":
 		"-d",
 		"--dataset",
 		type=str,
+		nargs='+',
 		required=True,
-		help="Dataset name in team bucket name."
+		help="Space-delimited dataset name(s) in team bucket name, must follow the same order as {team}."
 	)
 	parser.add_argument(
 		"-p",
@@ -103,4 +96,8 @@ if __name__ == "__main__":
 	)
 
 	args = parser.parse_args()
+	
+	if len(args.team) != len(args.dataset):
+        parser.error("The number of teams and datasets must be the same.")
+
 	main(args)
