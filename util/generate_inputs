@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 
+from datetime import datetime
 from argparse import ArgumentParser
 import pandas as pd
 import re
 import json
 from ast import literal_eval
 
+
+today = datetime.today()
+date = today.strftime("%Y-%m-%d")
 
 def main(args):
     run_project_cohort_analysis = args.run_project_cohort_analysis
@@ -91,7 +95,10 @@ def main(args):
         f"{args.workflow_name}.cohort_staging_data_buckets"
     ] = cohort_staging_data_buckets
 
-    output_file = f"{args.output_file_prefix}.{cohort_staging_bucket_type}.json"
+    if args.output_file_prefix is None:
+        output_file = f"inputs.{cohort_staging_bucket_type}.{args.source}-{args.cohort_dataset}.{date}.json"
+    else:
+        output_file = f"{args.output_file_prefix}.{cohort_staging_bucket_type}.json"
     with open(output_file, "w") as f:
         json.dump(inputs_json, f, indent=4)
     print(f"Wrote input JSON file: {output_file}")
@@ -123,7 +130,7 @@ if __name__ == "__main__":
         "--run-project-cohort-analysis",
         action="store_true",
         required=False,
-        help="Run project-level cohort analysis. This will be set for all projects included in the cohort.",
+        help="Run project-level cohort analysis. This will be set for all projects included in the cohort [false].",
     )
     parser.add_argument(
         "-w",
@@ -157,8 +164,8 @@ if __name__ == "__main__":
         "-o",
         "--output-file-prefix",
         required=False,
-        default="inputs.json",
-        help="Prefix for output JSON file to write workflow inputs to.",
+        default=None,
+        help="Prefix for output JSON file to write workflow inputs to [inputs.{cohort_staging_bucket_type}.{source}-{cohort_dataset}.{date}.json].",
     )
 
     args = parser.parse_args()
