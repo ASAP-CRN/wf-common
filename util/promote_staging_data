@@ -3,6 +3,7 @@
 import argparse
 import sys
 from datetime import datetime
+from google.cloud import storage
 from common import (
 	list_teams,
 	list_gs_files,
@@ -21,6 +22,9 @@ ALL_TEAMS = [
 	"team-wood"
 ]
 
+GREEN_CHECKMARK = "✅"
+RED_X = "❌"
+
 def main(args):
 	if args.list:
 		list_teams()
@@ -31,6 +35,10 @@ def main(args):
 			print(f"Team [{team}] is not one of the available teams")
 			list_teams()
 			sys.exit(1)
+
+	client = storage.Client()
+
+	# TODO - add data integrity tests
 
 	dry_run = not args.promote
 	for team, dataset in zip(args.teams, args.dataset):
@@ -96,7 +104,7 @@ if __name__ == "__main__":
 	)
 
 	args = parser.parse_args()
-	
+
 	if len(args.team) != len(args.dataset):
         parser.error("The number of teams and datasets must be the same.")
 
