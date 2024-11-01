@@ -40,6 +40,9 @@ def main(args):
             fastq_I1s = literal_eval(row.fastq_I1s)
             fastq_I2s = literal_eval(row.fastq_I2s)
 
+            source = row.source
+            team_dataset = row.dataset
+
             sample = {
                 "sample_id": sample_id,
                 "fastq_R1s": fastq_R1s,
@@ -53,7 +56,7 @@ def main(args):
 
             if project_id not in projects:
                 staging_data_buckets = [
-                    f"gs://asap-{staging_bucket_type}-{project_id}-{args.source}-{args.team_dataset}"
+                    f"gs://asap-{staging_bucket_type}-{project_id}-{source}-{team_dataset}"
                     for staging_bucket_type in staging_bucket_types
                 ]
 
@@ -61,12 +64,12 @@ def main(args):
                     "project_id": project_id,
                     "samples": [sample],
                     "run_project_cohort_analysis": run_project_cohort_analysis,
-                    "raw_data_bucket": f"gs://asap-raw-{project_id}-{args.source}-{args.team_dataset}",
+                    "raw_data_bucket": f"gs://asap-raw-{project_id}-{source}-{team_dataset}",
                     "staging_data_buckets": staging_data_buckets,
                 }
 
                 if args.workflow_name == "pmdbs_bulk_rnaseq":
-                    projects[project_id]["project_sample_metadata_csv"] = f"gs://asap-raw-{project_id}-{args.source}-{args.team_dataset}/metadata/SAMPLE.csv"
+                    projects[project_id]["project_sample_metadata_csv"] = f"gs://asap-raw-{project_id}-{source}-{team_dataset}/metadata/SAMPLE.csv"
             else:
                 projects[project_id]["samples"].append(sample)
 
@@ -89,14 +92,14 @@ def main(args):
         inputs_json[projects_key] = projects
 
     cohort_staging_data_buckets = [
-        f"gs://asap-{cohort_staging_bucket_type}-cohort-{args.source}-{args.cohort_dataset}"
+        f"gs://asap-{cohort_staging_bucket_type}-cohort-{source}-{args.cohort_dataset}"
     ]
     inputs_json[
         f"{args.workflow_name}.cohort_staging_data_buckets"
     ] = cohort_staging_data_buckets
 
     if args.output_file_prefix is None:
-        output_file = f"inputs.{cohort_staging_bucket_type}.{args.source}-{args.cohort_dataset}.{date}.json"
+        output_file = f"inputs.{cohort_staging_bucket_type}.{source}-{args.cohort_dataset}.{date}.json"
     else:
         output_file = f"{args.output_file_prefix}.{cohort_staging_bucket_type}.json"
     with open(output_file, "w") as f:
@@ -138,20 +141,6 @@ if __name__ == "__main__":
         type=str,
         required=True,
         help="WDL workflow name.",
-    )
-    parser.add_argument(
-        "-s",
-        "--source",
-        type=str,
-        required=True,
-        help="Source name in bucket name.",
-    )
-    parser.add_argument(
-        "-d",
-        "--team-dataset",
-        type=str,
-        required=True,
-        help="Dataset name in team bucket name.",
     )
     parser.add_argument(
         "-b",
