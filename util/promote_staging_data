@@ -17,6 +17,7 @@ from common import (
 	gmove,
 	gsync,
 )
+from markdown_generator import generate_markdown_report
 
 current_time_utc = datetime.now(timezone.utc)
 formatted_time = current_time_utc.strftime("%Y-%m-%dT%H-%M-%SZ")
@@ -97,6 +98,7 @@ def main(args):
 
 
 		# Generate report
+		generate_markdown_report()
 
 
 		# Try syncing staging data to production
