@@ -3,7 +3,7 @@
 import argparse
 import sys
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from google.cloud import storage
 from common import (
 	list_teams,
@@ -12,8 +12,14 @@ from common import (
 	md5_check,
 	non_empty_check,
 	associated_metadata_check,
+	compare_blob_names,
+	compare_md5_hashes,
+	gmove,
 	gsync,
 )
+
+current_time_utc = datetime.now(timezone.utc)
+formatted_time = current_time_utc.strftime("%Y-%m-%dT%H-%M-%SZ")
 
 ALL_TEAMS = [
 	"cohort",
@@ -58,42 +64,65 @@ def main(args):
 		for env in namespaces:
 			bucket_name = f"asap-{env}-{team}-{args.source}-{dataset}"
 			bucket = client.get_bucket(bucket_name)
-			results = {}
+			file_results = {}
 
 			# Data integrity tests
 			logging.info(f"Running data integrity tests on [{bucket_name}]")
 			blob_names, gs_files, sample_list_loc = list_gs_files(bucket, args.workflow_name)
 			combined_manifest_df = read_manifest_files(bucket, args.workflow_name)
 			md5_hashes = md5_check(bucket, args.workflow_name)
-			not_empty_test_results = non_empty_check(bucket, args.workflow_name, GREEN_CHECKMARK, RED_X)
-			metadata_present_test_results = associated_metadata_check(combined_manifest_df, gs_files, GREEN_CHECKMARK, RED_X)
-			results[env] = {
+			file_results[env] = {
 				"blob_names": blob_names,
 				"gs_files": gs_files,
 				"sample_list_loc": sample_list_loc,
 				"combined_manifest_df": combined_manifest_df,
 				"md5_hashes": md5_hashes,
-				"not_empty_test_results": not_empty_test_results,
-				"metadata_present_test_results": metadata_present_test_results,
 			}
 
+		bucket = client.get_bucket(f"asap-{args.staging}-{team}-{args.source}-{dataset}")
+		not_empty_test_results = non_empty_check(bucket, args.workflow_name, GREEN_CHECKMARK, RED_X)
+		metadata_present_test_results = associated_metadata_check(combined_manifest_df, gs_files, GREEN_CHECKMARK, RED_X)
+		data_integrity_test_results = {**not_empty_test_results, **metadata_present_test_results}
+		all_tests_result_status = "True"
+		all_tests_result = GREEN_CHECKMARK
+		for file_name, result in data_integrity_test_results.items():
+			if RED_X in result:
+				all_tests_result_status = "False"
+				all_tests_result = RED_X
+				break
+
 		# Compare different envs
-		same_files, new_files, deleted_files = compare_blob_names(results, args.staging)
-		modified_files = compare_md5_hashes(results, args.staging, same_files)
+		same_files, new_files, deleted_files = compare_blob_names(file_results, args.staging)
+		modified_files = compare_md5_hashes(file_results, args.staging, same_files)
 
 
-			# Generate report
+		# Generate report
 
-			# TODO - if any test result failed, do not promote
-			# Try syncing staging data to production
-			staging_bucket = f"gs://{bucket_name}"
+
+		# Try syncing staging data to production
+		if all_tests_result_status == "True":
+			staging_bucket = f"gs://asap-{args.staging}-{team}-{args.source}-{dataset}"
 			production_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}"
+
+			staging_metadata_path = f"gs://asap-{args.staging}-{team}-{args.source}-{dataset}/{args.workflow_name}"
+			combined_manifest_df.to_csv(f"{team}_MANIFEST.tsv", index=False)
+
+			if dry_run:
+				logging.info(f"Would copy {team}_MANIFEST.tsv to {staging_bucket}/{args.workflow_name}/metadata/{formatted_time}/MANIFEST.tsv")
+				logging.info(f"Would copy {team}_data_promotion_report.md to {staging_bucket}/{args.workflow_name}/metadata/{formatted_time}/data_promotion_report.md")
+			else:
+				logging.info(f"Uploading combined manifest and report for [{team}] [{dataset}]")
+				gmove(f"{team}_MANIFEST.tsv", staging_metadata_path)
+				# gmove(f"{team}_data_promotion_report.md", staging_metadata_path)
 
 			logging.info(f"Promoting [{team}] data to production")
 			logging.info(f"\tStaging bucket:\t\t[{staging_bucket}]")
 			logging.info(f"\tProduction bucket:\t[{production_bucket}]")
 
 			gsync(staging_bucket, production_bucket, dry_run)
+		else:
+			logging.error(f"Data cannot be promoted for [{team}] [{dataset}]; exiting")
+			sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -118,6 +118,17 @@ def compare_md5_hashes(results, staging, same_files):
 ###########################################
 ##### PROMOTE STAGING TO PROD SECTION #####
 ###########################################
+def gmove(source_path, destination_path):
+	command = [
+		"gsutil",
+		"-m",
+		"mv",
+		source_path,
+		destination_path
+	]
+	subprocess.run(command, check=True)
+
+
 def gsync(source_path, destination_path, dry_run):
 	dry_run_arg = "-n" if dry_run else ""
 	command = [
