@@ -8,6 +8,10 @@ from google.cloud import storage
 from common import (
 	list_teams,
 	list_gs_files,
+	read_manifest_files,
+	md5_check,
+	non_empty_check,
+	associated_metadata_check,
 	gsync,
 )
 
@@ -46,20 +50,50 @@ def main(args):
 			list_teams()
 			sys.exit(1)
 
+	dry_run = not args.promote
+	namespaces = [args.staging, "curated"]
 	client = storage.Client()
 
-	# TODO - add data integrity tests
-
-	dry_run = not args.promote
 	for team, dataset in zip(args.teams, args.dataset):
-		staging_bucket = f"gs://asap-{args.staging}-{team}-{args.source}-{dataset}"
-		production_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}"
+		for env in namespaces:
+			bucket_name = f"asap-{env}-{team}-{args.source}-{dataset}"
+			bucket = client.get_bucket(bucket_name)
+			results = {}
 
-		logging.info(f"Promoting [{team}] data to production")
-		logging.info(f"\tStaging bucket:\t\t[{staging_bucket}]")
-		logging.info(f"\tProduction bucket:\t[{production_bucket}]")
+			# Data integrity tests
+			logging.info(f"Running data integrity tests on [{bucket_name}]")
+			blob_names, gs_files, sample_list_loc = list_gs_files(bucket, args.workflow_name)
+			combined_manifest_df = read_manifest_files(bucket, args.workflow_name)
+			md5_hashes = md5_check(bucket, args.workflow_name)
+			not_empty_test_results = non_empty_check(bucket, args.workflow_name, GREEN_CHECKMARK, RED_X)
+			metadata_present_test_results = associated_metadata_check(combined_manifest_df, gs_files, GREEN_CHECKMARK, RED_X)
+			results[env] = {
+				"blob_names": blob_names,
+				"gs_files": gs_files,
+				"sample_list_loc": sample_list_loc,
+				"combined_manifest_df": combined_manifest_df,
+				"md5_hashes": md5_hashes,
+				"not_empty_test_results": not_empty_test_results,
+				"metadata_present_test_results": metadata_present_test_results,
+			}
 
-		gsync(staging_bucket, production_bucket, dry_run)
+		# Compare different envs
+		same_files, new_files, deleted_files = compare_blob_names(results, args.staging)
+		modified_files = compare_md5_hashes(results, args.staging, same_files)
+
+
+			# Generate report
+
+			# TODO - if any test result failed, do not promote
+			# Try syncing staging data to production
+			staging_bucket = f"gs://{bucket_name}"
+			production_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}"
+
+			logging.info(f"Promoting [{team}] data to production")
+			logging.info(f"\tStaging bucket:\t\t[{staging_bucket}]")
+			logging.info(f"\tProduction bucket:\t[{production_bucket}]")
+
+			gsync(staging_bucket, production_bucket, dry_run)
 
 
 if __name__ == "__main__":

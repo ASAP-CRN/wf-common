@@ -7,23 +7,26 @@ from io import StringIO
 from google.cloud import storage
 
 
+#######################################
+##### DATA INTEGRITY TEST SECTION #####
+#######################################
 def list_teams():
 	logging.info("Available teams:")
 	for team in ALL_TEAMS:
 		logging.info(team)
 
 
-# TODO - if it's the same bucket, I should call it in main first then run all these functions
-## Use the results from this for other functions to avoid listing blobs many times
-def list_gs_files(bucket_name, workflow_name):
-	bucket = client.get_bucket(bucket_name)
+def list_gs_files(bucket, workflow_name):
 	blobs = bucket.list_blobs(prefix=workflow_name)
 	blob_names = []
 	gs_files = []
+	sample_list_loc = []
 	for blob in blobs:
 		blob_names.append(blob.name)
 		gs_files.append(f"gs://{bucket_name}/{blob.name}")
-	return bucket, blob_names, gs_files
+		if blob.name.endswith("sample_list.tsv"):
+			sample_list_loc.append(f"gs://{bucket_name}/{blob.name}")
+	return blob_names, gs_files, sample_list_loc
 
 
 def read_manifest_files(bucket, workflow_name):
@@ -46,7 +49,7 @@ def md5_check(bucket, workflow_name):
 	return hashes
 
 
-def non_empty_check(bucket, workflow_name, RED_X, GREEN_CHECKMARK):
+def non_empty_check(bucket, workflow_name, GREEN_CHECKMARK, RED_X):
 	blobs = bucket.list_blobs(prefix=workflow_name)
 	not_empty_tests = {}
 	for blob in blobs:
@@ -58,7 +61,7 @@ def non_empty_check(bucket, workflow_name, RED_X, GREEN_CHECKMARK):
 	return not_empty_tests
 
 
-def associated_metadata_check(combined_manifest_df, file_list, RED_X, GREEN_CHECKMARK):
+def associated_metadata_check(combined_manifest_df, file_list, GREEN_CHECKMARK, RED_X):
 	metadata_present_tests = {}
 	for file in file_list:
 		if file.endswith("MANIFEST.tsv"):
@@ -71,8 +74,50 @@ def associated_metadata_check(combined_manifest_df, file_list, RED_X, GREEN_CHEC
 				logging.error(f"File does not have associated metadata and is absent from MANIFEST: [{file}]")
 				metadata_present_tests[file] = f"{RED_X}"
 	return metadata_present_tests
-	
 
+
+###########################################
+##### COMPARE STAGING TO PROD SECTION #####
+###########################################
+def compare_blob_names(results, staging):
+	staging_blob_names = results[staging]["blob_names"]
+	curated_blob_names = results["curated"]["blob_names"]
+	if sorted(staging_blob_names) == sorted(curated_blob_names):
+		logging.info(f"The blob_names in '{staging}' are equal to those in 'curated.")
+	else:
+		logging.info(f"The blob_names in '{staging}' are not equal to those in 'curated'")
+		same_files = [file for file in staging_blob_names if file in curated_blob_names]
+		new_files = [file for file in staging_blob_names if file not in curated_blob_names]
+		deleted_files = [file for file in curated_blob_names if file not in staging_blob_names]
+		if new_files:
+			logging.info(f"New files in '{staging}': {new_files}")
+		if deleted_files:
+			logging.info(f"Missing files in '{staging}': {deleted_files}")
+	return same_files, new_files, deleted_files
+
+
+def compare_md5_hashes(results, staging, same_files):
+	staging_md5_hashes = results[staging]["md5_hashes"]
+	curated_md5_hashes = results["curated"]["md5_hashes"]
+	staging_file_hashes = {key.name: value for key, value in staging_md5_hashes.items()}
+	curated_file_hashes = {key.name: value for key, value in curated_md5_hashes.items()}
+	modified_files = {}
+	for file in same_files:
+		staging_hash = staging_file_hashes.get(file_name)
+		curated_hash = curated_file_hashes.get(file_name)
+		if staging_hash and curated_hash:
+			if staging_hash != curated_hash:
+				modified_files[file_name] = {
+					"staging_hash": staging_hash,
+					"curated_hash": curated_hash
+				}
+				logging.info(f"Modified: {file_name} - Staging MD5 Hash: {staging_hash}, Curated MD5 Hash: {curated_hash}")
+	return modified_files
+
+
+###########################################
+##### PROMOTE STAGING TO PROD SECTION #####
+###########################################
 def gsync(source_path, destination_path, dry_run):
 	dry_run_arg = "-n" if dry_run else ""
 	command = [
