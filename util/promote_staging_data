@@ -2,6 +2,7 @@
 
 import argparse
 import sys
+import logging
 from datetime import datetime
 from google.cloud import storage
 from common import (
@@ -25,6 +26,15 @@ ALL_TEAMS = [
 GREEN_CHECKMARK = "✅"
 RED_X = "❌"
 
+logging.basicConfig(
+	level=logging.INFO,
+	format="%(asctime)s - %(levelname)s - %(message)s",
+	handlers=[
+		logging.FileHandler("promote_staging_data_script.log"),
+		logging.StreamHandler()
+	]
+)
+
 def main(args):
 	if args.list:
 		list_teams()
@@ -32,7 +42,7 @@ def main(args):
 
 	for team in args.teams:
 		if team not in ALL_TEAMS:
-			print(f"Team [{team}] is not one of the available teams")
+			logging.error(f"Team [{team}] is not one of the available teams")
 			list_teams()
 			sys.exit(1)
 
@@ -45,9 +55,9 @@ def main(args):
 		staging_bucket = f"gs://asap-{args.staging}-{team}-{args.source}-{dataset}"
 		production_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}"
 
-		print(f"Promoting [{team}] data to production")
-		print(f"\tStaging bucket:\t\t[{staging_bucket}]")
-		print(f"\tProduction bucket:\t[{production_bucket}]")
+		logging.info(f"Promoting [{team}] data to production")
+		logging.info(f"\tStaging bucket:\t\t[{staging_bucket}]")
+		logging.info(f"\tProduction bucket:\t[{production_bucket}]")
 
 		gsync(staging_bucket, production_bucket, dry_run)
 
@@ -86,6 +96,13 @@ if __name__ == "__main__":
 		nargs='+',
 		required=True,
 		help="Space-delimited dataset name(s) in team bucket name, must follow the same order as {team}."
+	)
+	parser.add_argument(
+		"-w",
+		"--workflow-name",
+		type=str,
+		required=True,
+		help="Workflow name used as a directory in bucket."
 	)
 	parser.add_argument(
 		"-p",
