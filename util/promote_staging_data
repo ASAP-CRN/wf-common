@@ -59,11 +59,11 @@ def main(args):
 	namespaces = [args.staging, "curated"]
 	client = storage.Client()
 
-	for team, dataset in zip(args.teams, args.dataset):
+	for team, dataset in zip(args.teams, args.datasets):
+		file_results = {}
 		for env in namespaces:
 			bucket_name = f"asap-{env}-{team}-{args.source}-{dataset}"
 			bucket = client.get_bucket(bucket_name)
-			file_results = {}
 
 			# Data integrity tests
 			logging.info(f"Running data integrity tests on [{bucket_name}]")
@@ -80,7 +80,7 @@ def main(args):
 
 		bucket = client.get_bucket(f"asap-{args.staging}-{team}-{args.source}-{dataset}")
 		not_empty_test_results = non_empty_check(bucket, args.workflow_name, GREEN_CHECKMARK, RED_X)
-		metadata_present_test_results = associated_metadata_check(combined_manifest_df, gs_files, GREEN_CHECKMARK, RED_X)
+		metadata_present_test_results = associated_metadata_check(file_results[args.staging]["combined_manifest_df"], file_results[args.staging]["blob_names"], GREEN_CHECKMARK, RED_X)
 		data_integrity_test_results = {**not_empty_test_results, **metadata_present_test_results}
 		all_tests_result_status = "True"
 		all_tests_result = GREEN_CHECKMARK
@@ -111,23 +111,23 @@ def main(args):
 			production_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}"
 
 			staging_metadata_path = f"{staging_bucket}/{args.workflow_name}/metadata/{formatted_time}"
-			combined_manifest_df.to_csv(f"{team}_MANIFEST.tsv", index=False)
+			combined_manifest_df.to_csv(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", index=False)
 
 			if dry_run:
-				logging.info(f"Would copy {team}_MANIFEST.tsv to {staging_bucket}/{args.workflow_name}/metadata/{formatted_time}/MANIFEST.tsv")
-				logging.info(f"Would copy {team}_data_promotion_report.md to {staging_bucket}/{args.workflow_name}/metadata/{formatted_time}/data_promotion_report.md")
+				logging.info(f"Would copy {team}_{args.source}_{dataset}_MANIFEST.tsv to {staging_bucket}/{args.workflow_name}/metadata/{formatted_time}/MANIFEST.tsv")
+				logging.info(f"Would copy {team}_{args.source}_{dataset}_data_promotion_report.md to {staging_bucket}/{args.workflow_name}/metadata/{formatted_time}/data_promotion_report.md")
 			else:
-				logging.info(f"Uploading combined manifest and report for [{team}] [{dataset}]")
-				gmove(f"{team}_MANIFEST.tsv", f"{staging_metadata_path}/MANIFEST.tsv")
-				gmove(f"{team}_data_promotion_report.md", f"{staging_metadata_path}/data_promotion_report.md")
+				logging.info(f"Uploading combined manifest and report for [{team}-{args.source}-{dataset}]")
+				gmove(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", f"{staging_metadata_path}/MANIFEST.tsv")
+				gmove(f"{team}_{args.source}_{dataset}_data_promotion_report.md", f"{staging_metadata_path}/data_promotion_report.md")
 
-			logging.info(f"Promoting [{team}] data to production")
+			logging.info(f"Promoting [{team}-{args.source}-{dataset}] data to production")
 			logging.info(f"\tStaging bucket:\t\t[{staging_bucket}]")
 			logging.info(f"\tProduction bucket:\t[{production_bucket}]")
 
 			gsync(staging_bucket, production_bucket, dry_run)
 		else:
-			logging.error(f"Data cannot be promoted for [{team}] [{dataset}]; exiting")
+			logging.error(f"Data cannot be promoted for [{team}-{args.source}-{dataset}]; exiting")
 			sys.exit(1)
 
 
@@ -160,7 +160,7 @@ if __name__ == "__main__":
 	)
 	parser.add_argument(
 		"-d",
-		"--dataset",
+		"--datasets",
 		type=str,
 		nargs='+',
 		required=True,
@@ -181,7 +181,7 @@ if __name__ == "__main__":
 		help="Promote data (default is dry run)."
 	)
 	parser.add_argument(
-		"-s",
+		"-e",
 		"--staging",
 		choices=["uat", "dev"],
 		default="uat",
@@ -191,7 +191,7 @@ if __name__ == "__main__":
 
 	args = parser.parse_args()
 
-	if len(args.team) != len(args.dataset):
-        parser.error("The number of teams and datasets must be the same.")
+	if len(args.teams) != len(args.datasets):
+		parser.error("The number of teams and datasets must be the same.")
 
 	main(args)

@@ -23,9 +23,9 @@ def list_gs_files(bucket, workflow_name):
 	sample_list_loc = []
 	for blob in blobs:
 		blob_names.append(blob.name)
-		gs_files.append(f"gs://{bucket_name}/{blob.name}")
+		gs_files.append(f"gs://{bucket.name}/{blob.name}")
 		if blob.name.endswith("sample_list.tsv"):
-			sample_list_loc.append(f"gs://{bucket_name}/{blob.name}")
+			sample_list_loc.append(f"gs://{bucket.name}/{blob.name}")
 	return blob_names, gs_files, sample_list_loc
 
 
@@ -61,14 +61,13 @@ def non_empty_check(bucket, workflow_name, GREEN_CHECKMARK, RED_X):
 	return not_empty_tests
 
 
-def associated_metadata_check(combined_manifest_df, file_list, GREEN_CHECKMARK, RED_X):
+def associated_metadata_check(combined_manifest_df, blob_list, GREEN_CHECKMARK, RED_X):
 	metadata_present_tests = {}
-	for file in file_list:
+	for file in blob_list:
 		if file.endswith("MANIFEST.tsv"):
 			metadata_present_tests[file] = "N/A"
 		else:
-			metadata_file = f"{file}.meta.tsv"
-			if metadata_file in combined_manifest_df.values.flatten():
+			if any(file.split('/')[-1] in filename for filename in combined_manifest_df["filename"].tolist()):
 				metadata_present_tests[file] = f"{GREEN_CHECKMARK}"
 			else:
 				logging.error(f"File does not have associated metadata and is absent from MANIFEST: [{file}]")
@@ -82,36 +81,38 @@ def associated_metadata_check(combined_manifest_df, file_list, GREEN_CHECKMARK, 
 def compare_blob_names(results, staging):
 	staging_blob_names = results[staging]["blob_names"]
 	curated_blob_names = results["curated"]["blob_names"]
+	staging_md5_hashes = results[staging]["md5_hashes"]
+	staging_bucket_name = next(iter(staging_md5_hashes)).bucket.name
 	if sorted(staging_blob_names) == sorted(curated_blob_names):
 		logging.info(f"The blob_names in '{staging}' are equal to those in 'curated.")
 	else:
 		logging.info(f"The blob_names in '{staging}' are not equal to those in 'curated'")
 		same_files = [file for file in staging_blob_names if file in curated_blob_names]
-		new_files = [file for file in staging_blob_names if file not in curated_blob_names]
-		deleted_files = [file for file in curated_blob_names if file not in staging_blob_names]
+		new_files = [f"gs://{staging_bucket_name}/{file}" for file in staging_blob_names if file not in curated_blob_names]
+		deleted_files = [f"gs://{staging_bucket_name}/{file}" for file in curated_blob_names if file not in staging_blob_names]
 		if new_files:
 			logging.info(f"New files in '{staging}': {new_files}")
 		if deleted_files:
-			logging.info(f"Missing files in '{staging}': {deleted_files}")
+			logging.info(f"Deleted files in '{staging}': {deleted_files}")
 	return same_files, new_files, deleted_files
 
 
 def compare_md5_hashes(results, staging, same_files):
 	staging_md5_hashes = results[staging]["md5_hashes"]
 	curated_md5_hashes = results["curated"]["md5_hashes"]
+	staging_bucket_name = next(iter(staging_md5_hashes)).bucket.name
 	staging_file_hashes = {key.name: value for key, value in staging_md5_hashes.items()}
 	curated_file_hashes = {key.name: value for key, value in curated_md5_hashes.items()}
 	modified_files = {}
 	for file in same_files:
-		staging_hash = staging_file_hashes.get(file_name)
-		curated_hash = curated_file_hashes.get(file_name)
+		staging_hash = staging_file_hashes.get(file)
+		curated_hash = curated_file_hashes.get(file)
 		if staging_hash and curated_hash:
 			if staging_hash != curated_hash:
-				modified_files[file_name] = {
-					"staging_hash": staging_hash,
-					"curated_hash": curated_hash
+				modified_files[f"gs://{staging_bucket_name}/{file}"] = {
+					"staging_hash": staging_hash
 				}
-				logging.info(f"Modified: {file_name} - Staging MD5 Hash: {staging_hash}, Curated MD5 Hash: {curated_hash}")
+				logging.info(f"Modified: {file}")
 	return modified_files
 
 
