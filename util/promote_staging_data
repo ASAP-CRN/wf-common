@@ -13,6 +13,8 @@ from common import (
 	non_empty_check,
 	associated_metadata_check,
 	gmove,
+	remove_internal_qc_label,
+	add_verily_read_access,
 	gsync,
 )
 from markdown_generator import generate_markdown_report
@@ -107,19 +109,30 @@ def main(args):
 
 		# Try syncing staging data to production
 		if all_tests_result_status == "True":
+			raw_bucket = f"gs://asap-raw-{team}-{args.source}-{dataset}"
 			staging_bucket = f"gs://asap-{args.staging}-{team}-{args.source}-{dataset}"
 			production_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}"
 
 			staging_metadata_path = f"{staging_bucket}/{args.workflow_name}/metadata/{formatted_time}"
 			combined_manifest_df.to_csv(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", index=False)
 
+			cohort = "cohort" in team
+
 			if dry_run:
 				logging.info(f"Would copy {team}_{args.source}_{dataset}_MANIFEST.tsv to {staging_bucket}/{args.workflow_name}/metadata/{formatted_time}/MANIFEST.tsv")
 				logging.info(f"Would copy {team}_{args.source}_{dataset}_data_promotion_report.md to {staging_bucket}/{args.workflow_name}/metadata/{formatted_time}/data_promotion_report.md")
+				logging.info(f"Would remove internal-qc-data label from [{raw_bucket}]")
+				if not cohort:
+					logging.info(f"Would grant storage.objectViewer permission to asap-cloud-readers@verily-bvdp.com on [{raw_bucket}]")
 			else:
 				logging.info(f"Uploading combined manifest and report for [{team}-{args.source}-{dataset}]")
 				gmove(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", f"{staging_metadata_path}/MANIFEST.tsv")
 				gmove(f"{team}_{args.source}_{dataset}_data_promotion_report.md", f"{staging_metadata_path}/data_promotion_report.md")
+				logging.info(f"Removing internal-qc-data label from [{raw_bucket}]")
+				remove_internal_qc_label(raw_bucket)
+				if not cohort:
+					logging.info(f"Granting storage.objectViewer permission to asap-cloud-readers@verily-bvdp.com on [{raw_bucket}]")
+					add_verily_read_access(remove_internal_qc_label)
 
 			logging.info(f"Promoting [{team}-{args.source}-{dataset}] data to production")
 			logging.info(f"\tStaging bucket:\t\t[{staging_bucket}]")

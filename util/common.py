@@ -127,7 +127,9 @@ def gmove(source_path, destination_path):
 		source_path,
 		destination_path
 	]
-	subprocess.run(command, check=True)
+	result = subprocess.run(command, check=True, capture_output=True, text=True)
+	logging.info(result.stdout)
+	logging.error(result.stderr)
 
 
 def gsync(source_path, destination_path, dry_run):
@@ -142,4 +144,37 @@ def gsync(source_path, destination_path, dry_run):
 		source_path,
 		destination_path
 	]
-	subprocess.run(command, check=True)
+	result = subprocess.run(command, check=True, capture_output=True, text=True)
+	logging.info(result.stdout)
+	logging.error(result.stderr)
+
+
+def remove_internal_qc_label(bucket_name):
+	command = [
+		"gcloud",
+		"storage",
+		"buckets",
+		"update",
+		bucket_name,
+		"--remove-labels=internal-qc-data"
+	]
+	result = subprocess.run(command, check=True, capture_output=True, text=True)
+	logging.info(result.stdout)
+	logging.error(result.stderr)
+
+
+def add_verily_read_access(bucket_name):
+	command = [
+		"gcloud",
+		"storage",
+		"buckets",
+		"add-iam-policy-binding",
+		bucket_name,
+		"--member=group:asap-cloud-readers@verily-bvdp.com",
+		"--role=roles/storage.objectViewer",
+		"--project",
+		"dnastack-asap-parkinsons"
+	]
+	result = subprocess.run(command, check=True, capture_output=True, text=True)
+	logging.info(result.stdout)
+	logging.error(result.stderr)
