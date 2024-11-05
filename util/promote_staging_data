@@ -12,8 +12,6 @@ from common import (
 	md5_check,
 	non_empty_check,
 	associated_metadata_check,
-	compare_blob_names,
-	compare_md5_hashes,
 	gmove,
 	gsync,
 )
@@ -92,21 +90,27 @@ def main(args):
 				all_tests_result = RED_X
 				break
 
-		# Compare different envs
-		same_files, new_files, deleted_files = compare_blob_names(file_results, args.staging)
-		modified_files = compare_md5_hashes(file_results, args.staging, same_files)
-
-
 		# Generate report
-		generate_markdown_report()
-
+		generate_markdown_report(
+			formatted_time,
+			args.staging,
+			team,
+			args.source,
+			dataset,
+			args.workflow_name,
+			file_results,
+			not_empty_test_results,
+			metadata_present_test_results,
+			all_tests_result_status,
+			all_tests_result
+		)
 
 		# Try syncing staging data to production
 		if all_tests_result_status == "True":
 			staging_bucket = f"gs://asap-{args.staging}-{team}-{args.source}-{dataset}"
 			production_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}"
 
-			staging_metadata_path = f"gs://asap-{args.staging}-{team}-{args.source}-{dataset}/{args.workflow_name}"
+			staging_metadata_path = f"{staging_bucket}/{args.workflow_name}/metadata/{formatted_time}"
 			combined_manifest_df.to_csv(f"{team}_MANIFEST.tsv", index=False)
 
 			if dry_run:
@@ -114,8 +118,8 @@ def main(args):
 				logging.info(f"Would copy {team}_data_promotion_report.md to {staging_bucket}/{args.workflow_name}/metadata/{formatted_time}/data_promotion_report.md")
 			else:
 				logging.info(f"Uploading combined manifest and report for [{team}] [{dataset}]")
-				gmove(f"{team}_MANIFEST.tsv", staging_metadata_path)
-				# gmove(f"{team}_data_promotion_report.md", staging_metadata_path)
+				gmove(f"{team}_MANIFEST.tsv", f"{staging_metadata_path}/MANIFEST.tsv")
+				gmove(f"{team}_data_promotion_report.md", f"{staging_metadata_path}/data_promotion_report.md")
 
 			logging.info(f"Promoting [{team}] data to production")
 			logging.info(f"\tStaging bucket:\t\t[{staging_bucket}]")
