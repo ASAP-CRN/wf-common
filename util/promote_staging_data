@@ -2,18 +2,31 @@
 
 import argparse
 import sys
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
+from google.cloud import storage
 from common import (
 	list_teams,
 	list_gs_files,
+	read_manifest_files,
+	md5_check,
+	non_empty_check,
+	associated_metadata_check,
+	gmove,
+	remove_internal_qc_label,
+	add_verily_read_access,
 	gsync,
 )
+from markdown_generator import generate_markdown_report
+
+current_time_utc = datetime.now(timezone.utc)
+formatted_time = current_time_utc.strftime("%Y-%m-%dT%H-%M-%SZ")
 
 ALL_TEAMS = [
 	"cohort",
 	"team-hafler",
 	"team-hardy",
-	"team-jakobsson", 
+	"team-jakobsson",
 	"team-lee",
 	"team-scherzer",
 	"team-sulzer",
@@ -21,28 +34,114 @@ ALL_TEAMS = [
 	"team-wood"
 ]
 
+GREEN_CHECKMARK = "✅"
+RED_X = "❌"
+
+logging.basicConfig(
+	level=logging.INFO,
+	format="%(asctime)s - %(levelname)s - %(message)s",
+	handlers=[
+		logging.FileHandler("promote_staging_data_script.log"),
+		logging.StreamHandler()
+	]
+)
+
 def main(args):
 	if args.list:
 		list_teams()
 		sys.exit(0)
 
-	teams = ALL_TEAMS if args.all else args.teams
-	for team in teams:
+	for team in args.teams:
 		if team not in ALL_TEAMS:
-			print(f"Team [{team}] is not one of the available teams")
+			logging.error(f"Team [{team}] is not one of the available teams")
 			list_teams()
 			sys.exit(1)
 
 	dry_run = not args.promote
-	for team in teams:
-		staging_bucket = f"gs://asap-{args.staging}-data-{team}"
-		production_bucket = f"gs://asap-curated-data-{team}"
+	namespaces = [args.staging, "curated"]
+	client = storage.Client()
 
-		print(f"Promoting [{team}] data to production")
-		print(f"\tStaging bucket:\t\t[{staging_bucket}]")
-		print(f"\tProduction bucket:\t[{production_bucket}]")
+	for team, dataset in zip(args.teams, args.datasets):
+		file_results = {}
+		for env in namespaces:
+			bucket_name = f"asap-{env}-{team}-{args.source}-{dataset}"
+			bucket = client.get_bucket(bucket_name)
 
-		gsync(staging_bucket, production_bucket, dry_run)
+			# Data integrity tests
+			logging.info(f"Running data integrity tests on [{bucket_name}]")
+			blob_names, gs_files, sample_list_loc = list_gs_files(bucket, args.workflow_name)
+			combined_manifest_df = read_manifest_files(bucket, args.workflow_name)
+			md5_hashes = md5_check(bucket, args.workflow_name)
+			file_results[env] = {
+				"blob_names": blob_names,
+				"gs_files": gs_files,
+				"sample_list_loc": sample_list_loc,
+				"combined_manifest_df": combined_manifest_df,
+				"md5_hashes": md5_hashes,
+			}
+
+		bucket = client.get_bucket(f"asap-{args.staging}-{team}-{args.source}-{dataset}")
+		not_empty_test_results = non_empty_check(bucket, args.workflow_name, GREEN_CHECKMARK, RED_X)
+		metadata_present_test_results = associated_metadata_check(file_results[args.staging]["combined_manifest_df"], file_results[args.staging]["blob_names"], GREEN_CHECKMARK, RED_X)
+		data_integrity_test_results = {**not_empty_test_results, **metadata_present_test_results}
+		all_tests_result_status = "True"
+		all_tests_result = GREEN_CHECKMARK
+		for file_name, result in data_integrity_test_results.items():
+			if RED_X in result:
+				all_tests_result_status = "False"
+				all_tests_result = RED_X
+				break
+
+		# Generate report
+		generate_markdown_report(
+			formatted_time,
+			args.staging,
+			team,
+			args.source,
+			dataset,
+			args.workflow_name,
+			file_results,
+			not_empty_test_results,
+			metadata_present_test_results,
+			all_tests_result_status,
+			all_tests_result
+		)
+
+		# Try syncing staging data to production
+		if all_tests_result_status == "True":
+			raw_bucket = f"gs://asap-raw-{team}-{args.source}-{dataset}"
+			staging_bucket = f"gs://asap-{args.staging}-{team}-{args.source}-{dataset}"
+			production_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}"
+
+			staging_metadata_path = f"{staging_bucket}/{args.workflow_name}/metadata/{formatted_time}"
+			combined_manifest_df.to_csv(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", index=False)
+
+			cohort = "cohort" in team
+
+			if dry_run:
+				logging.info(f"Would copy {team}_{args.source}_{dataset}_MANIFEST.tsv to {staging_bucket}/{args.workflow_name}/metadata/{formatted_time}/MANIFEST.tsv")
+				logging.info(f"Would copy {team}_{args.source}_{dataset}_data_promotion_report.md to {staging_bucket}/{args.workflow_name}/metadata/{formatted_time}/data_promotion_report.md")
+				logging.info(f"Would remove internal-qc-data label from [{raw_bucket}]")
+				if not cohort:
+					logging.info(f"Would grant storage.objectViewer permission to asap-cloud-readers@verily-bvdp.com on [{raw_bucket}]")
+			else:
+				logging.info(f"Uploading combined manifest and report for [{team}-{args.source}-{dataset}]")
+				gmove(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", f"{staging_metadata_path}/MANIFEST.tsv")
+				gmove(f"{team}_{args.source}_{dataset}_data_promotion_report.md", f"{staging_metadata_path}/data_promotion_report.md")
+				logging.info(f"Removing internal-qc-data label from [{raw_bucket}]")
+				remove_internal_qc_label(raw_bucket)
+				if not cohort:
+					logging.info(f"Granting storage.objectViewer permission to asap-cloud-readers@verily-bvdp.com on [{raw_bucket}]")
+					add_verily_read_access(remove_internal_qc_label)
+
+			logging.info(f"Promoting [{team}-{args.source}-{dataset}] data to production")
+			logging.info(f"\tStaging bucket:\t\t[{staging_bucket}]")
+			logging.info(f"\tProduction bucket:\t[{production_bucket}]")
+
+			gsync(staging_bucket, production_bucket, dry_run)
+		else:
+			logging.error(f"Data cannot be promoted for [{team}-{args.source}-{dataset}]; exiting")
+			sys.exit(1)
 
 
 if __name__ == "__main__":
@@ -56,14 +155,7 @@ if __name__ == "__main__":
 		type=str,
 		nargs='+',
 		required=True,
-		help="Space-separated set of teams to promote data for."
-	)
-	parser.add_argument(
-		"-a",
-		"--all",
-		action="store_true",
-		required=False,
-		help="Promote all teams' data."
+		help="Space-delimited team(s) to promote data for."
 	)
 	parser.add_argument(
 		"-l",
@@ -81,10 +173,18 @@ if __name__ == "__main__":
 	)
 	parser.add_argument(
 		"-d",
-		"--dataset",
+		"--datasets",
+		type=str,
+		nargs='+',
+		required=True,
+		help="Space-delimited dataset name(s) in team bucket name, must follow the same order as {team}."
+	)
+	parser.add_argument(
+		"-w",
+		"--workflow-name",
 		type=str,
 		required=True,
-		help="Dataset name in team bucket name."
+		help="Workflow name used as a directory in bucket."
 	)
 	parser.add_argument(
 		"-p",
@@ -94,7 +194,7 @@ if __name__ == "__main__":
 		help="Promote data (default is dry run)."
 	)
 	parser.add_argument(
-		"-s",
+		"-e",
 		"--staging",
 		choices=["uat", "dev"],
 		default="uat",
@@ -103,4 +203,8 @@ if __name__ == "__main__":
 	)
 
 	args = parser.parse_args()
+
+	if len(args.teams) != len(args.datasets):
+		parser.error("The number of teams and datasets must be the same.")
+
 	main(args)

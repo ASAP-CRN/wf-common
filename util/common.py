@@ -1,21 +1,136 @@
 #!/usr/bin/env python3
 
+import logging
 import subprocess
+import pandas as pd
+from io import StringIO
 from google.cloud import storage
 
+
+#######################################
+##### DATA INTEGRITY TEST SECTION #####
+#######################################
 def list_teams():
-	print("Available teams:")
+	logging.info("Available teams:")
 	for team in ALL_TEAMS:
-		print(team)
+		logging.info(team)
 
-def list_gs_files(bucket_name, prefix=""):
-	client = storage.Client()
-	bucket = client.get_bucket(bucket_name)
-	blobs = bucket.list_blobs(prefix=prefix)
-	gs_files = [f"gs://{bucket_name}/{blob.name}" for blob in blobs]
-	return gs_files
 
-def 
+def list_gs_files(bucket, workflow_name):
+	blobs = bucket.list_blobs(prefix=workflow_name)
+	blob_names = []
+	gs_files = []
+	sample_list_loc = []
+	for blob in blobs:
+		blob_names.append(blob.name)
+		gs_files.append(f"gs://{bucket.name}/{blob.name}")
+		if blob.name.endswith("sample_list.tsv"):
+			sample_list_loc.append(f"gs://{bucket.name}/{blob.name}")
+	return blob_names, gs_files, sample_list_loc
+
+
+def read_manifest_files(bucket, workflow_name):
+	blobs = bucket.list_blobs(prefix=workflow_name) # This has to be called again because 'Iterator has already started'
+	manifest_dfs = []
+	for blob in blobs:
+		if blob.name.endswith("MANIFEST.tsv"):
+			content = blob.download_as_text()
+			manifest_df = pd.read_csv(StringIO(content), sep="\t")
+			manifest_dfs.append(manifest_df)
+	combined_df = pd.concat(manifest_dfs, ignore_index=True)
+	return combined_df
+
+
+def md5_check(bucket, workflow_name):
+	blobs = bucket.list_blobs(prefix=workflow_name)
+	hashes = {}
+	for blob in blobs:
+		hashes[blob] = blob.md5_hash
+	return hashes
+
+
+def non_empty_check(bucket, workflow_name, GREEN_CHECKMARK, RED_X):
+	blobs = bucket.list_blobs(prefix=workflow_name)
+	not_empty_tests = {}
+	for blob in blobs:
+		if blob.size <= 10:
+			logging.error(f"Found a file less than or equal to 10 bytes: [{blob.name}]")
+			not_empty_tests[blob.name] = f"{RED_X}"
+		else:
+			not_empty_tests[blob.name] = f"{GREEN_CHECKMARK}"
+	return not_empty_tests
+
+
+def associated_metadata_check(combined_manifest_df, blob_list, GREEN_CHECKMARK, RED_X):
+	metadata_present_tests = {}
+	for file in blob_list:
+		if file.endswith("MANIFEST.tsv"):
+			metadata_present_tests[file] = "N/A"
+		else:
+			if any(file.split('/')[-1] in filename for filename in combined_manifest_df["filename"].tolist()):
+				metadata_present_tests[file] = f"{GREEN_CHECKMARK}"
+			else:
+				logging.error(f"File does not have associated metadata and is absent from MANIFEST: [{file}]")
+				metadata_present_tests[file] = f"{RED_X}"
+	return metadata_present_tests
+
+
+###########################################
+##### COMPARE STAGING TO PROD SECTION #####
+###########################################
+def compare_blob_names(results, staging):
+	staging_blob_names = results[staging]["blob_names"]
+	curated_blob_names = results["curated"]["blob_names"]
+	staging_md5_hashes = results[staging]["md5_hashes"]
+	staging_bucket_name = next(iter(staging_md5_hashes)).bucket.name
+	if sorted(staging_blob_names) == sorted(curated_blob_names):
+		logging.info(f"The blob_names in '{staging}' are equal to those in 'curated.")
+	else:
+		logging.info(f"The blob_names in '{staging}' are not equal to those in 'curated'")
+		same_files = [file for file in staging_blob_names if file in curated_blob_names]
+		new_files = [f"gs://{staging_bucket_name}/{file}" for file in staging_blob_names if file not in curated_blob_names]
+		deleted_files = [f"gs://{staging_bucket_name}/{file}" for file in curated_blob_names if file not in staging_blob_names]
+		if new_files:
+			logging.info(f"New files in '{staging}': {new_files}")
+		if deleted_files:
+			logging.info(f"Deleted files in '{staging}': {deleted_files}")
+	return same_files, new_files, deleted_files
+
+
+def compare_md5_hashes(results, staging, same_files):
+	staging_md5_hashes = results[staging]["md5_hashes"]
+	curated_md5_hashes = results["curated"]["md5_hashes"]
+	staging_bucket_name = next(iter(staging_md5_hashes)).bucket.name
+	staging_file_hashes = {key.name: value for key, value in staging_md5_hashes.items()}
+	curated_file_hashes = {key.name: value for key, value in curated_md5_hashes.items()}
+	modified_files = {}
+	for file in same_files:
+		staging_hash = staging_file_hashes.get(file)
+		curated_hash = curated_file_hashes.get(file)
+		if staging_hash and curated_hash:
+			if staging_hash != curated_hash:
+				modified_files[f"gs://{staging_bucket_name}/{file}"] = {
+					"staging_hash": staging_hash
+				}
+				logging.info(f"Modified: {file}")
+	return modified_files
+
+
+###########################################
+##### PROMOTE STAGING TO PROD SECTION #####
+###########################################
+def gmove(source_path, destination_path):
+	command = [
+		"gsutil",
+		"-m",
+		"mv",
+		source_path,
+		destination_path
+	]
+	result = subprocess.run(command, check=True, capture_output=True, text=True)
+	logging.info(result.stdout)
+	logging.error(result.stderr)
+
 
 def gsync(source_path, destination_path, dry_run):
 	dry_run_arg = "-n" if dry_run else ""
@@ -29,4 +144,37 @@ def gsync(source_path, destination_path, dry_run):
 		source_path,
 		destination_path
 	]
-	subprocess.run(command, check=True)
+	result = subprocess.run(command, check=True, capture_output=True, text=True)
+	logging.info(result.stdout)
+	logging.error(result.stderr)
+
+
+def remove_internal_qc_label(bucket_name):
+	command = [
+		"gcloud",
+		"storage",
+		"buckets",
+		"update",
+		bucket_name,
+		"--remove-labels=internal-qc-data"
+	]
+	result = subprocess.run(command, check=True, capture_output=True, text=True)
+	logging.info(result.stdout)
+	logging.error(result.stderr)
+
+
+def add_verily_read_access(bucket_name):
+	command = [
+		"gcloud",
+		"storage",
+		"buckets",
+		"add-iam-policy-binding",
+		bucket_name,
+		"--member=group:asap-cloud-readers@verily-bvdp.com",
+		"--role=roles/storage.objectViewer",
+		"--project",
+		"dnastack-asap-parkinsons"
+	]
+	result = subprocess.run(command, check=True, capture_output=True, text=True)
+	logging.info(result.stdout)
+	logging.error(result.stderr)
