@@ -11,7 +11,8 @@ struct Sample {
 }
 
 struct Project {
-	String project_id
+	String team_id
+	String dataset_id
 	Array[Sample] samples
 
 	File? project_sample_metadata_csv
