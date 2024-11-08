@@ -2,7 +2,7 @@ version 1.0
 
 task multiqc {
 	input {
-		String project_id
+		String team_id
 		Array[File] output_files
 
 		String output_name
@@ -28,7 +28,7 @@ task multiqc {
 		done < ~{write_lines(output_files)}
 
 		multiqc . \
-			--filename ~{project_id}.~{output_name} \
+			--filename ~{team_id}.~{output_name} \
 			--flat \
 			--zip-data-dir
 
@@ -36,13 +36,13 @@ task multiqc {
 			-b ~{billing_project} \
 			-d ~{raw_data_path} \
 			-i ~{write_tsv(workflow_info)} \
-			-o "~{project_id}.~{output_name}.html" \
-			-o "~{project_id}.~{output_name}_data.zip"
+			-o "~{team_id}.~{output_name}.html" \
+			-o "~{team_id}.~{output_name}_data.zip"
 	>>>
 
 	output {
-		String multiqc_report_html =  "~{raw_data_path}/~{project_id}.~{output_name}.html"
-		String multiqc_data_zip =  "~{raw_data_path}/~{project_id}.~{output_name}_data.zip"
+		String multiqc_report_html =  "~{raw_data_path}/~{team_id}.~{output_name}.html"
+		String multiqc_data_zip =  "~{raw_data_path}/~{team_id}.~{output_name}_data.zip"
 	}
 
 	runtime {
