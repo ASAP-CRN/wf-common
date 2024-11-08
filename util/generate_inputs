@@ -32,7 +32,8 @@ def main(args):
             if project_embargo_status[0] is True:
                 cohort_staging_bucket_type = "dev"
         for index, row in project_df.iterrows():
-            project_id = row.project_id
+            team_id = row.team_id
+            dataset_id = row.ASAP_dataset_id
             sample_id = row.ASAP_sample_id
             batch = str(row.batch)
             fastq_R1s = literal_eval(row.fastq_R1s)
@@ -54,24 +55,25 @@ def main(args):
             if not pd.isna(batch):
                 sample["batch"] = batch
 
-            if project_id not in projects:
+            if team_id not in projects:
                 staging_data_buckets = [
-                    f"gs://asap-{staging_bucket_type}-{project_id}-{source}-{team_dataset}"
+                    f"gs://asap-{staging_bucket_type}-{team_id}-{source}-{team_dataset}"
                     for staging_bucket_type in staging_bucket_types
                 ]
 
-                projects[project_id] = {
-                    "project_id": project_id,
+                projects[team_id] = {
+                    "team_id": team_id,
+                    "dataset_id": dataset_id,
                     "samples": [sample],
                     "run_project_cohort_analysis": run_project_cohort_analysis,
-                    "raw_data_bucket": f"gs://asap-raw-{project_id}-{source}-{team_dataset}",
+                    "raw_data_bucket": f"gs://asap-raw-{team_id}-{source}-{team_dataset}",
                     "staging_data_buckets": staging_data_buckets,
                 }
 
                 if args.workflow_name == "pmdbs_bulk_rnaseq":
-                    projects[project_id]["project_sample_metadata_csv"] = f"gs://asap-raw-{project_id}-{source}-{team_dataset}/metadata/SAMPLE.csv"
+                    projects[team_id]["project_sample_metadata_csv"] = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/metadata/SAMPLE.csv"
             else:
-                projects[project_id]["samples"].append(sample)
+                projects[team_id]["samples"].append(sample)
 
     projects = [project for project in projects.values()]
 
@@ -119,7 +121,7 @@ if __name__ == "__main__":
         type=str,
         action="append",
         required=True,
-        help="Project TSV including information for samples present in the project; columns project_id, sample_id, batch, fastq_path. Can provide one per project, or include all samples in a single TSV.",
+        help="Project TSV including information for samples present in the project; columns team_id, sample_id, batch, fastq_path. Can provide one per project, or include all samples in a single TSV.",
     )
     parser.add_argument(
         "-i",
