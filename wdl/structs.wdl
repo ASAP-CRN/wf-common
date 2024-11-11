@@ -16,6 +16,7 @@ struct Project {
 	Array[Sample] samples
 
 	File? project_sample_metadata_csv
+	File? project_condition_metadata_csv
 
 	Boolean run_project_cohort_analysis
 
