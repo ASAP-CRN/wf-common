@@ -72,6 +72,7 @@ def main(args):
 
                 if args.workflow_name == "pmdbs_bulk_rnaseq":
                     projects[team_id]["project_sample_metadata_csv"] = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/metadata/SAMPLE.csv"
+                    projects[team_id]["project_condition_metadata_csv"] = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/metadata/CONDITION.csv"
             else:
                 projects[team_id]["samples"].append(sample)
 
