@@ -1,10 +1,10 @@
 module_order:
   - fastqc:
-        name: "FastQC (raw)"
-        anchor: "fastqc_raw"
-        path_filters:
-          - "*_R[12]_001_fastqc.zip"
-          - "*_R[12]_fastqc.zip"
+      name: "FastQC (raw)"
+      anchor: "fastqc_raw"
+      path_filters:
+        - "*_R[12]_001_fastqc.zip"
+        - "*_R[12]_fastqc.zip"
   - fastqc:
       name: "FastQC (trimmed)"
       anchor: "fastqc_trimmed"
