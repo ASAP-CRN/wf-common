@@ -18,4 +18,3 @@ module_order:
 report_section_order:
   fastqc_trimmed:
     before: fastqc_raw
-
