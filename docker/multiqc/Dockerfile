@@ -49,3 +49,4 @@ RUN ln -s /opt/Python-${PYTHON3_VERSION}/python /opt/Python-${PYTHON3_VERSION}/p
 COPY ./requirements.txt /opt/requirements.txt
 RUN python3 -m pip install -r /opt/requirements.txt
 
+COPY .multiqc_config.yaml ~/.multiqc_config.yaml
