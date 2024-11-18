@@ -29,7 +29,6 @@ task multiqc {
 
 		multiqc . \
 			--filename ~{team_id}.~{output_name} \
-			--flat \
 			--zip-data-dir
 
 		upload_outputs \
