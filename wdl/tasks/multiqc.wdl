@@ -14,9 +14,9 @@ task multiqc {
 		String zones
 	}
 
-	Int threads = 2
+	Int threads = 4
 	Int mem_gb = ceil(threads * 2)
-	Int disk_size = ceil(size(output_files, "GB") * 2 + 20)
+	Int disk_size = ceil(size(output_files, "GB") * 2 + 50)
 
 	command <<<
 		set -euo pipefail
