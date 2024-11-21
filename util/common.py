@@ -7,6 +7,45 @@ from io import StringIO
 from google.cloud import storage
 
 
+###########################################################################
+##### PROMOTE CURATED METADTA AND ARTIFACTS - STAGING TO PROD SECTION #####
+###########################################################################
+release_unembargoed_team_buckets = [
+	# Human PMDBS Single Cell RNAseq
+	"gs://asap-dev-team-hafler-pmdbs-sn-rnaseq-pfc",
+	"gs://asap-dev-team-hardy-pmdbs-sn-rnaseq",
+	"gs://asap-dev-team-sulzer-pmdbs-sn-rnaseq",
+	"gs://asap-dev-team-scherzer-pmdbs-sn-rnaseq-mtg",
+	"gs://asap-dev-team-jakobsson-pmdbs-sn-rnaseq",
+	"gs://asap-dev-team-lee-pmdbs-sn-rnaseq",
+	"gs://asap-dev-cohort-pmdbs-sc-rnaseq",
+	# Human PMDBS Bulk RNAseq
+	"gs://asap-dev-team-hardy-pmdbs-bulk-rnaseq",
+	"gs://asap-dev-team-lee-pmdbs-bulk-rnaseq-mfg",
+	"gs://asap-dev-team-wood-pmdbs-bulk-rnaseq",
+	"gs://asap-dev-cohort-pmdbs-bulk-rnaseq",
+	# Single-nucleus RNAseq hybsel
+	"gs://asap-dev-team-scherzer-pmdbs-sn-rnaseq-mtg-hybsel",
+]
+
+release_embargoed_team_buckets = [
+]
+
+def list_buckets(source_path, destination_path):
+	command = [
+		"gcloud",
+		"storage",
+		"buckets",
+		"list",
+		"--format=\"value(name)\"",
+		"--project",
+		"dnastack-asap-parkinsons"
+	]
+	result = subprocess.run(command, check=True, capture_output=True, text=True)
+	logging.info(result.stdout)
+	logging.error(result.stderr)
+
+
 #######################################
 ##### DATA INTEGRITY TEST SECTION #####
 #######################################
@@ -116,9 +155,9 @@ def compare_md5_hashes(results, staging, same_files):
 	return modified_files
 
 
-###########################################
-##### PROMOTE STAGING TO PROD SECTION #####
-###########################################
+##############################################################
+##### PROMOTE WORKFLOW OUTPUTS - STAGING TO PROD SECTION #####
+##############################################################
 def gmove(source_path, destination_path):
 	command = [
 		"gsutil",
