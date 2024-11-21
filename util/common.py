@@ -61,6 +61,7 @@ def list_gs_files(bucket, workflow_name):
 	gs_files = []
 	sample_list_loc = []
 	for blob in blobs:
+		# TODO - exclude metadata and artifacts folders
 		blob_names.append(blob.name)
 		gs_files.append(f"gs://{bucket.name}/{blob.name}")
 		if blob.name.endswith("sample_list.tsv"):
