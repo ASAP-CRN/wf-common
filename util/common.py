@@ -47,7 +47,7 @@ def list_dirs(bucket_name):
 	]
 	result = subprocess.run(command, check=True, capture_output=True, text=True)
 	logging.info(result.stdout)
-	logging.error(result.stderr)
+	return result.stdout
 
 
 #######################################
