@@ -18,12 +18,12 @@ release_unembargoed_team_buckets = [
 	"gs://asap-dev-team-scherzer-pmdbs-sn-rnaseq-mtg",
 	"gs://asap-dev-team-jakobsson-pmdbs-sn-rnaseq",
 	"gs://asap-dev-team-lee-pmdbs-sn-rnaseq",
-	"gs://asap-dev-cohort-pmdbs-sc-rnaseq",
+	#"gs://asap-dev-cohort-pmdbs-sc-rnaseq",
 	# Human PMDBS Bulk RNAseq
 	"gs://asap-dev-team-hardy-pmdbs-bulk-rnaseq",
 	"gs://asap-dev-team-lee-pmdbs-bulk-rnaseq-mfg",
 	"gs://asap-dev-team-wood-pmdbs-bulk-rnaseq",
-	"gs://asap-dev-cohort-pmdbs-bulk-rnaseq",
+	#"gs://asap-dev-cohort-pmdbs-bulk-rnaseq",
 	# Single-nucleus RNAseq hybsel
 	"gs://asap-dev-team-scherzer-pmdbs-sn-rnaseq-mtg-hybsel",
 ]
@@ -31,15 +31,19 @@ release_unembargoed_team_buckets = [
 release_embargoed_team_buckets = [
 ]
 
-def list_buckets(source_path, destination_path):
+
+def list_buckets():
+	client = storage.Client(project="dnastack-asap-parkinsons")
+	buckets = client.list_buckets()
+	bucket_names = [bucket.name for bucket in buckets]
+	return bucket_names
+
+
+def list_dirs(bucket_name):
 	command = [
-		"gcloud",
-		"storage",
-		"buckets",
-		"list",
-		"--format=\"value(name)\"",
-		"--project",
-		"dnastack-asap-parkinsons"
+		"gsutil",
+		"ls",
+		bucket_name
 	]
 	result = subprocess.run(command, check=True, capture_output=True, text=True)
 	logging.info(result.stdout)
@@ -56,12 +60,11 @@ def list_teams():
 
 
 def list_gs_files(bucket, workflow_name):
-	blobs = bucket.list_blobs(prefix=workflow_name)
+	blobs = bucket.list_blobs(prefix=workflow_name) # This skips the metadata and artifacts directories
 	blob_names = []
 	gs_files = []
 	sample_list_loc = []
 	for blob in blobs:
-		# TODO - exclude metadata and artifacts folders
 		blob_names.append(blob.name)
 		gs_files.append(f"gs://{bucket.name}/{blob.name}")
 		if blob.name.endswith("sample_list.tsv"):
