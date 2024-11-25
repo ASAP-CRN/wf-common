@@ -7,6 +7,41 @@ from io import StringIO
 from google.cloud import storage
 
 
+###########################################################################
+##### PROMOTE CURATED METADTA AND ARTIFACTS - STAGING TO PROD SECTION #####
+###########################################################################
+unembargoed_team_dev_buckets = [
+	# Human PMDBS Single Cell RNAseq
+	"gs://asap-dev-team-hafler-pmdbs-sn-rnaseq-pfc",
+	"gs://asap-dev-team-hardy-pmdbs-sn-rnaseq",
+	"gs://asap-dev-team-scherzer-pmdbs-sn-rnaseq-mtg",
+	"gs://asap-dev-team-jakobsson-pmdbs-sn-rnaseq",
+	"gs://asap-dev-team-lee-pmdbs-sn-rnaseq",
+	#"gs://asap-dev-cohort-pmdbs-sc-rnaseq",
+	# Human PMDBS Bulk RNAseq
+	"gs://asap-dev-team-hardy-pmdbs-bulk-rnaseq",
+	"gs://asap-dev-team-lee-pmdbs-bulk-rnaseq-mfg",
+	"gs://asap-dev-team-wood-pmdbs-bulk-rnaseq", #TBD
+	#"gs://asap-dev-cohort-pmdbs-bulk-rnaseq",
+	# Single-nucleus RNAseq hybsel
+	"gs://asap-dev-team-scherzer-pmdbs-sn-rnaseq-mtg-hybsel",
+]
+
+embargoed_team_dev_buckets = [
+	"gs://asap-dev-team-sulzer-pmdbs-sn-rnaseq",
+]
+
+
+def list_dirs(bucket_name):
+	command = [
+		"gsutil",
+		"ls",
+		bucket_name
+	]
+	result = subprocess.run(command, check=True, capture_output=True, text=True)
+	return result.stdout
+
+
 #######################################
 ##### DATA INTEGRITY TEST SECTION #####
 #######################################
@@ -17,7 +52,7 @@ def list_teams():
 
 
 def list_gs_files(bucket, workflow_name):
-	blobs = bucket.list_blobs(prefix=workflow_name)
+	blobs = bucket.list_blobs(prefix=workflow_name) # This skips the metadata and artifacts directories
 	blob_names = []
 	gs_files = []
 	sample_list_loc = []
@@ -116,9 +151,9 @@ def compare_md5_hashes(results, staging, same_files):
 	return modified_files
 
 
-###########################################
-##### PROMOTE STAGING TO PROD SECTION #####
-###########################################
+##############################################################
+##### PROMOTE WORKFLOW OUTPUTS - STAGING TO PROD SECTION #####
+##############################################################
 def gmove(source_path, destination_path):
 	command = [
 		"gsutil",
