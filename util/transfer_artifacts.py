@@ -6,9 +6,8 @@ import logging
 import subprocess
 from google.cloud import storage
 from common import (
-	release_unembargoed_team_buckets,
-	release_embargoed_team_buckets,
-	list_buckets,
+	unembargoed_team_dev_buckets,
+	embargoed_team_dev_buckets,
 	list_dirs,
 )
 
@@ -38,39 +37,31 @@ def gsync_artifacts(source_path, destination_path, dry_run):
 
 
 def main(args):
-	buckets = list_buckets()
-	dev_buckets = [bucket for bucket in buckets if "asap-dev" in bucket]
-	gs_dev_buckets = []
-	for bucket in dev_buckets:
-		gs_dev_buckets.append(f"gs://{bucket}")
-
 	if args.list:
-		logging.info(f"\n" + "\n".join(gs_dev_buckets))
+		logging.info(f"Unembargoed team buckets:\n" + "\n".join(unembargoed_team_dev_buckets))
+		logging.info(f"Embargoed team buckets:\n" + "\n".join(embargoed_team_dev_buckets))
 		sys.exit(0)
 
+	all_team_dev_buckets = unembargoed_team_dev_buckets + embargoed_team_dev_buckets
 	dry_run = not args.promote
 
-	for dev_bucket in gs_dev_buckets:
-		dirs = list_dirs(dev_bucket)
+	for dev_bucket in all_team_dev_buckets:
 		raw_bucket = dev_bucket.replace("dev", "raw")
+		dirs = list_dirs(raw_bucket)
 		if "artifacts" in dirs:
-			if dev_bucket in release_unembargoed_team_buckets + release_embargoed_team_buckets:
-				logging.info(f"Promoting artifacts in raw to [{dev_bucket}]")
-				gsync_artifacts(f"{raw_bucket}/artifacts", f"{dev_bucket}/artifacts", dry_run)
-			elif dev_bucket in release_unembargoed_team_buckets:
+			logging.info(f"Promoting artifacts in raw to [{dev_bucket}]")
+			gsync_artifacts(f"{raw_bucket}/artifacts", f"{dev_bucket}/artifacts", dry_run)
+			if dev_bucket in unembargoed_team_dev_buckets:
 				uat_bucket = dev_bucket.replace("dev", "uat")
-				logging.info(f"Team dataset is lifted from internal QC. Promoting raw to [{uat_bucket}]")
-				gsync_metadata(f"{raw_bucket}/metadata/release", f"{uat_bucket}/metadata/release", dry_run)
+				logging.info(f"Team dataset is lifted from internal QC- also promoting artifacts in raw to [{uat_bucket}]")
 				gsync_artifacts(f"{raw_bucket}/artifacts", f"{uat_bucket}/artifacts", dry_run)
-			else:
-				logging.warning(f"Bucket is not in release_unembargoed_team_buckets or release_embargoed_team_buckets: [{dev_bucket}]")
 		else:
-			logging.info(f"Raw bucket does not have artifacts directory [{raw_bucket}]")
+			logging.info(f"Raw bucket does not have artifacts directory [{raw_bucket}]; skipping")
 
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(
-		description="Promote metadata and artifacts in raw buckets to staging."
+		description="Promote artifacts in raw buckets to staging."
 	)
 
 	parser.add_argument(
@@ -78,7 +69,7 @@ if __name__ == "__main__":
 		"--list",
 		action="store_true",
 		required=False,
-		help="List all dev buckets."
+		help="List current team dataset dev buckets."
 	)
 	parser.add_argument(
 		"-p",
