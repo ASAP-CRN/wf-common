@@ -19,7 +19,6 @@ logging.basicConfig(
 
 
 def gsync_artifacts(source_path, destination_path, dry_run):
-	dry_run_arg = "-n" if dry_run else ""
 	command = [
 		"gsutil",
 		"-m",
@@ -27,10 +26,11 @@ def gsync_artifacts(source_path, destination_path, dry_run):
 		"-r",
 		"-x",
 		"cellranger_counts|bam_files",
-		dry_run_arg,
 		source_path,
 		destination_path
 	]
+	if dry_run:
+		command.insert(4, "-n")
 	result = subprocess.run(command, check=True, capture_output=True, text=True)
 	logging.info(result.stdout)
 	logging.error(result.stderr)
