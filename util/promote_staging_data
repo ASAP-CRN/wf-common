@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timezone
 from google.cloud import storage
 from common import (
+	ALL_TEAMS,
 	list_teams,
 	list_gs_files,
 	read_manifest_files,
@@ -21,18 +22,6 @@ from markdown_generator import generate_markdown_report
 
 current_time_utc = datetime.now(timezone.utc)
 formatted_time = current_time_utc.strftime("%Y-%m-%dT%H-%M-%SZ")
-
-ALL_TEAMS = [
-	"cohort",
-	"team-hafler",
-	"team-hardy",
-	"team-jakobsson",
-	"team-lee",
-	"team-scherzer",
-	"team-sulzer",
-	"team-voet",
-	"team-wood"
-]
 
 GREEN_CHECKMARK = "✅"
 RED_X = "❌"
@@ -114,7 +103,7 @@ def main(args):
 			production_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}"
 
 			staging_metadata_path = f"{staging_bucket}/{args.workflow_name}/metadata/{formatted_time}"
-			combined_manifest_df.to_csv(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", index=False)
+			file_results[args.staging]["combined_manifest_df"].to_csv(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", index=False)
 
 			cohort = "cohort" in team
 

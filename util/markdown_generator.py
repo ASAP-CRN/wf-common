@@ -36,11 +36,11 @@ def generate_markdown_report(
 	staging_timestamps = "\n".join(f"- {item}" for item in staging_combined_manifest["timestamp"].unique())
 	production_timestamps = "\n".join(f"- {item}" for item in production_combined_manifest["timestamp"].unique())
 
-	staging_workflow_version = staging_combined_manifest["workflow_version"].unique()
-	production_workflow_version = production_combined_manifest["workflow_version"].unique()
+	staging_workflow_version = ", ".join(staging_combined_manifest["workflow_version"].unique())
+	production_workflow_version = ", ".join(production_combined_manifest["workflow_version"].unique())
 
-	staging_workflow_release = staging_combined_manifest["workflow_release"].unique()
-	production_workflow_release = production_combined_manifest["workflow_release"].unique()
+	staging_workflow_release = ", ".join(staging_combined_manifest["workflow_release"].unique())
+	#production_workflow_release = ", ".join(production_combined_manifest["workflow_release"].unique())
 
 	staging_sample_loc = file_info[staging]["sample_list_loc"][0]
 	production_sample_loc = file_info["curated"]["sample_list_loc"][0]
@@ -88,7 +88,7 @@ def generate_markdown_report(
 **Processing timestamp(s):**
 {production_timestamps}
 
-**Harmonized {workflow} workflow version:** [{production_workflow_version}]({production_workflow_release})
+**Harmonized {workflow} workflow version:** [{production_workflow_version}]
 
 **Sample set:** {production_sample_loc}
 

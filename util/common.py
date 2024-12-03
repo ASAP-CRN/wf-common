@@ -45,6 +45,18 @@ def list_dirs(bucket_name):
 #######################################
 ##### DATA INTEGRITY TEST SECTION #####
 #######################################
+ALL_TEAMS = [
+	"cohort",
+	"team-hafler",
+	"team-hardy",
+	"team-jakobsson",
+	"team-lee",
+	"team-scherzer",
+	"team-sulzer",
+	"team-voet",
+	"team-wood"
+]
+
 def list_teams():
 	logging.info("Available teams:")
 	for team in ALL_TEAMS:
