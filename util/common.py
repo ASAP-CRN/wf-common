@@ -21,7 +21,7 @@ unembargoed_team_dev_buckets = [
 	# Human PMDBS Bulk RNAseq
 	"gs://asap-dev-team-hardy-pmdbs-bulk-rnaseq",
 	"gs://asap-dev-team-lee-pmdbs-bulk-rnaseq-mfg",
-	"gs://asap-dev-team-wood-pmdbs-bulk-rnaseq", #TBD
+	"gs://asap-dev-team-wood-pmdbs-bulk-rnaseq",
 	#"gs://asap-dev-cohort-pmdbs-bulk-rnaseq",
 	# Single-nucleus RNAseq hybsel
 	"gs://asap-dev-team-scherzer-pmdbs-sn-rnaseq-mtg-hybsel",
