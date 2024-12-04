@@ -3,6 +3,7 @@
 import logging
 import subprocess
 import pandas as pd
+import re
 from io import StringIO
 from google.cloud import storage
 
@@ -79,8 +80,10 @@ def list_gs_files(bucket, workflow_name):
 def read_manifest_files(bucket, workflow_name):
 	blobs = bucket.list_blobs(prefix=workflow_name) # This has to be called again because 'Iterator has already started'
 	manifest_dfs = []
+	pattern = re.compile(rf"{workflow_name}/metadata/\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}-\d{{2}}-\d{{2}}Z/MANIFEST.tsv$")
 	for blob in blobs:
-		if blob.name.endswith("MANIFEST.tsv"):
+		print(blob.name)
+		if blob.name.endswith("MANIFEST.tsv") and not pattern.match(blob.name):
 			content = blob.download_as_text()
 			manifest_df = pd.read_csv(StringIO(content), sep="\t")
 			manifest_dfs.append(manifest_df)

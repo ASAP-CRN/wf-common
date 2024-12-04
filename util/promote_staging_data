@@ -68,6 +68,7 @@ def main(args):
 				"combined_manifest_df": combined_manifest_df,
 				"md5_hashes": md5_hashes,
 			}
+			print(f"For {env}: {combined_manifest_df}")
 
 		bucket = client.get_bucket(f"asap-{args.staging}-{team}-{args.source}-{dataset}")
 		not_empty_test_results = non_empty_check(bucket, args.workflow_name, GREEN_CHECKMARK, RED_X)
@@ -103,7 +104,7 @@ def main(args):
 			production_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}"
 
 			staging_metadata_path = f"{staging_bucket}/{args.workflow_name}/metadata/{formatted_time}"
-			file_results[args.staging]["combined_manifest_df"].to_csv(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", index=False)
+			file_results[args.staging]["combined_manifest_df"].to_csv(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", index=False, sep="\t")
 
 			cohort = "cohort" in team
 
@@ -121,7 +122,7 @@ def main(args):
 				remove_internal_qc_label(raw_bucket)
 				if not cohort:
 					logging.info(f"Granting storage.objectViewer permission to asap-cloud-readers@verily-bvdp.com on [{raw_bucket}]")
-					add_verily_read_access(remove_internal_qc_label)
+					add_verily_read_access(raw_bucket)
 
 			logging.info(f"Promoting [{team}-{args.source}-{dataset}] data to production")
 			logging.info(f"\tStaging bucket:\t\t[{staging_bucket}]")
