@@ -191,17 +191,17 @@ def gmove(source_path, destination_path):
 
 # This will also upload the past data promotion reports and combined MANIFEST.tsv's in {workflow_name}/metadata
 def gsync(source_path, destination_path, dry_run):
-	dry_run_arg = "-n" if dry_run else ""
 	command = [
 		"gsutil",
 		"-m",
 		"rsync",
 		"-d",
 		"-r",
-		dry_run_arg,
 		source_path,
 		destination_path
 	]
+	if dry_run:
+		command.insert(4, "-n")
 	result = subprocess.run(command, check=True, capture_output=True, text=True)
 	logging.info(result.stdout)
 	logging.error(result.stderr)
