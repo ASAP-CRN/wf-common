@@ -65,15 +65,17 @@ def list_teams():
 
 
 def list_gs_files(bucket, workflow_name):
-	blobs = bucket.list_blobs(prefix=workflow_name) # This skips the metadata and artifacts directories
+	blobs = bucket.list_blobs(prefix=workflow_name) # This skips the curated metadata and artifacts directories
 	blob_names = []
 	gs_files = []
 	sample_list_loc = []
+	pattern = re.compile(rf"{workflow_name}/metadata/\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}-\d{{2}}-\d{{2}}Z/")
 	for blob in blobs:
-		blob_names.append(blob.name)
-		gs_files.append(f"gs://{bucket.name}/{blob.name}")
-		if blob.name.endswith("sample_list.tsv"):
-			sample_list_loc.append(f"gs://{bucket.name}/{blob.name}")
+		if not pattern.match(blob.name):
+			blob_names.append(blob.name)
+			gs_files.append(f"gs://{bucket.name}/{blob.name}")
+			if blob.name.endswith("sample_list.tsv"):
+				sample_list_loc.append(f"gs://{bucket.name}/{blob.name}")
 	return blob_names, gs_files, sample_list_loc
 
 
@@ -82,7 +84,6 @@ def read_manifest_files(bucket, workflow_name):
 	manifest_dfs = []
 	pattern = re.compile(rf"{workflow_name}/metadata/\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}-\d{{2}}-\d{{2}}Z/MANIFEST.tsv$")
 	for blob in blobs:
-		print(blob.name)
 		if blob.name.endswith("MANIFEST.tsv") and not pattern.match(blob.name):
 			content = blob.download_as_text()
 			manifest_df = pd.read_csv(StringIO(content), sep="\t")
@@ -94,34 +95,40 @@ def read_manifest_files(bucket, workflow_name):
 def md5_check(bucket, workflow_name):
 	blobs = bucket.list_blobs(prefix=workflow_name)
 	hashes = {}
+	pattern = re.compile(rf"{workflow_name}/metadata/\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}-\d{{2}}-\d{{2}}Z/")
 	for blob in blobs:
-		hashes[blob] = blob.md5_hash
+		if not pattern.match(blob.name):
+			hashes[blob] = blob.md5_hash
 	return hashes
 
 
 def non_empty_check(bucket, workflow_name, GREEN_CHECKMARK, RED_X):
 	blobs = bucket.list_blobs(prefix=workflow_name)
 	not_empty_tests = {}
+	pattern = re.compile(rf"{workflow_name}/metadata/\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}-\d{{2}}-\d{{2}}Z/")
 	for blob in blobs:
-		if blob.size <= 10:
-			logging.error(f"Found a file less than or equal to 10 bytes: [{blob.name}]")
-			not_empty_tests[blob.name] = f"{RED_X}"
-		else:
-			not_empty_tests[blob.name] = f"{GREEN_CHECKMARK}"
+		if not pattern.match(blob.name):
+			if blob.size <= 10:
+				logging.error(f"Found a file less than or equal to 10 bytes: [{blob.name}]")
+				not_empty_tests[blob.name] = f"{RED_X}"
+			else:
+				not_empty_tests[blob.name] = f"{GREEN_CHECKMARK}"
 	return not_empty_tests
 
 
 def associated_metadata_check(combined_manifest_df, blob_list, GREEN_CHECKMARK, RED_X):
 	metadata_present_tests = {}
+	pattern = re.compile(rf"/metadata/\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}-\d{{2}}-\d{{2}}Z/")
 	for file in blob_list:
-		if file.endswith("MANIFEST.tsv"):
-			metadata_present_tests[file] = "N/A"
-		else:
-			if any(file.split('/')[-1] in filename for filename in combined_manifest_df["filename"].tolist()):
-				metadata_present_tests[file] = f"{GREEN_CHECKMARK}"
+		if not pattern.match(file):
+			if file.endswith("MANIFEST.tsv"):
+				metadata_present_tests[file] = "N/A"
 			else:
-				logging.error(f"File does not have associated metadata and is absent from MANIFEST: [{file}]")
-				metadata_present_tests[file] = f"{RED_X}"
+				if any(file.split('/')[-1] in filename for filename in combined_manifest_df["filename"].tolist()):
+					metadata_present_tests[file] = f"{GREEN_CHECKMARK}"
+				else:
+					logging.error(f"File does not have associated metadata and is absent from MANIFEST: [{file}]")
+					metadata_present_tests[file] = f"{RED_X}"
 	return metadata_present_tests
 
 
@@ -182,6 +189,7 @@ def gmove(source_path, destination_path):
 	logging.error(result.stderr)
 
 
+# This will also upload the past data promotion reports and combined MANIFEST.tsv's in {workflow_name}/metadata
 def gsync(source_path, destination_path, dry_run):
 	dry_run_arg = "-n" if dry_run else ""
 	command = [

@@ -68,7 +68,6 @@ def main(args):
 				"combined_manifest_df": combined_manifest_df,
 				"md5_hashes": md5_hashes,
 			}
-			print(f"For {env}: {combined_manifest_df}")
 
 		bucket = client.get_bucket(f"asap-{args.staging}-{team}-{args.source}-{dataset}")
 		not_empty_test_results = non_empty_check(bucket, args.workflow_name, GREEN_CHECKMARK, RED_X)
