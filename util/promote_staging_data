@@ -13,7 +13,7 @@ from common import (
 	md5_check,
 	non_empty_check,
 	associated_metadata_check,
-	gmove,
+	gcopy,
 	remove_internal_qc_label,
 	add_verily_read_access,
 	gsync,
@@ -115,8 +115,8 @@ def main(args):
 					logging.info(f"Would grant storage.objectViewer permission to asap-cloud-readers@verily-bvdp.com on [{raw_bucket}]")
 			else:
 				logging.info(f"Uploading combined manifest and report for [{team}-{args.source}-{dataset}]")
-				gmove(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", f"{staging_metadata_path}/MANIFEST.tsv")
-				gmove(f"{team}_{args.source}_{dataset}_data_promotion_report.md", f"{staging_metadata_path}/data_promotion_report.md")
+				gcopy(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", f"{staging_metadata_path}/MANIFEST.tsv")
+				gcopy(f"{team}_{args.source}_{dataset}_data_promotion_report.md", f"{staging_metadata_path}/data_promotion_report.md")
 				logging.info(f"Removing internal-qc-data label from [{raw_bucket}]")
 				remove_internal_qc_label(raw_bucket)
 				if not cohort:

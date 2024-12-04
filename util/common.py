@@ -118,17 +118,15 @@ def non_empty_check(bucket, workflow_name, GREEN_CHECKMARK, RED_X):
 
 def associated_metadata_check(combined_manifest_df, blob_list, GREEN_CHECKMARK, RED_X):
 	metadata_present_tests = {}
-	pattern = re.compile(rf"/metadata/\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}-\d{{2}}-\d{{2}}Z/")
 	for file in blob_list:
-		if not pattern.match(file):
-			if file.endswith("MANIFEST.tsv"):
-				metadata_present_tests[file] = "N/A"
+		if file.endswith("MANIFEST.tsv"):
+			metadata_present_tests[file] = "N/A"
+		else:
+			if any(file.split('/')[-1] in filename for filename in combined_manifest_df["filename"].tolist()):
+				metadata_present_tests[file] = f"{GREEN_CHECKMARK}"
 			else:
-				if any(file.split('/')[-1] in filename for filename in combined_manifest_df["filename"].tolist()):
-					metadata_present_tests[file] = f"{GREEN_CHECKMARK}"
-				else:
-					logging.error(f"File does not have associated metadata and is absent from MANIFEST: [{file}]")
-					metadata_present_tests[file] = f"{RED_X}"
+				logging.error(f"File does not have associated metadata and is absent from MANIFEST: [{file}]")
+				metadata_present_tests[file] = f"{RED_X}"
 	return metadata_present_tests
 
 
@@ -176,11 +174,11 @@ def compare_md5_hashes(results, staging, same_files):
 ##############################################################
 ##### PROMOTE WORKFLOW OUTPUTS - STAGING TO PROD SECTION #####
 ##############################################################
-def gmove(source_path, destination_path):
+def gcopy(source_path, destination_path):
 	command = [
 		"gsutil",
 		"-m",
-		"mv",
+		"cp",
 		source_path,
 		destination_path
 	]
@@ -217,8 +215,7 @@ def remove_internal_qc_label(bucket_name):
 		"--remove-labels=internal-qc-data"
 	]
 	result = subprocess.run(command, check=True, capture_output=True, text=True)
-	logging.info(result.stdout)
-	logging.error(result.stderr)
+	return result.stdout
 
 
 def add_verily_read_access(bucket_name):
