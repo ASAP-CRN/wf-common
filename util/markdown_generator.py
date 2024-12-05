@@ -31,36 +31,42 @@ def generate_markdown_report(
 	production_bucket = f"gs://asap-curated-{team}-{source}-{dataset}"
 
 	staging_combined_manifest = file_info[staging]["combined_manifest_df"]
-	production_combined_manifest = file_info["curated"]["combined_manifest_df"]
-
 	staging_timestamps = "\n".join(f"- {item}" for item in staging_combined_manifest["timestamp"].unique())
-	production_timestamps = "\n".join(f"- {item}" for item in production_combined_manifest["timestamp"].unique())
-
 	staging_workflow_version = ", ".join(staging_combined_manifest["workflow_version"].unique())
-	production_workflow_version = ", ".join(production_combined_manifest["workflow_version"].unique())
-
 	staging_workflow_release = ", ".join(staging_combined_manifest["workflow_release"].unique())
-	#production_workflow_release = ", ".join(production_combined_manifest["workflow_release"].unique())
-
 	staging_sample_loc = file_info[staging]["sample_list_loc"][0]
-	production_sample_loc = file_info["curated"]["sample_list_loc"][0]
 
-	# Compare different envs
-	same_files, new_files, deleted_files = compare_blob_names(file_info, staging)
-	new_files_rows = "\n".join(f"| {filename} |" for filename in new_files)
-	deleted_files_rows = "\n".join(f"| {filename} |" for filename in deleted_files)
-	modified_files = compare_md5_hashes(file_info, staging, same_files)
-	if same_files == ["N/A"]:
-		modified_files_rows = "| N/A | N/A |"
+	if "curated" in file_info:
+		production_combined_manifest = file_info["curated"]["combined_manifest_df"]
+		production_timestamps = "\n".join(f"- {item}" for item in production_combined_manifest["timestamp"].unique())
+		production_workflow_version = ", ".join(production_combined_manifest["workflow_version"].unique())
+		#production_workflow_release = ", ".join(production_combined_manifest["workflow_release"].unique())
+		production_sample_loc = file_info["curated"]["sample_list_loc"][0]
+
+		# Compare different envs
+		same_files, new_files, deleted_files = compare_blob_names(file_info, staging)
+		new_files_rows = "\n".join(f"| {filename} |" for filename in new_files)
+		deleted_files_rows = "\n".join(f"| {filename} |" for filename in deleted_files)
+		modified_files = compare_md5_hashes(file_info, staging, same_files)
+		if same_files == ["N/A"]:
+			modified_files_rows = "| N/A | N/A |"
+		else:
+			modified_files_rows = "\n".join(f"| {filename} | {info['staging_hash']} |" 
+									for filename, info in modified_files.items())
 	else:
-		modified_files_rows = "\n".join(f"| {filename} | {info['staging_hash']} |" 
-								for filename, info in modified_files.items())
+		production_timestamps = "N/A"
+		production_workflow_version = "N/A"
+		production_sample_loc = "N/A"
+
+		new_files_rows = "\n".join(f"| {filename} |" for filename in file_info[staging]["gs_files"])
+		deleted_files_rows = "| N/A |"
+		modified_files_rows = "| N/A | N/A |"
 
 	data_integrity_test_rows = "\n".join(
-		f"| {file} | {timestamp} | {not_empty_tests[file]} | {metadata_present_tests[file]} |"
-		for file in not_empty_tests
-	)
-
+			f"| {file} | {timestamp} | {not_empty_tests[file]} | {metadata_present_tests[file]} |"
+			for file in not_empty_tests
+		)
+	
 	previous_manifest_loc = get_combined_manifest_loc(f"{staging_bucket}/{workflow}/metadata/")
 	if previous_manifest_loc == "":
 		previous_manifest_loc = "N/A"

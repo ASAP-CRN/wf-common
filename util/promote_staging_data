@@ -8,6 +8,7 @@ from google.cloud import storage
 from common import (
 	ALL_TEAMS,
 	list_teams,
+	list_dirs,
 	list_gs_files,
 	read_manifest_files,
 	md5_check,
@@ -56,18 +57,21 @@ def main(args):
 			bucket_name = f"asap-{env}-{team}-{args.source}-{dataset}"
 			bucket = client.get_bucket(bucket_name)
 
-			# Data integrity tests
-			logging.info(f"Running data integrity tests on [{bucket_name}]")
-			blob_names, gs_files, sample_list_loc = list_gs_files(bucket, args.workflow_name)
-			combined_manifest_df = read_manifest_files(bucket, args.workflow_name)
-			md5_hashes = md5_check(bucket, args.workflow_name)
-			file_results[env] = {
-				"blob_names": blob_names,
-				"gs_files": gs_files,
-				"sample_list_loc": sample_list_loc,
-				"combined_manifest_df": combined_manifest_df,
-				"md5_hashes": md5_hashes,
-			}
+			gs_bucket = f"gs://asap-{env}-{team}-{args.source}-{dataset}"
+			dirs = list_dirs(f"gs://{bucket_name}")
+			if dirs:
+				# Data integrity tests
+				logging.info(f"Running data integrity tests on [{bucket_name}]")
+				blob_names, gs_files, sample_list_loc = list_gs_files(bucket, args.workflow_name)
+				combined_manifest_df = read_manifest_files(bucket, args.workflow_name)
+				md5_hashes = md5_check(bucket, args.workflow_name)
+				file_results[env] = {
+					"blob_names": blob_names,
+					"gs_files": gs_files,
+					"sample_list_loc": sample_list_loc,
+					"combined_manifest_df": combined_manifest_df,
+					"md5_hashes": md5_hashes,
+				}
 
 		bucket = client.get_bucket(f"asap-{args.staging}-{team}-{args.source}-{dataset}")
 		not_empty_test_results = non_empty_check(bucket, args.workflow_name, GREEN_CHECKMARK, RED_X)
