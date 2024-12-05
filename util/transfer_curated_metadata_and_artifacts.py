@@ -18,6 +18,22 @@ logging.basicConfig(
 )
 
 
+def gsync_metadata(source_path, destination_path, dry_run):
+	command = [
+		"gsutil",
+		"-m",
+		"rsync",
+		"-r",
+		source_path,
+		destination_path
+	]
+	if dry_run:
+		command.insert(4, "-n")
+	result = subprocess.run(command, check=True, capture_output=True, text=True)
+	logging.info(result.stdout)
+	logging.error(result.stderr)
+
+
 def gsync_artifacts(source_path, destination_path, dry_run):
 	command = [
 		"gsutil",
@@ -48,11 +64,20 @@ def main(args):
 	for dev_bucket in all_team_dev_buckets:
 		raw_bucket = dev_bucket.replace("dev", "raw")
 		dirs = list_dirs(raw_bucket)
+
+		# Metadata
+		logging.info(f"Promoting metadata/release in raw to [{dev_bucket}]")
+		gsync_metadata(f"{raw_bucket}/metadata/release", f"{dev_bucket}/metadata/release", dry_run)
+		if dev_bucket in unembargoed_team_dev_buckets:
+			uat_bucket = dev_bucket.replace("dev", "uat")
+			logging.info(f"Team dataset is lifted from internal QC- also promoting metadata/release in raw to [{uat_bucket}]")
+			gsync_metadata(f"{raw_bucket}/metadata/release", f"{uat_bucket}/metadata/release", dry_run)
+
+		# Artifacts
 		if "artifacts" in dirs:
 			logging.info(f"Promoting artifacts in raw to [{dev_bucket}]")
 			gsync_artifacts(f"{raw_bucket}/artifacts", f"{dev_bucket}/artifacts", dry_run)
 			if dev_bucket in unembargoed_team_dev_buckets:
-				uat_bucket = dev_bucket.replace("dev", "uat")
 				logging.info(f"Team dataset is lifted from internal QC- also promoting artifacts in raw to [{uat_bucket}]")
 				gsync_artifacts(f"{raw_bucket}/artifacts", f"{uat_bucket}/artifacts", dry_run)
 		else:
@@ -61,7 +86,7 @@ def main(args):
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(
-		description="Promote artifacts in raw buckets to staging."
+		description="Promote metadata/release and artifacts in raw buckets to staging."
 	)
 
 	parser.add_argument(
