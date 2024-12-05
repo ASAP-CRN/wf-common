@@ -47,11 +47,13 @@ def generate_markdown_report(
 
 	# Compare different envs
 	same_files, new_files, deleted_files = compare_blob_names(file_info, staging)
-	modified_files = compare_md5_hashes(file_info, staging, same_files)
-
 	new_files_rows = "\n".join(f"| {filename} |" for filename in new_files)
 	deleted_files_rows = "\n".join(f"| {filename} |" for filename in deleted_files)
-	modified_files_rows = "\n".join(f"| {filename} | {info['staging_hash']} |" 
+	modified_files = compare_md5_hashes(file_info, staging, same_files)
+	if same_files == ["N/A"]:
+		modified_files_rows = "| N/A | N/A |"
+	else:
+		modified_files_rows = "\n".join(f"| {filename} | {info['staging_hash']} |" 
 								for filename, info in modified_files.items())
 
 	data_integrity_test_rows = "\n".join(

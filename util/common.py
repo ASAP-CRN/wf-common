@@ -138,6 +138,9 @@ def compare_blob_names(results, staging):
 	curated_blob_names = results["curated"]["blob_names"]
 	staging_md5_hashes = results[staging]["md5_hashes"]
 	staging_bucket_name = next(iter(staging_md5_hashes)).bucket.name
+	same_files = ["N/A"]
+	new_files = ["N/A"]
+	deleted_files = ["N/A"]
 	if sorted(staging_blob_names) == sorted(curated_blob_names):
 		logging.info(f"The blob_names in '{staging}' are equal to those in 'curated.")
 	else:
