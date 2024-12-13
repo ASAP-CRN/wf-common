@@ -109,21 +109,21 @@ def main(args):
 			production_workflow_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}/{args.workflow_name}"
 			raw_workflow_execution_bucket = f"gs://asap-raw-{team}-{args.source}-{dataset}/workflow_execution/releases/{args.release_version}/{args.workflow_name}"
 
-			staging_metadata_path = f"{staging_bucket}/{args.workflow_name}/metadata/{formatted_time}"
+			staging_workflow_metadata_path = f"{staging_bucket}/{args.workflow_name}/workflow_metadata/{formatted_time}"
 			file_results[args.staging]["combined_manifest_df"].to_csv(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", index=False, sep="\t")
 
 			cohort = "cohort" in team
 
 			if dry_run:
-				logging.info(f"Would copy {team}_{args.source}_{dataset}_MANIFEST.tsv to {staging_bucket}/{args.workflow_name}/metadata/{formatted_time}/MANIFEST.tsv")
-				logging.info(f"Would copy {team}_{args.source}_{dataset}_data_promotion_report.md to {staging_bucket}/{args.workflow_name}/metadata/{formatted_time}/data_promotion_report.md")
+				logging.info(f"Would copy {team}_{args.source}_{dataset}_MANIFEST.tsv to {staging_bucket}/{args.workflow_name}/workflow_metadata/{formatted_time}/MANIFEST.tsv")
+				logging.info(f"Would copy {team}_{args.source}_{dataset}_data_promotion_report.md to {staging_bucket}/{args.workflow_name}/workflow_metadata/{formatted_time}/data_promotion_report.md")
 				logging.info(f"Would remove internal-qc-data label from [{raw_bucket}]")
 				if not cohort:
 					logging.info(f"Would grant storage.objectViewer permission to asap-cloud-readers@verily-bvdp.com on [{raw_bucket}]")
 			else:
 				logging.info(f"Uploading combined manifest and report for [{team}-{args.source}-{dataset}]")
-				gcopy(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", f"{staging_metadata_path}/MANIFEST.tsv")
-				gcopy(f"{team}_{args.source}_{dataset}_data_promotion_report.md", f"{staging_metadata_path}/data_promotion_report.md")
+				gcopy(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", f"{staging_workflow_metadata_path}/MANIFEST.tsv")
+				gcopy(f"{team}_{args.source}_{dataset}_data_promotion_report.md", f"{staging_workflow_metadata_path}/data_promotion_report.md")
 				logging.info(f"Removing internal-qc-data label from [{raw_bucket}]")
 				remove_internal_qc_label(raw_bucket)
 				if not cohort:
