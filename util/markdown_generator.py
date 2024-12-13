@@ -40,7 +40,7 @@ def generate_markdown_report(
 		production_combined_manifest = file_info["curated"]["combined_manifest_df"]
 		production_timestamps = "\n".join(f"- {item}" for item in production_combined_manifest["timestamp"].unique())
 		production_workflow_version = ", ".join(production_combined_manifest["workflow_version"].unique())
-		#production_workflow_release = ", ".join(production_combined_manifest["workflow_release"].unique())
+		production_workflow_release = ", ".join(production_combined_manifest["workflow_release"].unique())
 		production_sample_loc = file_info["curated"]["sample_list_loc"][0]
 
 		# Compare different envs
@@ -96,7 +96,7 @@ def generate_markdown_report(
 **Processing timestamp(s):**
 {production_timestamps}
 
-**Harmonized {workflow} workflow version:** [{production_workflow_version}]
+**Harmonized {workflow} workflow version:** [{production_workflow_version}]({production_workflow_release})
 
 **Sample set:** {production_sample_loc}
 
