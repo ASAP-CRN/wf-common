@@ -106,6 +106,9 @@ def main(args):
 			staging_bucket = f"gs://asap-{args.staging}-{team}-{args.source}-{dataset}"
 			production_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}"
 
+			production_workflow_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}/{args.workflow_name}"
+			raw_workflow_execution_bucket = f"gs://asap-raw-{team}-{args.source}-{dataset}/workflow_execution/releases/{args.release_version}/{args.workflow_name}"
+
 			staging_metadata_path = f"{staging_bucket}/{args.workflow_name}/metadata/{formatted_time}"
 			file_results[args.staging]["combined_manifest_df"].to_csv(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", index=False, sep="\t")
 
@@ -130,8 +133,12 @@ def main(args):
 			logging.info(f"Promoting [{team}-{args.source}-{dataset}] data to production")
 			logging.info(f"\tStaging bucket:\t\t[{staging_bucket}]")
 			logging.info(f"\tProduction bucket:\t[{production_bucket}]")
-
 			gsync(staging_bucket, production_bucket, dry_run)
+
+			logging.info(f"Saving [{args.release_version}] of [{team}-{args.source}-{dataset}] production data to raw workflow execution bucket")
+			logging.info(f"\tProduction bucket path:\t\t[{production_workflow_bucket}]")
+			logging.info(f"\tRaw workflow execution bucket:\t[{raw_workflow_execution_bucket}]")
+			gsync(production_workflow_bucket, raw_workflow_execution_bucket, dry_run)
 		else:
 			logging.error(f"Data cannot be promoted for [{team}-{args.source}-{dataset}]; exiting")
 			sys.exit(1)
@@ -193,6 +200,13 @@ if __name__ == "__main__":
 		default="uat",
 		required=False,
 		help="Staging bucket type (uat or dev) [uat]."
+	)
+	parser.add_argument(
+		"-r",
+		"--release-version",
+		type=str,
+		required=True,
+		help="Release version to store current curated outputs in raw workflow_execution bucket (e.g. v1.0.0)."
 	)
 
 	args = parser.parse_args()
