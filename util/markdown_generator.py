@@ -40,7 +40,7 @@ def generate_markdown_report(
 		production_combined_manifest = file_info["curated"]["combined_manifest_df"]
 		production_timestamps = "\n".join(f"- {item}" for item in production_combined_manifest["timestamp"].unique())
 		production_workflow_version = ", ".join(production_combined_manifest["workflow_version"].unique())
-		#production_workflow_release = ", ".join(production_combined_manifest["workflow_release"].unique())
+		production_workflow_release = ", ".join(production_combined_manifest["workflow_release"].unique())
 		production_sample_loc = file_info["curated"]["sample_list_loc"][0]
 
 		# Compare different envs
@@ -67,7 +67,7 @@ def generate_markdown_report(
 			for file in not_empty_tests
 		)
 	
-	previous_manifest_loc = get_combined_manifest_loc(f"{staging_bucket}/{workflow}/metadata/")
+	previous_manifest_loc = get_combined_manifest_loc(f"{staging_bucket}/{workflow}/workflow_metadata/")
 	if previous_manifest_loc == "":
 		previous_manifest_loc = "N/A"
 	else:
@@ -96,7 +96,7 @@ def generate_markdown_report(
 **Processing timestamp(s):**
 {production_timestamps}
 
-**Harmonized {workflow} workflow version:** [{production_workflow_version}]
+**Harmonized {workflow} workflow version:** [{production_workflow_version}]({production_workflow_release})
 
 **Sample set:** {production_sample_loc}
 
@@ -148,7 +148,7 @@ Individual data integrity test results for each file (a comprehensive variation 
 
 
 # Combined manifest file locations
-**New manifest:** {staging_bucket}/{workflow}/metadata/{timestamp}/MANIFEST.tsv
+**New manifest:** {staging_bucket}/{workflow}/workflow_metadata/{timestamp}/MANIFEST.tsv
 
 **Previous manifest:** {previous_manifest_loc}
 """
