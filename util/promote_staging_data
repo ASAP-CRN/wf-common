@@ -118,7 +118,7 @@ def main(args):
 			production_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}"
 
 			production_workflow_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}/{args.workflow_name}"
-			raw_workflow_execution_bucket = f"gs://asap-raw-{team}-{args.source}-{dataset}/workflow_execution/releases/{args.release_version}/{args.workflow_name}"
+			raw_workflow_execution_bucket = f"gs://asap-raw-{team}-{args.source}-{dataset}/workflow_execution/pipeline_version/{args.pipeline_version}/{args.workflow_name}"
 
 			dev_workflow_metadata_path = f"{staging_dev_bucket}/{args.workflow_name}/workflow_metadata/{formatted_time}"
 			uat_workflow_metadata_path = f"{staging_uat_bucket}/{args.workflow_name}/workflow_metadata/{formatted_time}"
@@ -149,7 +149,7 @@ def main(args):
 			logging.info(f"\tProduction bucket:\t[{production_bucket}]")
 			gsync(staging_uat_bucket, production_bucket, dry_run)
 
-			logging.info(f"Saving [{args.release_version}] of [{team}-{args.source}-{dataset}] production data to raw workflow execution bucket")
+			logging.info(f"Saving pipeline version [{args.pipeline_version}] of [{team}-{args.source}-{dataset}] production data to raw workflow execution bucket")
 			logging.info(f"\tProduction bucket path:\t\t[{production_workflow_bucket}]")
 			logging.info(f"\tRaw workflow execution bucket:\t[{raw_workflow_execution_bucket}]")
 			gsync(production_workflow_bucket, raw_workflow_execution_bucket, dry_run)
@@ -209,10 +209,10 @@ if __name__ == "__main__":
 	)
 	parser.add_argument(
 		"-r",
-		"--release-version",
+		"--pipeline-version",
 		type=str,
 		required=True,
-		help="Release version to store current curated outputs in raw workflow_execution bucket (e.g. v1.0.0)."
+		help="Pipeline version to store current curated outputs in raw workflow_execution bucket (e.g. v1.0.0)."
 	)
 
 	args = parser.parse_args()
