@@ -67,7 +67,7 @@ def generate_markdown_report(
 			for file in not_empty_tests
 		)
 	
-	previous_manifest_loc = get_combined_manifest_loc(f"{staging_bucket}/{workflow}/metadata/")
+	previous_manifest_loc = get_combined_manifest_loc(f"{staging_bucket}/{workflow}/workflow_metadata/")
 	if previous_manifest_loc == "":
 		previous_manifest_loc = "N/A"
 	else:
@@ -148,7 +148,7 @@ Individual data integrity test results for each file (a comprehensive variation 
 
 
 # Combined manifest file locations
-**New manifest:** {staging_bucket}/{workflow}/metadata/{timestamp}/MANIFEST.tsv
+**New manifest:** {staging_bucket}/{workflow}/workflow_metadata/{timestamp}/MANIFEST.tsv
 
 **Previous manifest:** {previous_manifest_loc}
 """
