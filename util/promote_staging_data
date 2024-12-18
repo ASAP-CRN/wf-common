@@ -6,13 +6,15 @@ import logging
 from datetime import datetime, timezone
 from google.cloud import storage
 from common import (
+	ALL_TEAMS,
 	list_teams,
+	list_dirs,
 	list_gs_files,
 	read_manifest_files,
 	md5_check,
 	non_empty_check,
 	associated_metadata_check,
-	gmove,
+	gcopy,
 	remove_internal_qc_label,
 	add_verily_read_access,
 	gsync,
@@ -21,18 +23,6 @@ from markdown_generator import generate_markdown_report
 
 current_time_utc = datetime.now(timezone.utc)
 formatted_time = current_time_utc.strftime("%Y-%m-%dT%H-%M-%SZ")
-
-ALL_TEAMS = [
-	"cohort",
-	"team-hafler",
-	"team-hardy",
-	"team-jakobsson",
-	"team-lee",
-	"team-scherzer",
-	"team-sulzer",
-	"team-voet",
-	"team-wood"
-]
 
 GREEN_CHECKMARK = "✅"
 RED_X = "❌"
@@ -58,7 +48,7 @@ def main(args):
 			sys.exit(1)
 
 	dry_run = not args.promote
-	namespaces = [args.staging, "curated"]
+	namespaces = ["uat", "curated"]
 	client = storage.Client()
 
 	for team, dataset in zip(args.teams, args.datasets):
@@ -67,22 +57,25 @@ def main(args):
 			bucket_name = f"asap-{env}-{team}-{args.source}-{dataset}"
 			bucket = client.get_bucket(bucket_name)
 
-			# Data integrity tests
-			logging.info(f"Running data integrity tests on [{bucket_name}]")
-			blob_names, gs_files, sample_list_loc = list_gs_files(bucket, args.workflow_name)
-			combined_manifest_df = read_manifest_files(bucket, args.workflow_name)
-			md5_hashes = md5_check(bucket, args.workflow_name)
-			file_results[env] = {
-				"blob_names": blob_names,
-				"gs_files": gs_files,
-				"sample_list_loc": sample_list_loc,
-				"combined_manifest_df": combined_manifest_df,
-				"md5_hashes": md5_hashes,
-			}
+			gs_bucket = f"gs://asap-{env}-{team}-{args.source}-{dataset}"
+			dirs = list_dirs(f"gs://{bucket_name}")
+			if dirs:
+				# Data integrity tests
+				logging.info(f"Running data integrity tests on [{bucket_name}]")
+				blob_names, gs_files, sample_list_loc = list_gs_files(bucket, args.workflow_name)
+				combined_manifest_df = read_manifest_files(bucket, args.workflow_name)
+				md5_hashes = md5_check(bucket, args.workflow_name)
+				file_results[env] = {
+					"blob_names": blob_names,
+					"gs_files": gs_files,
+					"sample_list_loc": sample_list_loc,
+					"combined_manifest_df": combined_manifest_df,
+					"md5_hashes": md5_hashes,
+				}
 
-		bucket = client.get_bucket(f"asap-{args.staging}-{team}-{args.source}-{dataset}")
+		bucket = client.get_bucket(f"asap-uat-{team}-{args.source}-{dataset}")
 		not_empty_test_results = non_empty_check(bucket, args.workflow_name, GREEN_CHECKMARK, RED_X)
-		metadata_present_test_results = associated_metadata_check(file_results[args.staging]["combined_manifest_df"], file_results[args.staging]["blob_names"], GREEN_CHECKMARK, RED_X)
+		metadata_present_test_results = associated_metadata_check(file_results["uat"]["combined_manifest_df"], file_results["uat"]["blob_names"], GREEN_CHECKMARK, RED_X)
 		data_integrity_test_results = {**not_empty_test_results, **metadata_present_test_results}
 		all_tests_result_status = "True"
 		all_tests_result = GREEN_CHECKMARK
@@ -95,7 +88,7 @@ def main(args):
 		# Generate report
 		generate_markdown_report(
 			formatted_time,
-			args.staging,
+			"uat",
 			team,
 			args.source,
 			dataset,
@@ -108,37 +101,58 @@ def main(args):
 		)
 
 		# Try syncing staging data to production
+		# --------------------------------------------------------------------------------------------------------
+		# DEV and UAT won't always mirror each other.
+		# If a team is embargoed, it'll not live in UAT, but for testing purposes, it could live in DEV.
+		# Steps:
+		# 1. DEV for unembargoed + embargoed teams
+		# 2. UAT for unembargoed teams
+		# 3. UAT -> PROD
+		# Therefore, only promote UAT to PROD.
+		# --------------------------------------------------------------------------------------------------------
+
 		if all_tests_result_status == "True":
 			raw_bucket = f"gs://asap-raw-{team}-{args.source}-{dataset}"
-			staging_bucket = f"gs://asap-{args.staging}-{team}-{args.source}-{dataset}"
+			staging_dev_bucket = f"gs://asap-dev-{team}-{args.source}-{dataset}"
+			staging_uat_bucket = f"gs://asap-uat-{team}-{args.source}-{dataset}"
 			production_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}"
 
-			staging_metadata_path = f"{staging_bucket}/{args.workflow_name}/metadata/{formatted_time}"
-			combined_manifest_df.to_csv(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", index=False)
+			production_workflow_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}/{args.workflow_name}"
+			raw_workflow_execution_bucket = f"gs://asap-raw-{team}-{args.source}-{dataset}/workflow_execution/pipeline_version/{args.pipeline_version}/{args.workflow_name}"
+
+			dev_workflow_metadata_path = f"{staging_dev_bucket}/{args.workflow_name}/workflow_metadata/{formatted_time}"
+			uat_workflow_metadata_path = f"{staging_uat_bucket}/{args.workflow_name}/workflow_metadata/{formatted_time}"
+			file_results["uat"]["combined_manifest_df"].to_csv(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", index=False, sep="\t")
 
 			cohort = "cohort" in team
 
 			if dry_run:
-				logging.info(f"Would copy {team}_{args.source}_{dataset}_MANIFEST.tsv to {staging_bucket}/{args.workflow_name}/metadata/{formatted_time}/MANIFEST.tsv")
-				logging.info(f"Would copy {team}_{args.source}_{dataset}_data_promotion_report.md to {staging_bucket}/{args.workflow_name}/metadata/{formatted_time}/data_promotion_report.md")
+				logging.info(f"Would copy {team}_{args.source}_{dataset}_MANIFEST.tsv to {staging_dev_bucket}/{args.workflow_name}/workflow_metadata/{formatted_time}/MANIFEST.tsv and {staging_uat_bucket}/{args.workflow_name}/workflow_metadata/{formatted_time}/MANIFEST.tsv")
+				logging.info(f"Would copy {team}_{args.source}_{dataset}_data_promotion_report.md to {staging_dev_bucket}/{args.workflow_name}/workflow_metadata/{formatted_time}/data_promotion_report.md and {staging_uat_bucket}/{args.workflow_name}/workflow_metadata/{formatted_time}/data_promotion_report.md")
 				logging.info(f"Would remove internal-qc-data label from [{raw_bucket}]")
 				if not cohort:
 					logging.info(f"Would grant storage.objectViewer permission to asap-cloud-readers@verily-bvdp.com on [{raw_bucket}]")
 			else:
 				logging.info(f"Uploading combined manifest and report for [{team}-{args.source}-{dataset}]")
-				gmove(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", f"{staging_metadata_path}/MANIFEST.tsv")
-				gmove(f"{team}_{args.source}_{dataset}_data_promotion_report.md", f"{staging_metadata_path}/data_promotion_report.md")
+				gcopy(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", f"{dev_workflow_metadata_path}/MANIFEST.tsv")
+				gcopy(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", f"{uat_workflow_metadata_path}/MANIFEST.tsv")
+				gcopy(f"{team}_{args.source}_{dataset}_data_promotion_report.md", f"{dev_workflow_metadata_path}/data_promotion_report.md")
+				gcopy(f"{team}_{args.source}_{dataset}_data_promotion_report.md", f"{uat_workflow_metadata_path}/data_promotion_report.md")
 				logging.info(f"Removing internal-qc-data label from [{raw_bucket}]")
 				remove_internal_qc_label(raw_bucket)
 				if not cohort:
 					logging.info(f"Granting storage.objectViewer permission to asap-cloud-readers@verily-bvdp.com on [{raw_bucket}]")
-					add_verily_read_access(remove_internal_qc_label)
+					add_verily_read_access(raw_bucket)
 
 			logging.info(f"Promoting [{team}-{args.source}-{dataset}] data to production")
-			logging.info(f"\tStaging bucket:\t\t[{staging_bucket}]")
+			logging.info(f"\tStaging bucket:\t\t[{staging_uat_bucket}]")
 			logging.info(f"\tProduction bucket:\t[{production_bucket}]")
+			gsync(staging_uat_bucket, production_bucket, dry_run)
 
-			gsync(staging_bucket, production_bucket, dry_run)
+			logging.info(f"Saving pipeline version [{args.pipeline_version}] of [{team}-{args.source}-{dataset}] production data to raw workflow execution bucket")
+			logging.info(f"\tProduction bucket path:\t\t[{production_workflow_bucket}]")
+			logging.info(f"\tRaw workflow execution bucket:\t[{raw_workflow_execution_bucket}]")
+			gsync(production_workflow_bucket, raw_workflow_execution_bucket, dry_run)
 		else:
 			logging.error(f"Data cannot be promoted for [{team}-{args.source}-{dataset}]; exiting")
 			sys.exit(1)
@@ -146,7 +160,7 @@ def main(args):
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(
-		description="Promote data in staging buckets to production."
+		description="Promote data in staging UAT buckets to production."
 	)
 
 	parser.add_argument(
@@ -194,12 +208,11 @@ if __name__ == "__main__":
 		help="Promote data (default is dry run)."
 	)
 	parser.add_argument(
-		"-e",
-		"--staging",
-		choices=["uat", "dev"],
-		default="uat",
-		required=False,
-		help="Staging bucket type (uat or dev) [uat]."
+		"-r",
+		"--pipeline-version",
+		type=str,
+		required=True,
+		help="Pipeline version to store current curated outputs in raw workflow_execution bucket (e.g. v1.0.0)."
 	)
 
 	args = parser.parse_args()

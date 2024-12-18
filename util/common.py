@@ -3,6 +3,7 @@
 import logging
 import subprocess
 import pandas as pd
+import re
 from io import StringIO
 from google.cloud import storage
 
@@ -21,7 +22,7 @@ unembargoed_team_dev_buckets = [
 	# Human PMDBS Bulk RNAseq
 	"gs://asap-dev-team-hardy-pmdbs-bulk-rnaseq",
 	"gs://asap-dev-team-lee-pmdbs-bulk-rnaseq-mfg",
-	"gs://asap-dev-team-wood-pmdbs-bulk-rnaseq", #TBD
+	"gs://asap-dev-team-wood-pmdbs-bulk-rnaseq",
 	#"gs://asap-dev-cohort-pmdbs-bulk-rnaseq",
 	# Single-nucleus RNAseq hybsel
 	"gs://asap-dev-team-scherzer-pmdbs-sn-rnaseq-mtg-hybsel",
@@ -45,6 +46,18 @@ def list_dirs(bucket_name):
 #######################################
 ##### DATA INTEGRITY TEST SECTION #####
 #######################################
+ALL_TEAMS = [
+	"cohort",
+	"team-hafler",
+	"team-hardy",
+	"team-jakobsson",
+	"team-lee",
+	"team-scherzer",
+	"team-sulzer",
+	"team-voet",
+	"team-wood"
+]
+
 def list_teams():
 	logging.info("Available teams:")
 	for team in ALL_TEAMS:
@@ -52,23 +65,26 @@ def list_teams():
 
 
 def list_gs_files(bucket, workflow_name):
-	blobs = bucket.list_blobs(prefix=workflow_name) # This skips the metadata and artifacts directories
+	blobs = bucket.list_blobs(prefix=workflow_name) # This skips the curated metadata and artifacts directories
 	blob_names = []
 	gs_files = []
 	sample_list_loc = []
+	pattern = re.compile(rf"{workflow_name}/workflow_metadata/\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}-\d{{2}}-\d{{2}}Z/")
 	for blob in blobs:
-		blob_names.append(blob.name)
-		gs_files.append(f"gs://{bucket.name}/{blob.name}")
-		if blob.name.endswith("sample_list.tsv"):
-			sample_list_loc.append(f"gs://{bucket.name}/{blob.name}")
+		if not pattern.match(blob.name):
+			blob_names.append(blob.name)
+			gs_files.append(f"gs://{bucket.name}/{blob.name}")
+			if blob.name.endswith("sample_list.tsv"):
+				sample_list_loc.append(f"gs://{bucket.name}/{blob.name}")
 	return blob_names, gs_files, sample_list_loc
 
 
 def read_manifest_files(bucket, workflow_name):
 	blobs = bucket.list_blobs(prefix=workflow_name) # This has to be called again because 'Iterator has already started'
 	manifest_dfs = []
+	pattern = re.compile(rf"{workflow_name}/workflow_metadata/\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}-\d{{2}}-\d{{2}}Z/MANIFEST.tsv$")
 	for blob in blobs:
-		if blob.name.endswith("MANIFEST.tsv"):
+		if blob.name.endswith("MANIFEST.tsv") and not pattern.match(blob.name):
 			content = blob.download_as_text()
 			manifest_df = pd.read_csv(StringIO(content), sep="\t")
 			manifest_dfs.append(manifest_df)
@@ -79,20 +95,24 @@ def read_manifest_files(bucket, workflow_name):
 def md5_check(bucket, workflow_name):
 	blobs = bucket.list_blobs(prefix=workflow_name)
 	hashes = {}
+	pattern = re.compile(rf"{workflow_name}/workflow_metadata/\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}-\d{{2}}-\d{{2}}Z/")
 	for blob in blobs:
-		hashes[blob] = blob.md5_hash
+		if not pattern.match(blob.name):
+			hashes[blob] = blob.md5_hash
 	return hashes
 
 
 def non_empty_check(bucket, workflow_name, GREEN_CHECKMARK, RED_X):
 	blobs = bucket.list_blobs(prefix=workflow_name)
 	not_empty_tests = {}
+	pattern = re.compile(rf"{workflow_name}/workflow_metadata/\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}-\d{{2}}-\d{{2}}Z/")
 	for blob in blobs:
-		if blob.size <= 10:
-			logging.error(f"Found a file less than or equal to 10 bytes: [{blob.name}]")
-			not_empty_tests[blob.name] = f"{RED_X}"
-		else:
-			not_empty_tests[blob.name] = f"{GREEN_CHECKMARK}"
+		if not pattern.match(blob.name):
+			if blob.size <= 10:
+				logging.error(f"Found a file less than or equal to 10 bytes: [{blob.name}]")
+				not_empty_tests[blob.name] = f"{RED_X}"
+			else:
+				not_empty_tests[blob.name] = f"{GREEN_CHECKMARK}"
 	return not_empty_tests
 
 
@@ -118,6 +138,9 @@ def compare_blob_names(results, staging):
 	curated_blob_names = results["curated"]["blob_names"]
 	staging_md5_hashes = results[staging]["md5_hashes"]
 	staging_bucket_name = next(iter(staging_md5_hashes)).bucket.name
+	same_files = ["N/A"]
+	new_files = ["N/A"]
+	deleted_files = ["N/A"]
 	if sorted(staging_blob_names) == sorted(curated_blob_names):
 		logging.info(f"The blob_names in '{staging}' are equal to those in 'curated.")
 	else:
@@ -154,11 +177,11 @@ def compare_md5_hashes(results, staging, same_files):
 ##############################################################
 ##### PROMOTE WORKFLOW OUTPUTS - STAGING TO PROD SECTION #####
 ##############################################################
-def gmove(source_path, destination_path):
+def gcopy(source_path, destination_path):
 	command = [
 		"gsutil",
 		"-m",
-		"mv",
+		"cp",
 		source_path,
 		destination_path
 	]
@@ -167,18 +190,19 @@ def gmove(source_path, destination_path):
 	logging.error(result.stderr)
 
 
+# This will also upload the past data promotion reports and combined MANIFEST.tsv's in {workflow_name}/workflow_metadata
 def gsync(source_path, destination_path, dry_run):
-	dry_run_arg = "-n" if dry_run else ""
 	command = [
 		"gsutil",
 		"-m",
 		"rsync",
 		"-d",
 		"-r",
-		dry_run_arg,
 		source_path,
 		destination_path
 	]
+	if dry_run:
+		command.insert(4, "-n")
 	result = subprocess.run(command, check=True, capture_output=True, text=True)
 	logging.info(result.stdout)
 	logging.error(result.stderr)
@@ -194,8 +218,7 @@ def remove_internal_qc_label(bucket_name):
 		"--remove-labels=internal-qc-data"
 	]
 	result = subprocess.run(command, check=True, capture_output=True, text=True)
-	logging.info(result.stdout)
-	logging.error(result.stderr)
+	return result.stdout
 
 
 def add_verily_read_access(bucket_name):
