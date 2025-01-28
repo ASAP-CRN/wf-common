@@ -118,17 +118,17 @@ def main(args):
 			production_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}"
 
 			production_workflow_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}/{args.workflow_name}"
-			raw_workflow_execution_bucket = f"gs://asap-raw-{team}-{args.source}-{dataset}/workflow_execution/pipeline_version/{args.pipeline_version}/{args.workflow_name}"
+			production_workflow_version_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}/{args.workflow_name}/archive/workflow_version/{args.workflow_version}"
 
-			dev_workflow_metadata_path = f"{staging_dev_bucket}/{args.workflow_name}/workflow_metadata/{formatted_time}"
-			uat_workflow_metadata_path = f"{staging_uat_bucket}/{args.workflow_name}/workflow_metadata/{formatted_time}"
+			dev_workflow_metadata_path = f"{staging_dev_bucket}/{args.workflow_name}/archive/workflow_metadata/{formatted_time}"
+			uat_workflow_metadata_path = f"{staging_uat_bucket}/{args.workflow_name}/archive/workflow_metadata/{formatted_time}"
 			file_results["uat"]["combined_manifest_df"].to_csv(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", index=False, sep="\t")
 
 			cohort = "cohort" in team
 
 			if dry_run:
-				logging.info(f"Would copy {team}_{args.source}_{dataset}_MANIFEST.tsv to {staging_dev_bucket}/{args.workflow_name}/workflow_metadata/{formatted_time}/MANIFEST.tsv and {staging_uat_bucket}/{args.workflow_name}/workflow_metadata/{formatted_time}/MANIFEST.tsv")
-				logging.info(f"Would copy {team}_{args.source}_{dataset}_data_promotion_report.md to {staging_dev_bucket}/{args.workflow_name}/workflow_metadata/{formatted_time}/data_promotion_report.md and {staging_uat_bucket}/{args.workflow_name}/workflow_metadata/{formatted_time}/data_promotion_report.md")
+				logging.info(f"Would copy {team}_{args.source}_{dataset}_MANIFEST.tsv to {dev_workflow_metadata_path}/MANIFEST.tsv and {uat_workflow_metadata_path}/MANIFEST.tsv")
+				logging.info(f"Would copy {team}_{args.source}_{dataset}_data_promotion_report.md to {dev_workflow_metadata_path}/data_promotion_report.md and {uat_workflow_metadata_path}/data_promotion_report.md")
 				logging.info(f"Would remove internal-qc-data label from [{raw_bucket}]")
 				if not cohort:
 					logging.info(f"Would grant storage.objectViewer permission to asap-cloud-readers@verily-bvdp.com on [{raw_bucket}]")
@@ -149,10 +149,10 @@ def main(args):
 			logging.info(f"\tProduction bucket:\t[{production_bucket}]")
 			gsync(staging_uat_bucket, production_bucket, dry_run)
 
-			logging.info(f"Saving pipeline version [{args.pipeline_version}] of [{team}-{args.source}-{dataset}] production data to raw workflow execution bucket")
+			logging.info(f"Saving workflow version [{args.workflow_version}] of [{team}-{args.source}-{dataset}] production data in archive folder")
 			logging.info(f"\tProduction bucket path:\t\t[{production_workflow_bucket}]")
-			logging.info(f"\tRaw workflow execution bucket:\t[{raw_workflow_execution_bucket}]")
-			gsync(production_workflow_bucket, raw_workflow_execution_bucket, dry_run)
+			logging.info(f"\tProduction archive/workflow_version bucket path:\t[{production_workflow_version_bucket}]")
+			gsync(production_workflow_bucket, production_workflow_version_bucket, dry_run)
 		else:
 			logging.error(f"Data cannot be promoted for [{team}-{args.source}-{dataset}]; exiting")
 			sys.exit(1)
@@ -209,10 +209,10 @@ if __name__ == "__main__":
 	)
 	parser.add_argument(
 		"-r",
-		"--pipeline-version",
+		"--workflow-version",
 		type=str,
 		required=True,
-		help="Pipeline version to store current curated outputs in raw workflow_execution bucket (e.g. v1.0.0)."
+		help="Workflow/pipeline version to store current curated outputs in raw workflow_execution bucket (e.g. v1.0.0)."
 	)
 
 	args = parser.parse_args()
