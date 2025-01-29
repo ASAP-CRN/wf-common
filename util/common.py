@@ -190,7 +190,7 @@ def gcopy(source_path, destination_path):
 	logging.error(result.stderr)
 
 
-# This will also upload the past data promotion reports and combined MANIFEST.tsv's in {workflow_name}/workflow_metadata
+# This will also upload the past data promotion reports and combined MANIFEST.tsv's in workflow_metadata folder
 def gsync(source_path, destination_path, dry_run):
 	command = [
 		"gsutil",
@@ -198,6 +198,8 @@ def gsync(source_path, destination_path, dry_run):
 		"rsync",
 		"-d",
 		"-r",
+		"-x",
+		"archive",
 		source_path,
 		destination_path
 	]
