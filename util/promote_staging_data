@@ -120,8 +120,8 @@ def main(args):
 			production_workflow_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}/{args.workflow_name}"
 			production_workflow_version_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}/{args.workflow_name}/archive/workflow_version/{args.workflow_version}"
 
-			dev_workflow_metadata_path = f"{staging_dev_bucket}/{args.workflow_name}/archive/workflow_metadata/{formatted_time}"
-			uat_workflow_metadata_path = f"{staging_uat_bucket}/{args.workflow_name}/archive/workflow_metadata/{formatted_time}"
+			dev_workflow_metadata_path = f"{staging_dev_bucket}/{args.workflow_name}/archive/workflow_version/{args.workflow_version}/workflow_metadata/{formatted_time}"
+			uat_workflow_metadata_path = f"{staging_uat_bucket}/{args.workflow_name}/archive/workflow_version/{args.workflow_version}/workflow_metadata/{formatted_time}"
 			file_results["uat"]["combined_manifest_df"].to_csv(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", index=False, sep="\t")
 
 			cohort = "cohort" in team
