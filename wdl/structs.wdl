@@ -10,6 +10,8 @@ struct Sample {
 	Array[File] fastq_I2s
 
 	File? visium_brightfield_image
+	String? visium_slide_serial_number
+	String? visium_capture_area
 }
 
 struct Project {
