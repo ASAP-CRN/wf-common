@@ -22,6 +22,9 @@ struct Project {
 	File? project_sample_metadata_csv
 	File? project_condition_metadata_csv
 
+	File? geomx_config_ini
+	File? geomx_lab_annotation_xlsx
+
 	Boolean run_project_cohort_analysis
 
 	String raw_data_bucket
