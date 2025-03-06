@@ -12,6 +12,8 @@ struct Sample {
 	File? visium_brightfield_image
 	String? visium_slide_serial_number
 	String? visium_capture_area
+
+	File? geomx_lab_annotation_xlsx
 }
 
 struct Project {
@@ -23,7 +25,6 @@ struct Project {
 	File? project_condition_metadata_csv
 
 	File? geomx_config_ini
-	File? geomx_lab_annotation_xlsx
 
 	Boolean run_project_cohort_analysis
 
