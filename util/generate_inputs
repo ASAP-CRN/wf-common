@@ -40,6 +40,9 @@ def main(args):
             fastq_R2s = literal_eval(row.fastq_R2s)
             fastq_I1s = literal_eval(row.fastq_I1s)
             fastq_I2s = literal_eval(row.fastq_I2s)
+            # TODO
+            # visium_slide_serial_number = row.visium_slide_serial_number
+            # visium_capture_area = row.visium_capture_area
 
             source = row.source
             team_dataset = row.dataset
@@ -54,6 +57,15 @@ def main(args):
 
             if not pd.isna(batch):
                 sample["batch"] = batch
+
+            if args.workflow_name == "pmdbs_spatial_geomx":
+                sample["geomx_lab_annotation_xlsx"] = "File"
+
+            # TODO
+            if args.workflow_name == "pmdbs_spatial_visium":
+                sample["visium_brightfield_image"] = "File"
+            #     sample["visium_slide_serial_number"] = visium_slide_serial_number
+            #     sample["visium_capture_area"] = visium_capture_area
 
             if team_id not in projects:
                 staging_data_buckets = [
