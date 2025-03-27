@@ -73,6 +73,9 @@ def main(args):
                 if args.workflow_name == "pmdbs_bulk_rnaseq":
                     projects[team_id]["project_sample_metadata_csv"] = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/metadata/SAMPLE.csv"
                     projects[team_id]["project_condition_metadata_csv"] = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/metadata/CONDITION.csv"
+
+                if args.workflow_name == "pmdbs_spatial_geomx":
+                    projects[team_id]["geomx_config_ini"] = "File"
             else:
                 projects[team_id]["samples"].append(sample)
 
@@ -94,6 +97,10 @@ def main(args):
 
         inputs_json[projects_key] = projects
 
+    cohort_raw_data_bucket = f"gs://asap-raw-cohort-{source}-{args.cohort_dataset}"
+    inputs_json[
+        f"{args.workflow_name}.cohort_raw_data_bucket"
+    ] = cohort_raw_data_bucket
     cohort_staging_data_buckets = [
         f"gs://asap-{cohort_staging_bucket_type}-cohort-{source}-{args.cohort_dataset}"
     ]
