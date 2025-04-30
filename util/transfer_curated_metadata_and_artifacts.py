@@ -6,6 +6,7 @@ import logging
 import subprocess
 from google.cloud import storage
 from common import (
+	platforming_raw_buckets,
 	unembargoed_team_dev_buckets,
 	embargoed_team_dev_buckets,
 	list_dirs,
@@ -54,6 +55,9 @@ def gsync_artifacts(source_path, destination_path, dry_run):
 
 def main(args):
 	if args.list:
+		logging.info("Urgent and Minor release or platforming exercise related info:")
+		logging.info(f"Unembargoed team buckets:\n" + "\n".join(platforming_raw_buckets))
+		logging.info("Major release related info:")
 		logging.info(f"Unembargoed team buckets:\n" + "\n".join(unembargoed_team_dev_buckets))
 		logging.info(f"Embargoed team buckets:\n" + "\n".join(embargoed_team_dev_buckets))
 		sys.exit(0)
@@ -61,32 +65,56 @@ def main(args):
 	all_team_dev_buckets = unembargoed_team_dev_buckets + embargoed_team_dev_buckets
 	dry_run = not args.promote
 
-	for dev_bucket in all_team_dev_buckets:
-		raw_bucket = dev_bucket.replace("dev", "raw")
-		dirs = list_dirs(raw_bucket)
+	if args.type_of_release == "minor":
+		for raw_bucket in platforming_raw_buckets:
+			curated_bucket = raw_bucket.replace("raw", "curated")
+			dirs = list_dirs(raw_bucket)
 
-		# Metadata
-		logging.info(f"Promoting metadata/release in raw to [{dev_bucket}]")
-		gsync_metadata(f"{raw_bucket}/metadata/release", f"{dev_bucket}/metadata/release", dry_run)
-		if dev_bucket in unembargoed_team_dev_buckets:
-			uat_bucket = dev_bucket.replace("dev", "uat")
-			logging.info(f"Team dataset is lifted from internal QC- also promoting metadata/release in raw to [{uat_bucket}]")
-			gsync_metadata(f"{raw_bucket}/metadata/release", f"{uat_bucket}/metadata/release", dry_run)
+			# Metadata
+			logging.info(f"Promoting metadata/release in raw to [{curated_bucket}]")
+			gsync_metadata(f"{raw_bucket}/metadata/release", f"{curated_bucket}/metadata/release", dry_run)
 
-		# Artifacts
-		if "artifacts" in dirs:
-			logging.info(f"Promoting artifacts in raw to [{dev_bucket}]")
-			gsync_artifacts(f"{raw_bucket}/artifacts", f"{dev_bucket}/artifacts", dry_run)
+			# File metadata
+			if "file_metadata" in dirs: # temp
+				logging.info(f"Promoting file_metadata in raw to [{curated_bucket}]")
+				gsync_metadata(f"{raw_bucket}/file_metadata", f"{curated_bucket}/file_metadata", dry_run)
+
+			# Artifacts
+			if "artifacts" in dirs:
+				logging.info(f"Promoting artifacts in raw to [{curated_bucket}]")
+				gsync_artifacts(f"{raw_bucket}/artifacts", f"{curated_bucket}/artifacts", dry_run)
+			else:
+				logging.info(f"Raw bucket does not have artifacts directory [{raw_bucket}]; skipping")
+
+	if args.type_of_release == "major":
+		for dev_bucket in all_team_dev_buckets:
+			raw_bucket = dev_bucket.replace("dev", "raw")
+			dirs = list_dirs(raw_bucket)
+
+			# Metadata and file metadata
+			logging.info(f"Promoting metadata/release and file_metadata in raw to [{dev_bucket}]")
+			gsync_metadata(f"{raw_bucket}/metadata/release", f"{dev_bucket}/metadata/release", dry_run)
+			gsync_metadata(f"{raw_bucket}/file_metadata", f"{dev_bucket}/file_metadata", dry_run)
 			if dev_bucket in unembargoed_team_dev_buckets:
-				logging.info(f"Team dataset is lifted from internal QC- also promoting artifacts in raw to [{uat_bucket}]")
-				gsync_artifacts(f"{raw_bucket}/artifacts", f"{uat_bucket}/artifacts", dry_run)
-		else:
-			logging.info(f"Raw bucket does not have artifacts directory [{raw_bucket}]; skipping")
+				uat_bucket = dev_bucket.replace("dev", "uat")
+				logging.info(f"Team dataset is lifted from internal QC- also promoting metadata/release and file_metadata in raw to [{uat_bucket}]")
+				gsync_metadata(f"{raw_bucket}/metadata/release", f"{uat_bucket}/metadata/release", dry_run)
+				gsync_metadata(f"{raw_bucket}/file_metadata", f"{uat_bucket}/file_metadata", dry_run)
+
+			# Artifacts
+			if "artifacts" in dirs:
+				logging.info(f"Promoting artifacts in raw to [{dev_bucket}]")
+				gsync_artifacts(f"{raw_bucket}/artifacts", f"{dev_bucket}/artifacts", dry_run)
+				if dev_bucket in unembargoed_team_dev_buckets:
+					logging.info(f"Team dataset is lifted from internal QC- also promoting artifacts in raw to [{uat_bucket}]")
+					gsync_artifacts(f"{raw_bucket}/artifacts", f"{uat_bucket}/artifacts", dry_run)
+			else:
+				logging.info(f"Raw bucket does not have artifacts directory [{raw_bucket}]; skipping")
 
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(
-		description="Promote metadata/release and artifacts in raw buckets to staging."
+		description="Promote metadata/release, file_metadata, and artifacts in raw buckets to staging (Major release) or straight to production (Urgent/Minor release)."
 	)
 
 	parser.add_argument(
@@ -94,7 +122,15 @@ if __name__ == "__main__":
 		"--list",
 		action="store_true",
 		required=False,
-		help="List current team dataset dev buckets."
+		help="List current team dataset buckets."
+	)
+	parser.add_argument(
+		"-t",
+		"--type-of-release",
+		choices=['minor', 'major'],
+		type=str,
+		required=True,
+		help="Type of release ['minor', 'major']. Note: use 'minor' for Urgent releases."
 	)
 	parser.add_argument(
 		"-p",
