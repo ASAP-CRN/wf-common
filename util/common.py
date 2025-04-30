@@ -8,9 +8,21 @@ from io import StringIO
 from google.cloud import storage
 
 
-###########################################################################
-##### PROMOTE CURATED METADTA AND ARTIFACTS - STAGING TO PROD SECTION #####
-###########################################################################
+########################################################################
+##### PROMOTE CURATED METADATA AND ARTIFACTS - RAW TO PROD SECTION #####
+########################################################################
+# Urgent and Minor Release or platforming exercise during a Major Release
+platforming_raw_buckets = [
+	# Single-nucleus RNAseq hybsel
+	"gs://asap-raw-team-scherzer-pmdbs-sn-rnaseq-mtg-hybsel",
+	# Human PMDBS Single Cell RNAseq
+	"gs://asap-raw-team-jakobsson-pmdbs-sn-rnaseq-v2", # temp
+]
+
+
+############################################################################
+##### PROMOTE CURATED METADATA AND ARTIFACTS - STAGING TO PROD SECTION #####
+############################################################################
 unembargoed_team_dev_buckets = [
 	# Human PMDBS Single Cell RNAseq
 	"gs://asap-dev-team-hafler-pmdbs-sn-rnaseq-pfc",
@@ -24,8 +36,6 @@ unembargoed_team_dev_buckets = [
 	"gs://asap-dev-team-lee-pmdbs-bulk-rnaseq-mfg",
 	"gs://asap-dev-team-wood-pmdbs-bulk-rnaseq",
 	#"gs://asap-dev-cohort-pmdbs-bulk-rnaseq",
-	# Single-nucleus RNAseq hybsel
-	"gs://asap-dev-team-scherzer-pmdbs-sn-rnaseq-mtg-hybsel",
 ]
 
 embargoed_team_dev_buckets = [
