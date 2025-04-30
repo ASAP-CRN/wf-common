@@ -74,6 +74,11 @@ def main(args):
 			logging.info(f"Promoting metadata/release in raw to [{curated_bucket}]")
 			gsync_metadata(f"{raw_bucket}/metadata/release", f"{curated_bucket}/metadata/release", dry_run)
 
+			# File metadata
+			if "file_metadata" in dirs: # temp
+				logging.info(f"Promoting file_metadata in raw to [{curated_bucket}]")
+				gsync_metadata(f"{raw_bucket}/file_metadata", f"{curated_bucket}/file_metadata", dry_run)
+
 			# Artifacts
 			if "artifacts" in dirs:
 				logging.info(f"Promoting artifacts in raw to [{curated_bucket}]")
@@ -86,13 +91,15 @@ def main(args):
 			raw_bucket = dev_bucket.replace("dev", "raw")
 			dirs = list_dirs(raw_bucket)
 
-			# Metadata
-			logging.info(f"Promoting metadata/release in raw to [{dev_bucket}]")
+			# Metadata and file metadata
+			logging.info(f"Promoting metadata/release and file_metadata in raw to [{dev_bucket}]")
 			gsync_metadata(f"{raw_bucket}/metadata/release", f"{dev_bucket}/metadata/release", dry_run)
+			gsync_metadata(f"{raw_bucket}/file_metadata", f"{dev_bucket}/file_metadata", dry_run)
 			if dev_bucket in unembargoed_team_dev_buckets:
 				uat_bucket = dev_bucket.replace("dev", "uat")
-				logging.info(f"Team dataset is lifted from internal QC- also promoting metadata/release in raw to [{uat_bucket}]")
+				logging.info(f"Team dataset is lifted from internal QC- also promoting metadata/release and file_metadata in raw to [{uat_bucket}]")
 				gsync_metadata(f"{raw_bucket}/metadata/release", f"{uat_bucket}/metadata/release", dry_run)
+				gsync_metadata(f"{raw_bucket}/file_metadata", f"{uat_bucket}/file_metadata", dry_run)
 
 			# Artifacts
 			if "artifacts" in dirs:
@@ -107,7 +114,7 @@ def main(args):
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(
-		description="Promote metadata/release and artifacts in raw buckets to staging (Major release) or straight to production (Urgent/Minor release)."
+		description="Promote metadata/release, file_metadata, and artifacts in raw buckets to staging (Major release) or straight to production (Urgent/Minor release)."
 	)
 
 	parser.add_argument(
