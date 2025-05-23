@@ -41,10 +41,16 @@ def main(args):
             source = row.source
             team_dataset = row.dataset
 
-            # TODO - confirm bucket organization
-            visium_brightfield_image = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/images/" + row.visium_cytassist
-            visium_slide_serial_number = row.visium_slide_ref
-            visium_capture_area = row.visium_capture_area
+            if args.workflow_name == "pmdbs_spatial_visium":
+                # TODO - confirm bucket organization
+                visium_brightfield_image = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/images/" + row.visium_cytassist
+                visium_slide_serial_number = row.visium_slide_ref
+                visium_capture_area = row.visium_capture_area
+
+            if args.workflow_name == "pmdbs_spatial_geomx":
+                cleaned_geomx_annotation_file = ("cleaned_DNAstack_" + row.geomx_annotation_file.replace(" ", "_")).rsplit(".", 1)[0] + ".xlsx"
+                # TODO - confirm bucket organization
+                geomx_lab_annotation_xlsx = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/artifacts/annotation_files/" + cleaned_geomx_annotation_file
 
             sample = {
                 "sample_id": sample_id,
@@ -61,6 +67,9 @@ def main(args):
                 sample["visium_brightfield_image"] = visium_brightfield_image
                 sample["visium_slide_serial_number"] = visium_slide_serial_number
                 sample["visium_capture_area"] = visium_capture_area
+
+            if args.workflow_name == "pmdbs_spatial_geomx":
+                sample["geomx_lab_annotation_xlsx"] = geomx_lab_annotation_xlsx
 
             if team_id not in projects:
                 staging_data_buckets = [
@@ -169,7 +178,7 @@ if __name__ == "__main__":
         "--output-file-prefix",
         required=False,
         default=None,
-        help="Prefix for output JSON file to write workflow inputs to [inputs.{cohort_staging_bucket_type}.{source}-{cohort_dataset}.{date}.json].",
+        help="Prefix for output JSON file to write workflow inputs to [inputs.{staging_env}.{source}-{cohort_dataset}.{date}.json].",
     )
 
     args = parser.parse_args()
