@@ -16,7 +16,7 @@ task write_cohort_sample_list {
 	command <<<
 		set -euo pipefail
 
-		echo -e "project_id\tsample_id" > ~{cohort_id}.sample_list.tsv
+		echo -e "project_id\tsample_id\tdataset_doi_url" > ~{cohort_id}.sample_list.tsv
 		cat ~{write_tsv(project_sample_ids)} >> ~{cohort_id}.sample_list.tsv
 
 		upload_outputs \

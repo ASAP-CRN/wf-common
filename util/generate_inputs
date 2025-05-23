@@ -40,6 +40,7 @@ def main(args):
 
             source = row.source
             team_dataset = row.dataset
+            dataset_doi_url = row.dataset_DOI_url
 
             if args.workflow_name == "pmdbs_spatial_visium":
                 # TODO - confirm bucket organization
@@ -80,6 +81,7 @@ def main(args):
                 projects[team_id] = {
                     "team_id": team_id,
                     "dataset_id": dataset_id,
+                    "dataset_doi_url": dataset_doi_url,
                     "samples": [sample],
                     "run_project_cohort_analysis": run_project_cohort_analysis,
                     "raw_data_bucket": f"gs://asap-raw-{team_id}-{source}-{team_dataset}",
