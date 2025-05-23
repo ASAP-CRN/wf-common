@@ -13,7 +13,6 @@ date = today.strftime("%Y-%m-%d")
 
 def main(args):
     run_project_cohort_analysis = args.run_project_cohort_analysis
-    cohort_staging_bucket_type = "uat"
 
     projects = dict()
     for project_tsv in args.project_tsvs:
@@ -25,12 +24,10 @@ def main(args):
                 f"More than one embargo status found for samples in {project_tsv}; don't know how to handle this."
             )
         else:
+            staging_env = "dev" if project_embargo_status[0] is True else "uat"
             staging_bucket_types = (
                 ["dev"] if project_embargo_status[0] is True else ["dev", "uat"]
             )
-            # If any of the teams' datasets are embargoed, we'll set the cohort bucket to embargoed also
-            if project_embargo_status[0] is True:
-                cohort_staging_bucket_type = "dev"
         for index, row in project_df.iterrows():
             team_id = row.team_id
             dataset_id = row.ASAP_dataset_id
@@ -40,12 +37,14 @@ def main(args):
             fastq_R2s = literal_eval(row.fastq_R2s)
             fastq_I1s = literal_eval(row.fastq_I1s)
             fastq_I2s = literal_eval(row.fastq_I2s)
-            # TODO
-            # visium_slide_serial_number = row.visium_slide_serial_number
-            # visium_capture_area = row.visium_capture_area
 
             source = row.source
             team_dataset = row.dataset
+
+            # TODO - confirm bucket organization
+            visium_brightfield_image = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/images/" + row.visium_cytassist
+            visium_slide_serial_number = row.visium_slide_ref
+            visium_capture_area = row.visium_capture_area
 
             sample = {
                 "sample_id": sample_id,
@@ -58,14 +57,10 @@ def main(args):
             if not pd.isna(batch):
                 sample["batch"] = batch
 
-            if args.workflow_name == "pmdbs_spatial_geomx":
-                sample["geomx_lab_annotation_xlsx"] = "File"
-
-            # TODO
             if args.workflow_name == "pmdbs_spatial_visium":
-                sample["visium_brightfield_image"] = "File"
-            #     sample["visium_slide_serial_number"] = visium_slide_serial_number
-            #     sample["visium_capture_area"] = visium_capture_area
+                sample["visium_brightfield_image"] = visium_brightfield_image
+                sample["visium_slide_serial_number"] = visium_slide_serial_number
+                sample["visium_capture_area"] = visium_capture_area
 
             if team_id not in projects:
                 staging_data_buckets = [
@@ -85,9 +80,6 @@ def main(args):
                 if args.workflow_name == "pmdbs_bulk_rnaseq":
                     projects[team_id]["project_sample_metadata_csv"] = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/metadata/SAMPLE.csv"
                     projects[team_id]["project_condition_metadata_csv"] = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/metadata/CONDITION.csv"
-
-                if args.workflow_name == "pmdbs_spatial_geomx":
-                    projects[team_id]["geomx_config_ini"] = "File"
             else:
                 projects[team_id]["samples"].append(sample)
 
@@ -114,16 +106,17 @@ def main(args):
         f"{args.workflow_name}.cohort_raw_data_bucket"
     ] = cohort_raw_data_bucket
     cohort_staging_data_buckets = [
-        f"gs://asap-{cohort_staging_bucket_type}-cohort-{source}-{args.cohort_dataset}"
+        f"gs://asap-{staging_bucket_type}-cohort-{source}-{args.cohort_dataset}"
+        for staging_bucket_type in staging_bucket_types
     ]
     inputs_json[
         f"{args.workflow_name}.cohort_staging_data_buckets"
     ] = cohort_staging_data_buckets
 
     if args.output_file_prefix is None:
-        output_file = f"inputs.{cohort_staging_bucket_type}.{source}-{args.cohort_dataset}.{date}.json"
+        output_file = f"inputs.{staging_env}.{source}-{args.cohort_dataset}.{date}.json"
     else:
-        output_file = f"{args.output_file_prefix}.{cohort_staging_bucket_type}.json"
+        output_file = f"{args.output_file_prefix}.{staging_env}.json"
     with open(output_file, "w") as f:
         json.dump(inputs_json, f, indent=4)
     print(f"Wrote input JSON file: {output_file}")
