@@ -124,18 +124,45 @@ def main(args):
         f"{args.workflow_name}.cohort_staging_data_buckets"
     ] = cohort_staging_data_buckets
 
-    if args.output_file_prefix is None:
-        output_file = f"inputs.{staging_env}.{source}-{args.cohort_dataset}.{date}.json"
+    # Generate sample list
+    sample_list_table = []
+
+    for project in projects:
+        team_id = project["team_id"]
+        dataset_doi_url = project["dataset_doi_url"]
+        for sample in project["samples"]:
+            sample_id = sample["sample_id"]
+            sample_list_table.append({
+                "team_id": team_id,
+                "sample_id": sample_id,
+                "dataset_doi_url": dataset_doi_url
+            })
+    sample_list_df = pd.DataFrame(sample_list_table)
+    sorted_unique_team_ids = sorted(sample_list_df["team_id"].unique().tolist())
+    if len(sorted_unique_team_ids) > 1:
+        team_id_prefix = "asap-cohort"
     else:
-        output_file = f"{args.output_file_prefix}.{staging_env}.json"
-    with open(output_file, "w") as f:
+        team_id_prefix = team_id
+    len_sample_ids = len(sample_list_df["sample_id"])
+    len_unique_sample_ids = len(sorted(sample_list_df["sample_id"].unique().tolist()))
+    if len_sample_ids != len_unique_sample_ids:
+        raise SystemExit(
+            f"Duplicate sample IDs found\nNo. of sample IDs: {len_sample_ids}\nNo. of unique sample IDs: {len_unique_sample_ids}"
+        )
+
+    inputs_output_filename = f"inputs.{staging_env}.{source}-{args.cohort_dataset}.{date}.json"
+    with open(inputs_output_filename, "w") as f:
         json.dump(inputs_json, f, indent=4)
-    print(f"Wrote input JSON file: {output_file}")
+    print(f"Wrote input JSON file: {inputs_output_filename}")
+
+    samples_output_filename = f"{team_id_prefix}.{source}-{args.cohort_dataset}.sample_list.{date}.tsv"
+    sample_list_df.to_csv(f"{samples_output_filename}", sep="\t", index=False)
+    print(f"Wrote sample list TSV file: {samples_output_filename}")
 
 
 if __name__ == "__main__":
     parser = ArgumentParser(
-        description="Given a TSV of sample information, generate an inputs JSON"
+        description="Given a TSV of sample information, generate an inputs JSON and sample list"
     )
 
     parser.add_argument(
@@ -173,14 +200,7 @@ if __name__ == "__main__":
         "--cohort-dataset",
         type=str,
         required=True,
-        help="Dataset name in cohort bucket name.",
-    )
-    parser.add_argument(
-        "-o",
-        "--output-file-prefix",
-        required=False,
-        default=None,
-        help="Prefix for output JSON file to write workflow inputs to [inputs.{staging_env}.{source}-{cohort_dataset}.{date}.json].",
+        help="Dataset name in cohort bucket name without source (e.g. pmdbs).",
     )
 
     args = parser.parse_args()
