@@ -200,7 +200,7 @@ if __name__ == "__main__":
         "--cohort-dataset",
         type=str,
         required=True,
-        help="Dataset name in cohort bucket name without source (e.g. pmdbs).",
+        help="Dataset name in cohort bucket name without source (e.g. sc-rnaseq).",
     )
 
     args = parser.parse_args()
