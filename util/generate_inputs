@@ -13,7 +13,6 @@ date = today.strftime("%Y-%m-%d")
 
 def main(args):
     run_project_cohort_analysis = args.run_project_cohort_analysis
-    cohort_staging_bucket_type = "uat"
 
     projects = dict()
     for project_tsv in args.project_tsvs:
@@ -25,12 +24,10 @@ def main(args):
                 f"More than one embargo status found for samples in {project_tsv}; don't know how to handle this."
             )
         else:
+            staging_env = "dev" if project_embargo_status[0] is True else "uat"
             staging_bucket_types = (
                 ["dev"] if project_embargo_status[0] is True else ["dev", "uat"]
             )
-            # If any of the teams' datasets are embargoed, we'll set the cohort bucket to embargoed also
-            if project_embargo_status[0] is True:
-                cohort_staging_bucket_type = "dev"
         for index, row in project_df.iterrows():
             team_id = row.team_id
             dataset_id = row.ASAP_dataset_id
@@ -43,6 +40,18 @@ def main(args):
 
             source = row.source
             team_dataset = row.dataset
+            dataset_doi_url = row.dataset_DOI_url
+
+            if args.workflow_name == "pmdbs_spatial_visium":
+                # TODO - confirm bucket organization
+                visium_brightfield_image = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/images/" + row.visium_cytassist
+                visium_slide_serial_number = row.visium_slide_ref
+                visium_capture_area = row.visium_capture_area
+
+            if args.workflow_name == "pmdbs_spatial_geomx":
+                cleaned_geomx_annotation_file = ("cleaned_DNAstack_" + row.geomx_annotation_file.replace(" ", "_")).rsplit(".", 1)[0] + ".xlsx"
+                # TODO - confirm bucket organization
+                geomx_lab_annotation_xlsx = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/artifacts/annotation_files/" + cleaned_geomx_annotation_file
 
             sample = {
                 "sample_id": sample_id,
@@ -55,6 +64,14 @@ def main(args):
             if not pd.isna(batch):
                 sample["batch"] = batch
 
+            if args.workflow_name == "pmdbs_spatial_visium":
+                sample["visium_brightfield_image"] = visium_brightfield_image
+                sample["visium_slide_serial_number"] = visium_slide_serial_number
+                sample["visium_capture_area"] = visium_capture_area
+
+            if args.workflow_name == "pmdbs_spatial_geomx":
+                sample["geomx_lab_annotation_xlsx"] = geomx_lab_annotation_xlsx
+
             if team_id not in projects:
                 staging_data_buckets = [
                     f"gs://asap-{staging_bucket_type}-{team_id}-{source}-{team_dataset}"
@@ -64,6 +81,7 @@ def main(args):
                 projects[team_id] = {
                     "team_id": team_id,
                     "dataset_id": dataset_id,
+                    "dataset_doi_url": dataset_doi_url,
                     "samples": [sample],
                     "run_project_cohort_analysis": run_project_cohort_analysis,
                     "raw_data_bucket": f"gs://asap-raw-{team_id}-{source}-{team_dataset}",
@@ -94,25 +112,57 @@ def main(args):
 
         inputs_json[projects_key] = projects
 
+    cohort_raw_data_bucket = f"gs://asap-raw-cohort-{source}-{args.cohort_dataset}"
+    inputs_json[
+        f"{args.workflow_name}.cohort_raw_data_bucket"
+    ] = cohort_raw_data_bucket
     cohort_staging_data_buckets = [
-        f"gs://asap-{cohort_staging_bucket_type}-cohort-{source}-{args.cohort_dataset}"
+        f"gs://asap-{staging_bucket_type}-cohort-{source}-{args.cohort_dataset}"
+        for staging_bucket_type in staging_bucket_types
     ]
     inputs_json[
         f"{args.workflow_name}.cohort_staging_data_buckets"
     ] = cohort_staging_data_buckets
 
-    if args.output_file_prefix is None:
-        output_file = f"inputs.{cohort_staging_bucket_type}.{source}-{args.cohort_dataset}.{date}.json"
+    # Generate sample list
+    sample_list_table = []
+
+    for project in projects:
+        team_id = project["team_id"]
+        dataset_doi_url = project["dataset_doi_url"]
+        for sample in project["samples"]:
+            sample_id = sample["sample_id"]
+            sample_list_table.append({
+                "team_id": team_id,
+                "sample_id": sample_id,
+                "dataset_doi_url": dataset_doi_url
+            })
+    sample_list_df = pd.DataFrame(sample_list_table)
+    sorted_unique_team_ids = sorted(sample_list_df["team_id"].unique().tolist())
+    if len(sorted_unique_team_ids) > 1:
+        team_id_prefix = "asap-cohort"
     else:
-        output_file = f"{args.output_file_prefix}.{cohort_staging_bucket_type}.json"
-    with open(output_file, "w") as f:
+        team_id_prefix = team_id
+    len_sample_ids = len(sample_list_df["sample_id"])
+    len_unique_sample_ids = len(sorted(sample_list_df["sample_id"].unique().tolist()))
+    if len_sample_ids != len_unique_sample_ids:
+        raise SystemExit(
+            f"Duplicate sample IDs found\nNo. of sample IDs: {len_sample_ids}\nNo. of unique sample IDs: {len_unique_sample_ids}"
+        )
+
+    inputs_output_filename = f"inputs.{staging_env}.{source}-{args.cohort_dataset}.{date}.json"
+    with open(inputs_output_filename, "w") as f:
         json.dump(inputs_json, f, indent=4)
-    print(f"Wrote input JSON file: {output_file}")
+    print(f"Wrote input JSON file: {inputs_output_filename}")
+
+    samples_output_filename = f"{team_id_prefix}.{source}-{args.cohort_dataset}.sample_list.{date}.tsv"
+    sample_list_df.to_csv(f"{samples_output_filename}", sep="\t", index=False)
+    print(f"Wrote sample list TSV file: {samples_output_filename}")
 
 
 if __name__ == "__main__":
     parser = ArgumentParser(
-        description="Given a TSV of sample information, generate an inputs JSON"
+        description="Given a TSV of sample information, generate an inputs JSON and sample list"
     )
 
     parser.add_argument(
@@ -150,14 +200,7 @@ if __name__ == "__main__":
         "--cohort-dataset",
         type=str,
         required=True,
-        help="Dataset name in cohort bucket name.",
-    )
-    parser.add_argument(
-        "-o",
-        "--output-file-prefix",
-        required=False,
-        default=None,
-        help="Prefix for output JSON file to write workflow inputs to [inputs.{cohort_staging_bucket_type}.{source}-{cohort_dataset}.{date}.json].",
+        help="Dataset name in cohort bucket name without source (e.g. pmdbs).",
     )
 
     args = parser.parse_args()
