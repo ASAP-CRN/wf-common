@@ -1,4 +1,4 @@
-FROM gcr.io/google.com/cloudsdktool/google-cloud-cli:444.0.0-slim
+FROM gcr.io/google.com/cloudsdktool/google-cloud-cli:524.0.0-slim
 
 RUN apt-get -qq update \
 	&& apt-get -qq install \
