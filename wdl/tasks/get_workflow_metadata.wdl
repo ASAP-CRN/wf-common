@@ -23,7 +23,7 @@ task get_workflow_metadata {
 	}
 
 	runtime {
-		docker: "gcr.io/google.com/cloudsdktool/google-cloud-cli:444.0.0-slim"
+		docker: "gcr.io/google.com/cloudsdktool/google-cloud-cli:524.0.0-slim"
 		cpu: 2
 		memory: "4 GB"
 		disks: "local-disk 10 HDD"
