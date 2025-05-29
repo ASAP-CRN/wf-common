@@ -43,15 +43,13 @@ def main(args):
             dataset_doi_url = row.dataset_DOI_url
 
             if args.workflow_name == "pmdbs_spatial_visium_analysis":
-                # TODO - confirm bucket organization
-                visium_brightfield_image = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/images/" + row.visium_cytassist
+                visium_brightfield_image = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/spatial/images/" + row.visium_cytassist
                 visium_slide_serial_number = row.visium_slide_ref
                 visium_capture_area = row.visium_capture_area
 
             if args.workflow_name == "pmdbs_spatial_geomx_analysis":
                 cleaned_geomx_annotation_file = ("cleaned_DNAstack_" + row.geomx_annotation_file.replace(" ", "_")).rsplit(".", 1)[0] + ".xlsx"
-                # TODO - confirm bucket organization
-                geomx_lab_annotation_xlsx = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/artifacts/annotation_files/" + cleaned_geomx_annotation_file
+                geomx_lab_annotation_xlsx = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/spatial/annotation_files/" + cleaned_geomx_annotation_file
 
             sample = {
                 "sample_id": sample_id,
