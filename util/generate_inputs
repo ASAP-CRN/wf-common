@@ -69,8 +69,11 @@ def main(args):
                 sample["visium_capture_area"] = visium_capture_area
 
             if args.workflow_name == "pmdbs_spatial_geomx_analysis":
-                sample["geomx_slide_id"] = geomx_slide_id
-                sample["geomx_lab_annotation_xlsx"] = geomx_lab_annotation_xlsx
+                slide = {
+                    "geomx_slide_id": geomx_slide_id,
+                    "geomx_lab_annotation_xlsx": geomx_lab_annotation_xlsx,
+                    "samples": [sample]
+                }
 
             if team_id not in projects:
                 staging_data_buckets = [
@@ -93,9 +96,33 @@ def main(args):
                     projects[team_id]["project_condition_metadata_csv"] = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/metadata/release/CONDITION.csv"
 
                 if args.workflow_name == "pmdbs_spatial_geomx_analysis":
+                    projects[team_id] = {
+                        "team_id": team_id,
+                        "dataset_id": dataset_id,
+                        "dataset_doi_url": dataset_doi_url,
+                        "slides": [slide],
+                        "run_project_cohort_analysis": run_project_cohort_analysis,
+                        "raw_data_bucket": f"gs://asap-raw-{team_id}-{source}-{team_dataset}",
+                        "staging_data_buckets": staging_data_buckets,
+                    }
                     projects[team_id]["geomx_config_ini"] = "File"
             else:
-                projects[team_id]["samples"].append(sample)
+                if args.workflow_name == "pmdbs_spatial_geomx_analysis":
+                    slide = next(
+                        (s for s in projects[team_id]["slides"] if s["geomx_slide_id"] == geomx_slide_id),
+                        None
+                    )
+                    if slide is None:
+                        slide = {
+                            "geomx_slide_id": geomx_slide_id,
+                            "geomx_lab_annotation_xlsx": geomx_lab_annotation_xlsx,
+                            "samples": [sample]
+                        }
+                        projects[team_id]["slides"].append(slide)
+                    else:
+                        slide["samples"].append(sample)
+                else:
+                    projects[team_id]["samples"].append(sample)
 
     projects = [project for project in projects.values()]
 
@@ -133,13 +160,23 @@ def main(args):
     for project in projects:
         team_id = project["team_id"]
         dataset_doi_url = project["dataset_doi_url"]
-        for sample in project["samples"]:
-            sample_id = sample["sample_id"]
-            sample_list_table.append({
-                "team_id": team_id,
-                "sample_id": sample_id,
-                "dataset_doi_url": dataset_doi_url
-            })
+        if args.workflow_name == "pmdbs_spatial_geomx_analysis":
+            for slide in project["slides"]:
+                for sample in slide["samples"]:
+                    sample_id = sample["sample_id"]
+                    sample_list_table.append({
+                        "team_id": team_id,
+                        "sample_id": sample_id,
+                        "dataset_doi_url": dataset_doi_url
+                    })
+        else:
+            for sample in project["samples"]:
+                sample_id = sample["sample_id"]
+                sample_list_table.append({
+                    "team_id": team_id,
+                    "sample_id": sample_id,
+                    "dataset_doi_url": dataset_doi_url
+                })
     sample_list_df = pd.DataFrame(sample_list_table)
     sorted_unique_team_ids = sorted(sample_list_df["team_id"].unique().tolist())
     if len(sorted_unique_team_ids) > 1:
