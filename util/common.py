@@ -13,13 +13,16 @@ from google.cloud import storage
 ########################################################################
 # Urgent and Minor Release or platforming exercise during a Major Release
 completed_platforming_raw_buckets = [
-	# Single-nucleus RNAseq hybsel
+	# Single Nucleus RNAseq hybsel
 	"gs://asap-raw-team-scherzer-pmdbs-sn-rnaseq-mtg-hybsel",
-	# Human PMDBS Single Cell RNAseq
+	# Human PMDBS Single Nucleus/Cell RNAseq
 	"gs://asap-raw-team-jakobsson-pmdbs-sn-rnaseq-v2", # temp
 ]
 
 platforming_raw_buckets = [
+	# Mouse Single Nucleus/Cell RNAseq
+	"gs://asap-raw-team-biederer-mouse-sc-rnaseq",
+	"gs://asap-raw-team-cragg-mouse-sn-rnaseq-striatum",
 	# Human PMDBS Spatial Transcriptomics Nanostring GeoMx
 	"gs://asap-raw-team-edwards-pmdbs-spatial-geomx-th",
 	"gs://asap-raw-team-vila-pmdbs-spatial-geomx-thlc",
@@ -34,7 +37,7 @@ platforming_raw_buckets = [
 ############################################################################
 # Minor and Major Release that includes pipeline/curated outputs
 unembargoed_team_dev_buckets = [
-	# Human PMDBS Single Cell RNAseq
+	# Human PMDBS Single Nucleus/Cell RNAseq
 	"gs://asap-dev-team-hafler-pmdbs-sn-rnaseq-pfc",
 	"gs://asap-dev-team-hardy-pmdbs-sn-rnaseq",
 	"gs://asap-dev-team-scherzer-pmdbs-sn-rnaseq-mtg",
