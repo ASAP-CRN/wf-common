@@ -12,19 +12,32 @@ from google.cloud import storage
 ##### PROMOTE CURATED METADATA AND ARTIFACTS - RAW TO PROD SECTION #####
 ########################################################################
 # Urgent and Minor Release or platforming exercise during a Major Release
-platforming_raw_buckets = [
-	# Single-nucleus RNAseq hybsel
+completed_platforming_raw_buckets = [
+	# Single Nucleus RNAseq hybsel
 	"gs://asap-raw-team-scherzer-pmdbs-sn-rnaseq-mtg-hybsel",
-	# Human PMDBS Single Cell RNAseq
+	# Human PMDBS Single Nucleus/Cell RNAseq
 	"gs://asap-raw-team-jakobsson-pmdbs-sn-rnaseq-v2", # temp
+]
+
+platforming_raw_buckets = [
+	# Mouse Single Nucleus/Cell RNAseq
+	"gs://asap-raw-team-biederer-mouse-sc-rnaseq",
+	"gs://asap-raw-team-cragg-mouse-sn-rnaseq-striatum",
+	# Human PMDBS Spatial Transcriptomics Nanostring GeoMx
+	"gs://asap-raw-team-edwards-pmdbs-spatial-geomx-th",
+	"gs://asap-raw-team-vila-pmdbs-spatial-geomx-thlc",
+	"gs://asap-raw-team-vila-pmdbs-spatial-geomx-unmasked",
+	# Mouse Spatial Transcriptomics 10x Visium
+	"gs://asap-raw-team-cragg-mouse-spatial-visium-striatum",
 ]
 
 
 ############################################################################
 ##### PROMOTE CURATED METADATA AND ARTIFACTS - STAGING TO PROD SECTION #####
 ############################################################################
+# Minor and Major Release that includes pipeline/curated outputs
 unembargoed_team_dev_buckets = [
-	# Human PMDBS Single Cell RNAseq
+	# Human PMDBS Single Nucleus/Cell RNAseq
 	"gs://asap-dev-team-hafler-pmdbs-sn-rnaseq-pfc",
 	"gs://asap-dev-team-hardy-pmdbs-sn-rnaseq",
 	"gs://asap-dev-team-scherzer-pmdbs-sn-rnaseq-mtg",
