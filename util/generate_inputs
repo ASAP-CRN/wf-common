@@ -11,6 +11,46 @@ from ast import literal_eval
 today = datetime.today()
 date = today.strftime("%Y-%m-%d")
 
+
+def generate_sample_list(projects):
+    sample_list_table = []
+
+    for project in projects:
+        team_id = project["team_id"]
+        dataset_doi_url = project["dataset_doi_url"]
+        if args.workflow_name == "pmdbs_spatial_geomx_analysis":
+            for slide in project["slides"]:
+                for sample in slide["samples"]:
+                    sample_id = sample["sample_id"]
+                    sample_list_table.append({
+                        "team_id": team_id,
+                        "sample_id": sample_id,
+                        "dataset_doi_url": dataset_doi_url
+                    })
+        else:
+            for sample in project["samples"]:
+                sample_id = sample["sample_id"]
+                sample_list_table.append({
+                    "team_id": team_id,
+                    "sample_id": sample_id,
+                    "dataset_doi_url": dataset_doi_url
+                })
+    sample_list_df = pd.DataFrame(sample_list_table)
+    sorted_unique_team_ids = sorted(sample_list_df["team_id"].unique().tolist())
+    if len(sorted_unique_team_ids) > 1:
+        team_id_prefix = "asap-cohort"
+    else:
+        team_id_prefix = team_id
+    len_sample_ids = len(sample_list_df["sample_id"])
+    len_unique_sample_ids = len(sorted(sample_list_df["sample_id"].unique().tolist()))
+    if len_sample_ids != len_unique_sample_ids:
+        raise SystemExit(
+            f"Duplicate sample IDs found\nNo. of sample IDs: {len_sample_ids}\nNo. of unique sample IDs: {len_unique_sample_ids}"
+        )
+
+    return team_id_prefix, sample_list_df
+
+
 def main(args):
     run_project_cohort_analysis = args.run_project_cohort_analysis
 
@@ -70,7 +110,7 @@ def main(args):
 
             if args.workflow_name == "pmdbs_spatial_geomx_analysis":
                 slide = {
-                    "geomx_slide_id": geomx_slide_id,
+                    "slide_id": geomx_slide_id,
                     "geomx_lab_annotation_xlsx": geomx_lab_annotation_xlsx,
                     "samples": [sample]
                 }
@@ -105,16 +145,17 @@ def main(args):
                         "raw_data_bucket": f"gs://asap-raw-{team_id}-{source}-{team_dataset}",
                         "staging_data_buckets": staging_data_buckets,
                     }
+                    projects[team_id]["project_sample_metadata_csv"] = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/metadata/release/SAMPLE.csv"
                     projects[team_id]["geomx_config_ini"] = "File"
             else:
                 if args.workflow_name == "pmdbs_spatial_geomx_analysis":
                     slide = next(
-                        (s for s in projects[team_id]["slides"] if s["geomx_slide_id"] == geomx_slide_id),
+                        (s for s in projects[team_id]["slides"] if s["slide_id"] == geomx_slide_id),
                         None
                     )
                     if slide is None:
                         slide = {
-                            "geomx_slide_id": geomx_slide_id,
+                            "slide_id": geomx_slide_id,
                             "geomx_lab_annotation_xlsx": geomx_lab_annotation_xlsx,
                             "samples": [sample]
                         }
@@ -154,41 +195,7 @@ def main(args):
         f"{args.workflow_name}.cohort_staging_data_buckets"
     ] = cohort_staging_data_buckets
 
-    # Generate sample list
-    sample_list_table = []
-
-    for project in projects:
-        team_id = project["team_id"]
-        dataset_doi_url = project["dataset_doi_url"]
-        if args.workflow_name == "pmdbs_spatial_geomx_analysis":
-            for slide in project["slides"]:
-                for sample in slide["samples"]:
-                    sample_id = sample["sample_id"]
-                    sample_list_table.append({
-                        "team_id": team_id,
-                        "sample_id": sample_id,
-                        "dataset_doi_url": dataset_doi_url
-                    })
-        else:
-            for sample in project["samples"]:
-                sample_id = sample["sample_id"]
-                sample_list_table.append({
-                    "team_id": team_id,
-                    "sample_id": sample_id,
-                    "dataset_doi_url": dataset_doi_url
-                })
-    sample_list_df = pd.DataFrame(sample_list_table)
-    sorted_unique_team_ids = sorted(sample_list_df["team_id"].unique().tolist())
-    if len(sorted_unique_team_ids) > 1:
-        team_id_prefix = "asap-cohort"
-    else:
-        team_id_prefix = team_id
-    len_sample_ids = len(sample_list_df["sample_id"])
-    len_unique_sample_ids = len(sorted(sample_list_df["sample_id"].unique().tolist()))
-    if len_sample_ids != len_unique_sample_ids:
-        raise SystemExit(
-            f"Duplicate sample IDs found\nNo. of sample IDs: {len_sample_ids}\nNo. of unique sample IDs: {len_unique_sample_ids}"
-        )
+    team_id_prefix, sample_list_df = generate_sample_list(projects)
 
     inputs_output_filename = f"inputs.{staging_env}.{source}-{args.cohort_dataset}.{date}.json"
     with open(inputs_output_filename, "w") as f:
