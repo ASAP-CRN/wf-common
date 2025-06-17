@@ -110,7 +110,7 @@ def main(args):
 
             if args.workflow_name == "pmdbs_spatial_geomx_analysis":
                 slide = {
-                    "geomx_slide_id": geomx_slide_id,
+                    "slide_id": geomx_slide_id,
                     "geomx_lab_annotation_xlsx": geomx_lab_annotation_xlsx,
                     "samples": [sample]
                 }
@@ -150,12 +150,12 @@ def main(args):
             else:
                 if args.workflow_name == "pmdbs_spatial_geomx_analysis":
                     slide = next(
-                        (s for s in projects[team_id]["slides"] if s["geomx_slide_id"] == geomx_slide_id),
+                        (s for s in projects[team_id]["slides"] if s["slide_id"] == geomx_slide_id),
                         None
                     )
                     if slide is None:
                         slide = {
-                            "geomx_slide_id": geomx_slide_id,
+                            "slide_id": geomx_slide_id,
                             "geomx_lab_annotation_xlsx": geomx_lab_annotation_xlsx,
                             "samples": [sample]
                         }
