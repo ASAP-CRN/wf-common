@@ -17,18 +17,19 @@ completed_platforming_raw_buckets = [
 	"gs://asap-raw-team-scherzer-pmdbs-sn-rnaseq-mtg-hybsel",
 	# Human PMDBS Single Nucleus/Cell RNAseq
 	"gs://asap-raw-team-jakobsson-pmdbs-sn-rnaseq-v2", # temp
-]
-
-platforming_raw_buckets = [
 	# Mouse Single Nucleus/Cell RNAseq
 	"gs://asap-raw-team-biederer-mouse-sc-rnaseq",
 	"gs://asap-raw-team-cragg-mouse-sn-rnaseq-striatum",
 	# Human PMDBS Spatial Transcriptomics Nanostring GeoMx
 	"gs://asap-raw-team-edwards-pmdbs-spatial-geomx-th",
-	"gs://asap-raw-team-vila-pmdbs-spatial-geomx-thlc",
-	"gs://asap-raw-team-vila-pmdbs-spatial-geomx-unmasked",
 	# Mouse Spatial Transcriptomics 10x Visium
 	"gs://asap-raw-team-cragg-mouse-spatial-visium-striatum",
+]
+
+platforming_raw_buckets = [
+	# Human PMDBS Spatial Transcriptomics Nanostring GeoMx
+	# "gs://asap-raw-team-vila-pmdbs-spatial-geomx-thlc",
+	# "gs://asap-raw-team-vila-pmdbs-spatial-geomx-unmasked",
 ]
 
 
