@@ -8,9 +8,9 @@ from io import StringIO
 from google.cloud import storage
 
 
-########################################################################
-##### PROMOTE CURATED METADATA AND ARTIFACTS - RAW TO PROD SECTION #####
-########################################################################
+######################################################################
+##### PROMOTE QC'ED METADATA AND ARTIFACTS - RAW TO PROD SECTION #####
+######################################################################
 # Urgent and Minor Release or platforming exercise during a Major Release
 completed_platforming_raw_buckets = [
 	# Single Nucleus RNAseq hybsel
@@ -26,16 +26,114 @@ completed_platforming_raw_buckets = [
 	"gs://asap-raw-team-cragg-mouse-spatial-visium-striatum",
 ]
 
-platforming_raw_buckets = [
+embargoed_raw_buckets = [
 	# Human PMDBS Spatial Transcriptomics Nanostring GeoMx
-	# "gs://asap-raw-team-vila-pmdbs-spatial-geomx-thlc",
-	# "gs://asap-raw-team-vila-pmdbs-spatial-geomx-unmasked",
+	"gs://asap-raw-team-vila-pmdbs-spatial-geomx-thlc",
+	"gs://asap-raw-team-vila-pmdbs-spatial-geomx-unmasked",
+]
+
+platforming_raw_buckets = [
 ]
 
 
-############################################################################
-##### PROMOTE CURATED METADATA AND ARTIFACTS - STAGING TO PROD SECTION #####
-############################################################################
+def remove_internal_qc_label(bucket_name):
+	command = [
+		"gcloud",
+		"storage",
+		"buckets",
+		"update",
+		bucket_name,
+		"--remove-labels=internal-qc-data"
+	]
+	result = subprocess.run(command, check=True, capture_output=True, text=True)
+	return result.stdout
+
+
+def get_team_name(bucket_name):
+	match = re.search(r"team-(.*?)-(mouse|pmdbs)", bucket_name)
+	team = match.group(1)
+	return team
+
+
+def run_command(command):
+		try:
+			result = subprocess.run(command, check=True, capture_output=True, text=True)
+			return result.stdout
+		except subprocess.CalledProcessError as e:
+			if "No policy binding found" in e.stderr:
+				print(f"[INFO] No existing storage.admin binding to remove for {team_gg}")
+			else:
+				print(f"[ERROR] Command failed:\n{e.stderr}")
+				raise
+
+
+def change_gg_storage_admin_to_read_write(bucket_name):
+	team_name = get_team_name(bucket_name)
+	team_gg = "asap-team-" + team_name + "@dnastack.com"
+	run_command([
+		"gcloud",
+		"storage",
+		"buckets",
+		"remove-iam-policy-binding",
+		bucket_name,
+		f"--member=group:{team_gg}",
+		"--role=roles/storage.admin"
+	])
+	run_command([
+		"gcloud",
+		"storage",
+		"buckets",
+		"add-iam-policy-binding",
+		bucket_name,
+		f"--member=group:{team_gg}",
+		"--role=roles/storage.objectViewer"
+	])
+	run_command([
+		"gcloud",
+		"storage",
+		"buckets",
+		"add-iam-policy-binding",
+		bucket_name,
+		f"--member=group:{team_gg}",
+		"--role=roles/storage.objectCreator"
+	])
+
+
+def change_sa_storage_admin_to_read_write(bucket_name):
+	team_name = get_team_name(bucket_name)
+	team_sa = "raw-admin-" + team_name + "@dnastack-asap-parkinsons.iam.gserviceaccount.com"
+	run_command([
+		"gcloud",
+		"storage",
+		"buckets",
+		"remove-iam-policy-binding",
+		bucket_name,
+		f"--member=serviceAccount:{team_sa}",
+		"--role=roles/storage.admin"
+	])
+	run_command([
+		"gcloud",
+		"storage",
+		"buckets",
+		"add-iam-policy-binding",
+		bucket_name,
+		f"--member=serviceAccount:{team_sa}",
+		"--role=roles/storage.objectViewer"
+	])
+	run_command([
+		"gcloud",
+		"storage",
+		"buckets",
+		"add-iam-policy-binding",
+		bucket_name,
+		f"--member=serviceAccount:{team_sa}",
+		"--role=roles/storage.objectCreator"
+	])
+
+
+##########################################################################
+##### PROMOTE QC'ED METADATA AND ARTIFACTS - STAGING TO PROD SECTION #####
+##########################################################################
 # Minor and Major Release that includes pipeline/curated outputs
 unembargoed_team_dev_buckets = [
 	# Human PMDBS Single Nucleus/Cell RNAseq
@@ -232,19 +330,6 @@ def gsync(source_path, destination_path, dry_run):
 	result = subprocess.run(command, check=True, capture_output=True, text=True)
 	logging.info(result.stdout)
 	logging.error(result.stderr)
-
-
-def remove_internal_qc_label(bucket_name):
-	command = [
-		"gcloud",
-		"storage",
-		"buckets",
-		"update",
-		bucket_name,
-		"--remove-labels=internal-qc-data"
-	]
-	result = subprocess.run(command, check=True, capture_output=True, text=True)
-	return result.stdout
 
 
 def add_verily_read_access(bucket_name):

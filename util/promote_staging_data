@@ -16,6 +16,8 @@ from common import (
 	associated_metadata_check,
 	gcopy,
 	remove_internal_qc_label,
+	change_gg_storage_admin_to_read_write,
+	change_sa_storage_admin_to_read_write,
 	add_verily_read_access,
 	gsync,
 )
@@ -132,6 +134,7 @@ def main(args):
 				logging.info(f"Would remove internal-qc-data label from [{raw_bucket}]")
 				if not cohort:
 					logging.info(f"Would grant storage.objectViewer permission to asap-cloud-readers@verily-bvdp.com on [{raw_bucket}]")
+					logging.info(f"Would remove storage.admin permission and grant storage.objectViewer and storage.objectCreator permission to CRN Team's SA and GG on [{raw_bucket}]")
 			else:
 				logging.info(f"Uploading combined manifest and report for [{team}-{args.source}-{dataset}]")
 				gcopy(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", f"{dev_workflow_metadata_path}/MANIFEST.tsv")
@@ -143,6 +146,9 @@ def main(args):
 				if not cohort:
 					logging.info(f"Granting storage.objectViewer permission to asap-cloud-readers@verily-bvdp.com on [{raw_bucket}]")
 					add_verily_read_access(raw_bucket)
+					logging.info(f"Removing Storage Admin access and granting Storage Object Creator and Viewer to CRN Teams for [{raw_bucket}]")
+					change_gg_storage_admin_to_read_write(raw_bucket)
+					change_sa_storage_admin_to_read_write(raw_bucket)
 
 			logging.info(f"Promoting [{team}-{args.source}-{dataset}] data to production")
 			logging.info(f"\tStaging bucket:\t\t[{staging_uat_bucket}]")
