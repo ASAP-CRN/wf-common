@@ -26,13 +26,13 @@ completed_platforming_raw_buckets = [
 	"gs://asap-raw-team-cragg-mouse-spatial-visium-striatum",
 ]
 
-embargoed_raw_buckets = [
+embargoed_platforming_raw_buckets = [
 	# Human PMDBS Spatial Transcriptomics Nanostring GeoMx
 	"gs://asap-raw-team-vila-pmdbs-spatial-geomx-thlc",
 	"gs://asap-raw-team-vila-pmdbs-spatial-geomx-unmasked",
 ]
 
-platforming_raw_buckets = [
+unembargoed_platforming_raw_buckets = [
 ]
 
 

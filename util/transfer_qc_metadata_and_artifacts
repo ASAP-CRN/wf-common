@@ -7,7 +7,8 @@ import subprocess
 from google.cloud import storage
 from common import (
 	completed_platforming_raw_buckets,
-	platforming_raw_buckets,
+	unembargoed_platforming_raw_buckets,
+	embargoed_platforming_raw_buckets,
 	unembargoed_team_dev_buckets,
 	embargoed_team_dev_buckets,
 	list_dirs,
@@ -60,7 +61,8 @@ def gsync_artifacts(source_path, destination_path, dry_run):
 def main(args):
 	if args.list:
 		logging.info("Urgent and Minor release or platforming exercise related info:")
-		logging.info(f"Unembargoed team buckets:\n" + "\n".join(platforming_raw_buckets))
+		logging.info(f"Unembargoed team buckets:\n" + "\n".join(unembargoed_platforming_raw_buckets))
+		logging.info(f"Embargoed team buckets:\n" + "\n".join(embargoed_platforming_raw_buckets))
 		logging.info("Minor and Major release related info (pipeline/curated outputs present):")
 		logging.info(f"Unembargoed team buckets:\n" + "\n".join(unembargoed_team_dev_buckets))
 		logging.info(f"Embargoed team buckets:\n" + "\n".join(embargoed_team_dev_buckets))
@@ -71,7 +73,7 @@ def main(args):
 
 	if args.type_of_release == "urgent" or args.type_of_release == "minor":
 		logging.info(f"Not promoting data for previously released raw buckets: [{completed_platforming_raw_buckets}]")
-		for raw_bucket in platforming_raw_buckets:
+		for raw_bucket in unembargoed_platforming_raw_buckets:
 			curated_bucket = raw_bucket.replace("raw", "curated")
 			dirs = list_dirs(raw_bucket)
 
