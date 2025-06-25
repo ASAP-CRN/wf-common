@@ -56,15 +56,15 @@ def get_team_name(bucket_name):
 
 
 def run_command(command):
-		try:
-			result = subprocess.run(command, check=True, capture_output=True, text=True)
-			return result.stdout
-		except subprocess.CalledProcessError as e:
-			if "No policy binding found" in e.stderr:
-				print(f"[INFO] No existing storage.admin binding to remove for {team_gg}")
-			else:
-				print(f"[ERROR] Command failed:\n{e.stderr}")
-				raise
+	try:
+		result = subprocess.run(command, check=True, capture_output=True, text=True)
+		return result.stdout
+	except subprocess.CalledProcessError as e:
+		if "No policy binding found" in e.stderr:
+			print(f"[INFO] No existing storage.admin binding to remove for {team_gg}")
+		else:
+			print(f"[ERROR] Command failed:\n{e.stderr}")
+			raise
 
 
 def change_gg_storage_admin_to_read_write(bucket_name):
