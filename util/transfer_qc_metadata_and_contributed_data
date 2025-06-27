@@ -93,6 +93,13 @@ def main(args):
 			else:
 				logging.info(f"Raw bucket does not have artifacts directory [{raw_bucket}]; skipping")
 
+			# Spatial
+			if "spatial" in dirs:
+				logging.info(f"Promoting spatial in raw to [{curated_bucket}]")
+				gsync_artifacts(f"{raw_bucket}/spatial", f"{curated_bucket}/spatial", dry_run)
+			else:
+				logging.info(f"Raw bucket does not have spatial directory [{raw_bucket}]; skipping")
+
 			# Remove internal-qc-data label from released raw buckets
 			logging.info(f"Removing internal-qc-data label from [{raw_bucket}]")
 			remove_internal_qc_label(raw_bucket)
@@ -128,10 +135,20 @@ def main(args):
 			else:
 				logging.info(f"Raw bucket does not have artifacts directory [{raw_bucket}]; skipping")
 
+			# Spatial
+			if "spatial" in dirs:
+				logging.info(f"Promoting spatial in raw to [{dev_bucket}]")
+				gsync_metadata(f"{raw_bucket}/spatial", f"{dev_bucket}/spatial", dry_run)
+				if dev_bucket in unembargoed_team_dev_buckets:
+					logging.info(f"Team dataset is lifted from internal QC- also promoting spatial in raw to [{uat_bucket}]")
+					gsync_metadata(f"{raw_bucket}/spatial", f"{uat_bucket}/spatial", dry_run)
+			else:
+				logging.info(f"Raw bucket does not have spatial directory [{raw_bucket}]; skipping")
+
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(
-		description="Promote metadata/release, file_metadata, and artifacts in raw buckets to staging (Minor/Major release) or straight to production (Urgent/Minor release)."
+		description="Promote metadata/release, file_metadata, artifacts, and spatial in raw buckets to staging (Minor/Major release) or straight to production (Urgent/Minor release)."
 	)
 
 	parser.add_argument(
