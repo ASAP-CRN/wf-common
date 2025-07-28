@@ -54,7 +54,7 @@ task fastqc {
 	}
 
 	runtime {
-		docker: "~{container_registry}/fastqc:0.12.0"
+		docker: "~{container_registry}/fastqc:0.12.1"
 		cpu: threads
 		memory: "~{mem_gb} GB"
 		disks: "local-disk ~{disk_size} HDD"
