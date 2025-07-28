@@ -45,7 +45,7 @@ task multiqc {
 	}
 
 	runtime {
-		docker: "~{container_registry}/multiqc:1.25.1"
+		docker: "~{container_registry}/multiqc:1.30"
 		cpu: threads
 		memory: "~{mem_gb} GB"
 		disks: "local-disk ~{disk_size} HDD"
