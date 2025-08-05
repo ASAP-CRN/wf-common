@@ -18,7 +18,7 @@ def generate_sample_list(projects):
     for project in projects:
         team_id = project["team_id"]
         dataset_doi_url = project["dataset_doi_url"]
-        if args.workflow_name == "pmdbs_spatial_geomx_analysis":
+        if args.workflow_name == "spatial_geomx_analysis":
             for slide in project["slides"]:
                 for sample in slide["samples"]:
                     sample_id = sample["sample_id"]
@@ -82,12 +82,12 @@ def main(args):
             team_dataset = row.dataset
             dataset_doi_url = row.dataset_DOI_url
 
-            if args.workflow_name == "pmdbs_spatial_visium_analysis":
+            if args.workflow_name == "spatial_visium_analysis":
                 visium_brightfield_image = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/spatial/images/" + row.visium_cytassist
                 visium_slide_serial_number = row.visium_slide_ref
                 visium_capture_area = row.visium_capture_area
 
-            if args.workflow_name == "pmdbs_spatial_geomx_analysis":
+            if args.workflow_name == "spatial_geomx_analysis":
                 geomx_slide_id = row.ASAP_geomx_slide_id
                 cleaned_geomx_annotation_file = ("cleaned_DNAstack_" + row.geomx_annotation_file.replace(" ", "_")).rsplit(".", 1)[0] + ".xlsx"
                 geomx_lab_annotation_xlsx = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/spatial/annotation_files/" + cleaned_geomx_annotation_file
@@ -103,12 +103,12 @@ def main(args):
             if not pd.isna(batch):
                 sample["batch"] = batch
 
-            if args.workflow_name == "pmdbs_spatial_visium_analysis":
+            if args.workflow_name == "spatial_visium_analysis":
                 sample["visium_brightfield_image"] = visium_brightfield_image
                 sample["visium_slide_serial_number"] = visium_slide_serial_number
                 sample["visium_capture_area"] = visium_capture_area
 
-            if args.workflow_name == "pmdbs_spatial_geomx_analysis":
+            if args.workflow_name == "spatial_geomx_analysis":
                 slide = {
                     "slide_id": geomx_slide_id,
                     "geomx_lab_annotation_xlsx": geomx_lab_annotation_xlsx,
@@ -135,7 +135,7 @@ def main(args):
                     projects[team_id]["project_sample_metadata_csv"] = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/metadata/release/SAMPLE.csv"
                     projects[team_id]["project_condition_metadata_csv"] = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/metadata/release/CONDITION.csv"
 
-                if args.workflow_name == "pmdbs_spatial_geomx_analysis":
+                if args.workflow_name == "spatial_geomx_analysis":
                     projects[team_id] = {
                         "team_id": team_id,
                         "dataset_id": dataset_id,
@@ -148,7 +148,7 @@ def main(args):
                     projects[team_id]["project_sample_metadata_csv"] = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/metadata/release/SAMPLE.csv"
                     projects[team_id]["geomx_config_ini"] = "File"
             else:
-                if args.workflow_name == "pmdbs_spatial_geomx_analysis":
+                if args.workflow_name == "spatial_geomx_analysis":
                     slide = next(
                         (s for s in projects[team_id]["slides"] if s["slide_id"] == geomx_slide_id),
                         None
@@ -242,8 +242,8 @@ if __name__ == "__main__":
         choices=[
             "pmdbs_sc_rnaseq_analysis",
             "pmdbs_bulk_rnaseq_analysis",
-            "pmdbs_spatial_visium_analysis",
-            "pmdbs_spatial_geomx_analysis"
+            "spatial_visium_analysis",
+            "spatial_geomx_analysis"
         ],
         required=True,
         help="WDL workflow name.",
