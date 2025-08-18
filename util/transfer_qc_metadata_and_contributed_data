@@ -109,7 +109,6 @@ def main(args):
 			remove_internal_qc_label(raw_bucket)
 
 			# Remove Storage Admin access from CRN Teams and grant Storage Object Creator and Viewer to released raw buckets
-			logging.info(f"Removing Storage Admin access and granting Storage Object Creator and Viewer to CRN Teams for [{raw_bucket}]")
 			change_gg_storage_admin_to_read_write(raw_bucket)
 			change_sa_storage_admin_to_read_write(raw_bucket)
 
