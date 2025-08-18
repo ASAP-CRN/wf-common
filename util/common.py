@@ -15,21 +15,12 @@ from google.cloud import storage
 completed_platforming_raw_buckets = [
 	# Single Nucleus RNAseq hybsel
 	"gs://asap-raw-team-scherzer-pmdbs-sn-rnaseq-mtg-hybsel",
-	# Human PMDBS Single Nucleus/Cell RNAseq
-	"gs://asap-raw-team-jakobsson-pmdbs-sn-rnaseq-v2", # temp
 	# Mouse Single Nucleus/Cell RNAseq
 	"gs://asap-raw-team-biederer-mouse-sc-rnaseq",
 	"gs://asap-raw-team-cragg-mouse-sn-rnaseq-striatum",
-	# Human PMDBS Spatial Transcriptomics Nanostring GeoMx
-	"gs://asap-raw-team-edwards-pmdbs-spatial-geomx-th",
-	# Mouse Spatial Transcriptomics 10x Visium
-	"gs://asap-raw-team-cragg-mouse-spatial-visium-striatum",
 ]
 
 embargoed_platforming_raw_buckets = [
-	# Human PMDBS Spatial Transcriptomics Nanostring GeoMx
-	"gs://asap-raw-team-vila-pmdbs-spatial-geomx-thlc",
-	"gs://asap-raw-team-vila-pmdbs-spatial-geomx-unmasked",
 ]
 
 unembargoed_platforming_raw_buckets = [
@@ -148,10 +139,18 @@ unembargoed_team_dev_buckets = [
 	"gs://asap-dev-team-lee-pmdbs-bulk-rnaseq-mfg",
 	"gs://asap-dev-team-wood-pmdbs-bulk-rnaseq",
 	#"gs://asap-dev-cohort-pmdbs-bulk-rnaseq",
+	# Human PMDBS Spatial Transcriptomics Nanostring GeoMx
+	"gs://asap-dev-team-edwards-pmdbs-spatial-geomx-th",
+	# Mouse Spatial Transcriptomics 10x Visium
+	"gs://asap-dev-team-cragg-mouse-spatial-visium-striatum",
 ]
 
 embargoed_team_dev_buckets = [
+	# Human PMDBS Single Nucleus/Cell RNAseq
 	"gs://asap-dev-team-sulzer-pmdbs-sn-rnaseq",
+	# Human PMDBS Spatial Transcriptomics Nanostring GeoMx
+	"gs://asap-dev-team-vila-pmdbs-spatial-geomx-thlc",
+	"gs://asap-dev-team-vila-pmdbs-spatial-geomx-unmasked",
 ]
 
 
@@ -177,7 +176,11 @@ ALL_TEAMS = [
 	"team-scherzer",
 	"team-sulzer",
 	"team-voet",
-	"team-wood"
+	"team-wood",
+	"team-biederer",
+	"team-cragg",
+	"team-edwards",
+	"team-vila",
 ]
 
 def list_teams():
