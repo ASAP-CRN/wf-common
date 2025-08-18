@@ -68,7 +68,6 @@ def main(args):
 		logging.info(f"Embargoed team buckets:\n" + "\n".join(embargoed_team_dev_buckets))
 		sys.exit(0)
 
-	all_team_dev_buckets = unembargoed_team_dev_buckets + embargoed_team_dev_buckets
 	dry_run = not args.promote
 
 	if args.type_of_release == "urgent" or args.type_of_release == "minor":
@@ -116,6 +115,7 @@ def main(args):
 
 	# if args.type_of_release == "minor" or args.type_of_release == "major":
 	if args.type_of_release == "major":
+		all_team_dev_buckets = unembargoed_team_dev_buckets + embargoed_team_dev_buckets
 		for dev_bucket in all_team_dev_buckets:
 			raw_bucket = dev_bucket.replace("dev", "raw")
 			dirs = list_dirs(raw_bucket)

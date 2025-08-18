@@ -2,6 +2,7 @@
 
 import logging
 import subprocess
+import json
 import pandas as pd
 import re
 from io import StringIO
@@ -58,68 +59,113 @@ def run_command(command):
 			raise
 
 
-def change_gg_storage_admin_to_read_write(bucket_name):
+def check_admin_binding(type, bucket_name):
 	team_name = get_team_name(bucket_name)
-	team_gg = "asap-team-" + team_name + "@dnastack.com"
-	run_command([
-		"gcloud",
-		"storage",
-		"buckets",
-		"remove-iam-policy-binding",
-		bucket_name,
-		f"--member=group:{team_gg}",
-		"--role=roles/storage.admin"
-	])
-	run_command([
+	role_admin = "roles/storage.admin"
+	if type == "gg":
+		team_gg = "asap-team-" + team_name + "@dnastack.com"
+		member = f"group:{team_gg}"
+		policy_json = run_command([
+			"gcloud",
+			"storage",
+			"buckets",
+			"get-iam-policy",
+			bucket_name,
+			"--format=json"
+		])
+		policy = json.loads(policy_json)
+		has_admin_binding = any(
+			binding["role"] == role_admin and member in binding.get("members", [])
+			for binding in policy.get("bindings", [])
+		)
+		return member, role_admin, has_admin_binding
+	if type == "sa":
+		team_sa = "raw-admin-" + team_name + "@dnastack-asap-parkinsons.iam.gserviceaccount.com"
+		member = f"serviceAccount:{team_sa}"
+		policy_json = run_command([
+			"gcloud",
+			"storage",
+			"buckets",
+			"get-iam-policy",
+			bucket_name,
+			"--format=json"
+		])
+		policy = json.loads(policy_json)
+		has_admin_binding = any(
+			binding["role"] == role_admin and member in binding.get("members", [])
+			for binding in policy.get("bindings", [])
+		)
+		return member, role_admin, has_admin_binding
+
+
+def change_gg_storage_admin_to_read_write(bucket_name):
+	member, role_admin, has_admin_binding = check_admin_binding("gg", bucket_name)
+	if has_admin_binding:
+		print(f"[INFO] Removing Storage Admin access and granting Storage Object Creator and Viewer to CRN Teams for [{bucket_name}] on Google Group")
+		run_command([
+			"gcloud",
+			"storage",
+			"buckets",
+			"remove-iam-policy-binding",
+			bucket_name,
+			f"--member={member}",
+			f"--role={role_admin}"
+		])
+		run_command([
 		"gcloud",
 		"storage",
 		"buckets",
 		"add-iam-policy-binding",
 		bucket_name,
-		f"--member=group:{team_gg}",
+		f"--member={member}",
 		"--role=roles/storage.objectViewer"
-	])
-	run_command([
-		"gcloud",
-		"storage",
-		"buckets",
-		"add-iam-policy-binding",
-		bucket_name,
-		f"--member=group:{team_gg}",
-		"--role=roles/storage.objectCreator"
-	])
+		])
+		run_command([
+			"gcloud",
+			"storage",
+			"buckets",
+			"add-iam-policy-binding",
+			bucket_name,
+			f"--member={member}",
+			"--role=roles/storage.objectCreator"
+		])
+	else:
+		print(f"[INFO] Storage Object Creator and Viewer already granted to CRN Teams' permissions for [{bucket_name}] on Google Group")
 
 
 def change_sa_storage_admin_to_read_write(bucket_name):
-	team_name = get_team_name(bucket_name)
-	team_sa = "raw-admin-" + team_name + "@dnastack-asap-parkinsons.iam.gserviceaccount.com"
-	run_command([
-		"gcloud",
-		"storage",
-		"buckets",
-		"remove-iam-policy-binding",
-		bucket_name,
-		f"--member=serviceAccount:{team_sa}",
-		"--role=roles/storage.admin"
-	])
-	run_command([
-		"gcloud",
-		"storage",
-		"buckets",
-		"add-iam-policy-binding",
-		bucket_name,
-		f"--member=serviceAccount:{team_sa}",
-		"--role=roles/storage.objectViewer"
-	])
-	run_command([
-		"gcloud",
-		"storage",
-		"buckets",
-		"add-iam-policy-binding",
-		bucket_name,
-		f"--member=serviceAccount:{team_sa}",
-		"--role=roles/storage.objectCreator"
-	])
+	member, role_admin, has_admin_binding = check_admin_binding("sa", bucket_name)
+	if has_admin_binding:
+		print(f"[INFO] Removing Storage Admin access and granting Storage Object Creator and Viewer to CRN Teams for [{bucket_name}] on Service Account")
+		run_command([
+			"gcloud",
+			"storage",
+			"buckets",
+			"remove-iam-policy-binding",
+			bucket_name,
+			f"--member={member}",
+			f"--role={role_admin}"
+		])
+		run_command([
+			"gcloud",
+			"storage",
+			"buckets",
+			"add-iam-policy-binding",
+			bucket_name,
+			f"--member={member}",
+			"--role=roles/storage.objectViewer"
+		])
+		run_command([
+			"gcloud",
+			"storage",
+			"buckets",
+			"add-iam-policy-binding",
+			bucket_name,
+			f"--member={member}",
+			"--role=roles/storage.objectCreator"
+		])
+	else:
+		print(f"[INFO] Storage Object Creator and Viewer already granted to CRN Teams' permissions for [{bucket_name}] on Service Account")
 
 
 ##########################################################################
