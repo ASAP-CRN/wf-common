@@ -202,7 +202,8 @@ embargoed_team_dev_buckets = [
 
 def list_dirs(bucket_name):
 	command = [
-		"gsutil",
+		"gcloud",
+		"storage",
 		"ls",
 		bucket_name
 	]
@@ -240,7 +241,7 @@ def list_gs_files(bucket, workflow_name):
 	blob_names = []
 	gs_files = []
 	sample_list_loc = []
-	pattern = re.compile(rf"{workflow_name}/workflow_metadata/\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}-\d{{2}}-\d{{2}}Z/")
+	pattern = re.compile(rf"{workflow_name}/archive/")
 	for blob in blobs:
 		if not pattern.match(blob.name):
 			blob_names.append(blob.name)
@@ -253,7 +254,7 @@ def list_gs_files(bucket, workflow_name):
 def read_manifest_files(bucket, workflow_name):
 	blobs = bucket.list_blobs(prefix=workflow_name) # This has to be called again because 'Iterator has already started'
 	manifest_dfs = []
-	pattern = re.compile(rf"{workflow_name}/workflow_metadata/\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}-\d{{2}}-\d{{2}}Z/MANIFEST.tsv$")
+	pattern = re.compile(rf"{workflow_name}/archive/")
 	for blob in blobs:
 		if blob.name.endswith("MANIFEST.tsv") and not pattern.match(blob.name):
 			content = blob.download_as_text()
@@ -266,7 +267,7 @@ def read_manifest_files(bucket, workflow_name):
 def md5_check(bucket, workflow_name):
 	blobs = bucket.list_blobs(prefix=workflow_name)
 	hashes = {}
-	pattern = re.compile(rf"{workflow_name}/workflow_metadata/\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}-\d{{2}}-\d{{2}}Z/")
+	pattern = re.compile(rf"{workflow_name}/archive/")
 	for blob in blobs:
 		if not pattern.match(blob.name):
 			hashes[blob] = blob.md5_hash
@@ -276,7 +277,7 @@ def md5_check(bucket, workflow_name):
 def non_empty_check(bucket, workflow_name, GREEN_CHECKMARK, RED_X):
 	blobs = bucket.list_blobs(prefix=workflow_name)
 	not_empty_tests = {}
-	pattern = re.compile(rf"{workflow_name}/workflow_metadata/\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}-\d{{2}}-\d{{2}}Z/")
+	pattern = re.compile(rf"{workflow_name}/archive/")
 	for blob in blobs:
 		if not pattern.match(blob.name):
 			if blob.size <= 10:
@@ -350,8 +351,8 @@ def compare_md5_hashes(results, staging, same_files):
 ##############################################################
 def gcopy(source_path, destination_path):
 	command = [
-		"gsutil",
-		"-m",
+		"gcloud",
+		"storage",
 		"cp",
 		source_path,
 		destination_path
@@ -361,21 +362,17 @@ def gcopy(source_path, destination_path):
 	logging.error(result.stderr)
 
 
-# This will also upload the past data promotion reports and combined MANIFEST.tsv's in workflow_metadata folder
 def gsync(source_path, destination_path, dry_run):
 	command = [
-		"gsutil",
-		"-m",
+		"gcloud",
+		"storage",
 		"rsync",
-		"-d",
 		"-r",
-		"-x",
-		"archive",
 		source_path,
 		destination_path
 	]
 	if dry_run:
-		command.insert(4, "-n")
+		command.insert(4, "--dry-run")
 	result = subprocess.run(command, check=True, capture_output=True, text=True)
 	logging.info(result.stdout)
 	logging.error(result.stderr)

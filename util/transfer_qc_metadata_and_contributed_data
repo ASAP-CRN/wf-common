@@ -12,6 +12,7 @@ from common import (
 	unembargoed_team_dev_buckets,
 	embargoed_team_dev_buckets,
 	list_dirs,
+	gsync,
 	remove_internal_qc_label,
 	change_gg_storage_admin_to_read_write,
 	change_sa_storage_admin_to_read_write,
@@ -24,26 +25,10 @@ logging.basicConfig(
 )
 
 
-def gsync_metadata(source_path, destination_path, dry_run):
-	command = [
-		"gsutil",
-		"-m",
-		"rsync",
-		"-r",
-		source_path,
-		destination_path
-	]
-	if dry_run:
-		command.insert(4, "-n")
-	result = subprocess.run(command, check=True, capture_output=True, text=True)
-	logging.info(result.stdout)
-	logging.error(result.stderr)
-
-
 def gsync_artifacts(source_path, destination_path, dry_run):
 	command = [
-		"gsutil",
-		"-m",
+		"gcloud",
+		"storage",
 		"rsync",
 		"-r",
 		"-x",
@@ -52,7 +37,7 @@ def gsync_artifacts(source_path, destination_path, dry_run):
 		destination_path
 	]
 	if dry_run:
-		command.insert(4, "-n")
+		command.insert(4, "--dry-run")
 	result = subprocess.run(command, check=True, capture_output=True, text=True)
 	logging.info(result.stdout)
 	logging.error(result.stderr)
@@ -84,12 +69,12 @@ def main(args):
 
 			# Metadata
 			logging.info(f"Promoting metadata/release in raw to [{curated_bucket}]")
-			gsync_metadata(f"{raw_bucket}/metadata/release", f"{curated_bucket}/metadata/release", dry_run)
+			gsync(f"{raw_bucket}/metadata/release", f"{curated_bucket}/metadata/release", dry_run)
 
 			# File metadata
 			if "file_metadata" in dirs:
 				logging.info(f"Promoting file_metadata in raw to [{curated_bucket}]")
-				gsync_metadata(f"{raw_bucket}/file_metadata", f"{curated_bucket}/file_metadata", dry_run)
+				gsync(f"{raw_bucket}/file_metadata", f"{curated_bucket}/file_metadata", dry_run)
 
 			# Artifacts
 			if "artifacts" in dirs:
@@ -127,19 +112,19 @@ def main(args):
 
 			# Metadata
 			logging.info(f"Promoting metadata/release in raw to [{dev_bucket}]")
-			gsync_metadata(f"{raw_bucket}/metadata/release", f"{dev_bucket}/metadata/release", dry_run)
+			gsync(f"{raw_bucket}/metadata/release", f"{dev_bucket}/metadata/release", dry_run)
 			if dev_bucket in unembargoed_team_dev_buckets:
 				uat_bucket = dev_bucket.replace("dev", "uat")
 				logging.info(f"Team dataset is lifted from internal QC- also promoting metadata/release in raw to [{uat_bucket}]")
-				gsync_metadata(f"{raw_bucket}/metadata/release", f"{uat_bucket}/metadata/release", dry_run)
+				gsync(f"{raw_bucket}/metadata/release", f"{uat_bucket}/metadata/release", dry_run)
 
 			# File metadata
 			if "file_metadata" in dirs:
 				logging.info(f"Promoting file_metadata in raw to [{dev_bucket}]")
-				gsync_metadata(f"{raw_bucket}/file_metadata", f"{dev_bucket}/file_metadata", dry_run)
+				gsync(f"{raw_bucket}/file_metadata", f"{dev_bucket}/file_metadata", dry_run)
 				if dev_bucket in unembargoed_team_dev_buckets:
 					logging.info(f"Team dataset is lifted from internal QC- also promoting file_metadata in raw to [{uat_bucket}]")
-					gsync_metadata(f"{raw_bucket}/file_metadata", f"{uat_bucket}/file_metadata", dry_run)
+					gsync(f"{raw_bucket}/file_metadata", f"{uat_bucket}/file_metadata", dry_run)
 
 			# Artifacts
 			if "artifacts" in dirs:
@@ -154,10 +139,10 @@ def main(args):
 			# Spatial
 			if "spatial" in dirs:
 				logging.info(f"Promoting spatial in raw to [{dev_bucket}]")
-				gsync_metadata(f"{raw_bucket}/spatial", f"{dev_bucket}/spatial", dry_run)
+				gsync(f"{raw_bucket}/spatial", f"{dev_bucket}/spatial", dry_run)
 				if dev_bucket in unembargoed_team_dev_buckets:
 					logging.info(f"Team dataset is lifted from internal QC- also promoting spatial in raw to [{uat_bucket}]")
-					gsync_metadata(f"{raw_bucket}/spatial", f"{uat_bucket}/spatial", dry_run)
+					gsync(f"{raw_bucket}/spatial", f"{uat_bucket}/spatial", dry_run)
 			else:
 				logging.info(f"Raw bucket does not have spatial directory [{raw_bucket}]; skipping")
 

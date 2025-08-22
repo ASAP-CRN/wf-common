@@ -9,7 +9,7 @@ from common import (
 
 
 def get_combined_manifest_loc(path):
-	command = f"gsutil ls {path} | sort | tail -1"
+	command = f"gcloud storage ls {path} | sort | tail -1"
 	file_loc = subprocess.check_output(command, shell=True, text=True, stderr=subprocess.PIPE)
 	return file_loc.strip()
 
@@ -31,16 +31,20 @@ def generate_markdown_report(
 	production_bucket = f"gs://asap-curated-{team}-{source}-{dataset}"
 
 	staging_combined_manifest = file_info[staging]["combined_manifest_df"]
-	staging_timestamps = "\n".join(f"- {item}" for item in staging_combined_manifest["timestamp"].unique())
-	staging_workflow_version = ", ".join(staging_combined_manifest["workflow_version"].unique())
-	staging_workflow_release = ", ".join(staging_combined_manifest["workflow_release"].unique())
+	staging_timestamps = "\n".join(
+		f"- {item}"
+		for item in staging_combined_manifest["timestamp"].dropna().unique()
+		if str(item)[0].isdigit()
+	)
+	staging_workflow_version = ", ".join(staging_combined_manifest["workflow_version"].dropna().unique())
+	staging_workflow_release = ", ".join(staging_combined_manifest["workflow_release"].dropna().unique())
 	staging_sample_loc = file_info[staging]["sample_list_loc"][0]
 
 	if "curated" in file_info:
 		production_combined_manifest = file_info["curated"]["combined_manifest_df"]
-		production_timestamps = "\n".join(f"- {item}" for item in production_combined_manifest["timestamp"].unique())
-		production_workflow_version = ", ".join(production_combined_manifest["workflow_version"].unique())
-		production_workflow_release = ", ".join(production_combined_manifest["workflow_release"].unique())
+		production_timestamps = "\n".join(f"- {item}" for item in production_combined_manifest["timestamp"].dropna().unique())
+		production_workflow_version = ", ".join(production_combined_manifest["workflow_version"].dropna().unique())
+		production_workflow_release = ", ".join(production_combined_manifest["workflow_release"].dropna().unique())
 		production_sample_loc = file_info["curated"]["sample_list_loc"][0]
 
 		# Compare different envs
@@ -67,11 +71,11 @@ def generate_markdown_report(
 			for file in not_empty_tests
 		)
 	
-	previous_manifest_loc = get_combined_manifest_loc(f"{staging_bucket}/{workflow}/workflow_metadata/")
+	previous_manifest_loc = get_combined_manifest_loc(f"{staging_bucket}/{workflow}/archive/workflow_version/**")
 	if previous_manifest_loc == "":
 		previous_manifest_loc = "N/A"
 	else:
-		previous_manifest_loc = f"{previous_manifest_loc}MANIFEST.tsv"
+		previous_manifest_loc = f"{previous_manifest_loc}"
 
 	markdown_content = f"""# Info
 ## Initial environment
@@ -148,7 +152,7 @@ Individual data integrity test results for each file (a comprehensive variation 
 
 
 # Combined manifest file locations
-**New manifest:** {staging_bucket}/{workflow}/workflow_metadata/{timestamp}/MANIFEST.tsv
+**New manifest:** {staging_bucket}/{workflow}/archive/workflow_version/{staging_workflow_version}/workflow_metadata/{timestamp}/MANIFEST.tsv
 
 **Previous manifest:** {previous_manifest_loc}
 """

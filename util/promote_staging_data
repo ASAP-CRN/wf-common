@@ -3,6 +3,7 @@
 import argparse
 import sys
 import logging
+import subprocess
 from datetime import datetime, timezone
 from google.cloud import storage
 from common import (
@@ -15,11 +16,11 @@ from common import (
 	non_empty_check,
 	associated_metadata_check,
 	gcopy,
+	gsync,
 	remove_internal_qc_label,
 	change_gg_storage_admin_to_read_write,
 	change_sa_storage_admin_to_read_write,
 	add_verily_read_access,
-	gsync,
 )
 from markdown_generator import generate_markdown_report
 
@@ -37,6 +38,27 @@ logging.basicConfig(
 		logging.StreamHandler()
 	]
 )
+
+# This will also upload the past data promotion reports and combined MANIFEST.tsv's in archive workflow_metadata folder
+def gsync_del(source_path, destination_path, workflow_name, dry_run):
+	exclude_regex = rf"(archive|{workflow_name})(/.*)?$"
+	command = [
+		"gcloud",
+		"storage",
+		"rsync",
+		"--delete-unmatched-destination-objects",
+		"-r",
+		"-x",
+		exclude_regex,
+		source_path,
+		destination_path
+	]
+	if dry_run:
+		command.insert(4, "--dry-run")
+	result = subprocess.run(command, check=True, capture_output=True, text=True)
+	logging.info(result.stdout)
+	logging.error(result.stderr)
+
 
 def main(args):
 	if args.list:
@@ -153,12 +175,13 @@ def main(args):
 			logging.info(f"Promoting [{team}-{args.source}-{dataset}] data to production")
 			logging.info(f"\tStaging bucket:\t\t[{staging_uat_bucket}]")
 			logging.info(f"\tProduction bucket:\t[{production_bucket}]")
-			gsync(staging_uat_bucket, production_bucket, dry_run)
+			gsync_del(f"{staging_uat_bucket}/{args.workflow_name}", f"{production_bucket}/{args.workflow_name}", args.workflow_name, dry_run)
+			gsync_del(staging_uat_bucket, production_bucket, args.workflow_name, dry_run)
 
 			logging.info(f"Saving workflow version [{args.workflow_version}] of [{team}-{args.source}-{dataset}] production data in archive folder")
 			logging.info(f"\tProduction bucket path:\t\t[{production_workflow_bucket}]")
 			logging.info(f"\tProduction archive/workflow_version bucket path:\t[{production_workflow_version_bucket}]")
-			gsync(production_workflow_bucket, production_workflow_version_bucket, dry_run)
+			gsync_del(production_workflow_bucket, production_workflow_version_bucket, args.workflow_name, dry_run)
 		else:
 			logging.error(f"Data cannot be promoted for [{team}-{args.source}-{dataset}]; exiting")
 			sys.exit(1)
