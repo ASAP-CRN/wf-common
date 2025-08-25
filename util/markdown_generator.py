@@ -34,8 +34,10 @@ def generate_markdown_report(
 	staging_combined_manifest = file_info[staging]["combined_manifest_df"]
 	staging_timestamps = "\n".join(
 		f"- {item}"
-		for item in staging_combined_manifest["timestamp"].dropna().unique()
-		if str(item)[0].isdigit()
+		for item in sorted(
+			(item for item in staging_combined_manifest["timestamp"].dropna().unique() if str(item)[0].isdigit()),
+			reverse = True
+		)
 	)
 	staging_pairs = (
 		staging_combined_manifest[["workflow_version", "workflow_release"]]
@@ -55,7 +57,13 @@ def generate_markdown_report(
 
 	if "curated" in file_info:
 		production_combined_manifest = file_info["curated"]["combined_manifest_df"]
-		production_timestamps = "\n".join(f"- {item}" for item in production_combined_manifest["timestamp"].dropna().unique())
+		production_timestamps = "\n".join(
+			f"- {item}"
+			for item in sorted(
+				(item for item in production_combined_manifest["timestamp"].dropna().unique() if str(item)[0].isdigit()),
+				reverse = True
+			)
+		)
 		production_pairs = (
 			production_combined_manifest[["workflow_version", "workflow_release"]]
 			.dropna()
@@ -100,28 +108,28 @@ def generate_markdown_report(
 ## Initial environment
 **Environment:** [{staging}]
 
-**Bucket:** {staging_bucket}
+**Bucket:** `{staging_bucket}`
 
 **Processing timestamp(s):**
 {staging_timestamps}
 
 **Harmonized {workflow} workflow version:** {staging_workflow_info}
 
-**Sample set:** {staging_sample_loc}
+**Sample set:** `{staging_sample_loc}`
 
 **Tests passed:** {test_boolean}
 
 ## Target environment
 **Environment:** [curated]
 
-**Bucket:** {production_bucket}
+**Bucket:** `{production_bucket}`
 
 **Processing timestamp(s):**
 {production_timestamps}
 
 **Harmonized {workflow} workflow version:** {production_workflow_info}
 
-**Sample set:** {production_sample_loc}
+**Sample set:** `{production_sample_loc}`
 
 **Tests passed:** N/A
 
@@ -171,9 +179,9 @@ Individual data integrity test results for each file (a comprehensive variation 
 
 
 # Combined manifest file locations
-**New manifest:** {staging_bucket}/{workflow}/archive/workflow_version/{latest_workflow_version}/workflow_metadata/{timestamp}/MANIFEST.tsv
+**New manifest:** `{staging_bucket}/{workflow}/archive/workflow_version/{latest_workflow_version}/workflow_metadata/{timestamp}/MANIFEST.tsv`
 
-**Previous manifest:** {previous_manifest_loc}
+**Previous manifest:** `{previous_manifest_loc}`
 """
 
 	with open(f"{team}_{source}_{dataset}_data_promotion_report.md", "w") as file:
