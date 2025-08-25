@@ -16,6 +16,7 @@ from common import (
 	non_empty_check,
 	associated_metadata_check,
 	gcopy,
+	gmove,
 	gsync,
 	remove_internal_qc_label,
 	change_gg_storage_admin_to_read_write,
@@ -83,7 +84,8 @@ def main(args):
 
 			gs_bucket = f"gs://asap-{env}-{team}-{args.source}-{dataset}"
 			dirs = list_dirs(f"gs://{bucket_name}")
-			if dirs:
+			if args.workflow_name in dirs:
+				previous_curated_outputs_exist = True
 				# Data integrity tests
 				logging.info(f"Running data integrity tests on [{bucket_name}]")
 				blob_names, gs_files, sample_list_loc = list_gs_files(bucket, args.workflow_name)
@@ -96,6 +98,8 @@ def main(args):
 					"combined_manifest_df": combined_manifest_df,
 					"md5_hashes": md5_hashes,
 				}
+			else:
+				previous_curated_outputs_exist = False
 
 		bucket = client.get_bucket(f"asap-uat-{team}-{args.source}-{dataset}")
 		not_empty_test_results = non_empty_check(bucket, args.workflow_name, GREEN_CHECKMARK, RED_X)
@@ -178,9 +182,16 @@ def main(args):
 			gsync_del(f"{staging_uat_bucket}/{args.workflow_name}", f"{production_bucket}/{args.workflow_name}", args.workflow_name, dry_run)
 			gsync_del(staging_uat_bucket, production_bucket, args.workflow_name, dry_run)
 
+			# Folder path must exist for rsync
+			if not previous_curated_outputs_exist:
+				tmp_file = "tmp.txt"
+				with open(tmp_file, "w") as f:
+					pass
+				gmove(tmp_file, f"{production_workflow_version_bucket}/")
 			logging.info(f"Saving workflow version [{args.workflow_version}] of [{team}-{args.source}-{dataset}] production data in archive folder")
 			logging.info(f"\tProduction bucket path:\t\t[{production_workflow_bucket}]")
 			logging.info(f"\tProduction archive/workflow_version bucket path:\t[{production_workflow_version_bucket}]")
+			# Dry and real run will only work if staging data gets promoted to production in previous step
 			gsync_del(production_workflow_bucket, production_workflow_version_bucket, args.workflow_name, dry_run)
 		else:
 			logging.error(f"Data cannot be promoted for [{team}-{args.source}-{dataset}]; exiting")

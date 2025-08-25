@@ -53,7 +53,7 @@ def generate_markdown_report(
 	).sort_values("parsed_version", ascending=False)
 	latest_row = valid.iloc[0]
 	latest_workflow_version = latest_row["workflow_version"]
-	staging_sample_loc = file_info[staging]["sample_list_loc"][0]
+	staging_sample_loc = f"`{file_info[staging]["sample_list_loc"][0]}`"
 
 	if "curated" in file_info:
 		production_combined_manifest = file_info["curated"]["combined_manifest_df"]
@@ -72,12 +72,18 @@ def generate_markdown_report(
 			.apply(lambda row: f"[{row['workflow_version']}]({row['workflow_release']})", axis=1)
 		)
 		production_workflow_info = ", ".join(production_pairs)
-		production_sample_loc = file_info["curated"]["sample_list_loc"][0]
+		production_sample_loc = f"`{file_info["curated"]["sample_list_loc"][0]}`"
 
 		# Compare different envs
 		same_files, new_files, deleted_files = compare_blob_names(file_info, staging)
-		new_files_rows = "\n".join(f"| {filename} |" for filename in new_files)
-		deleted_files_rows = "\n".join(f"| {filename} |" for filename in deleted_files)
+		if new_files:
+			new_files_rows = "\n".join(f"| {filename} |" for filename in new_files)
+		else:
+			new_files_rows = "| N/A |"
+		if deleted_files:
+			deleted_files_rows = "\n".join(f"| {filename} |" for filename in deleted_files)
+		else:
+			deleted_files_rows = "| N/A |"
 		modified_files = compare_md5_hashes(file_info, staging, same_files)
 		if same_files == ["N/A"]:
 			modified_files_rows = "| N/A | N/A |"
@@ -102,7 +108,7 @@ def generate_markdown_report(
 	if previous_manifest_loc == "":
 		previous_manifest_loc = "N/A"
 	else:
-		previous_manifest_loc = f"{previous_manifest_loc}"
+		previous_manifest_loc = f"`{previous_manifest_loc}`"
 
 	markdown_content = f"""# Info
 ## Initial environment
@@ -115,7 +121,7 @@ def generate_markdown_report(
 
 **Harmonized {workflow} workflow version:** {staging_workflow_info}
 
-**Sample set:** `{staging_sample_loc}`
+**Sample set:** {staging_sample_loc}
 
 **Tests passed:** {test_boolean}
 
@@ -129,7 +135,7 @@ def generate_markdown_report(
 
 **Harmonized {workflow} workflow version:** {production_workflow_info}
 
-**Sample set:** `{production_sample_loc}`
+**Sample set:** {production_sample_loc}
 
 **Tests passed:** N/A
 
@@ -181,7 +187,7 @@ Individual data integrity test results for each file (a comprehensive variation 
 # Combined manifest file locations
 **New manifest:** `{staging_bucket}/{workflow}/archive/workflow_version/{latest_workflow_version}/workflow_metadata/{timestamp}/MANIFEST.tsv`
 
-**Previous manifest:** `{previous_manifest_loc}`
+**Previous manifest:** {previous_manifest_loc}
 """
 
 	with open(f"{team}_{source}_{dataset}_data_promotion_report.md", "w") as file:
