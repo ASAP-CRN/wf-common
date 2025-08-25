@@ -2,6 +2,7 @@
 
 import subprocess
 from datetime import datetime
+from packaging import version
 from common import (
 	compare_blob_names,
 	compare_md5_hashes,
@@ -9,7 +10,7 @@ from common import (
 
 
 def get_combined_manifest_loc(path):
-	command = f"gsutil ls {path} | sort | tail -1"
+	command = f"gcloud storage ls {path} | sort | tail -1"
 	file_loc = subprocess.check_output(command, shell=True, text=True, stderr=subprocess.PIPE)
 	return file_loc.strip()
 
@@ -31,22 +32,58 @@ def generate_markdown_report(
 	production_bucket = f"gs://asap-curated-{team}-{source}-{dataset}"
 
 	staging_combined_manifest = file_info[staging]["combined_manifest_df"]
-	staging_timestamps = "\n".join(f"- {item}" for item in staging_combined_manifest["timestamp"].unique())
-	staging_workflow_version = ", ".join(staging_combined_manifest["workflow_version"].unique())
-	staging_workflow_release = ", ".join(staging_combined_manifest["workflow_release"].unique())
-	staging_sample_loc = file_info[staging]["sample_list_loc"][0]
+	staging_timestamps = "\n".join(
+		f"- {item}"
+		for item in sorted(
+			(item for item in staging_combined_manifest["timestamp"].dropna().unique() if str(item)[0].isdigit()),
+			reverse = True
+		)
+	)
+	staging_pairs = (
+		staging_combined_manifest[["workflow_version", "workflow_release"]]
+		.dropna()
+		.drop_duplicates()
+		.astype(str)
+		.apply(lambda row: f"[{row['workflow_version']}]({row['workflow_release']})", axis=1)
+	)
+	staging_workflow_info = ", ".join(staging_pairs)
+	valid = staging_combined_manifest.dropna(subset=["workflow_version", "workflow_release"])
+	valid = valid.assign(
+		parsed_version=valid["workflow_version"].astype(str).map(lambda v: version.parse(v.lstrip("v")))
+	).sort_values("parsed_version", ascending=False)
+	latest_row = valid.iloc[0]
+	latest_workflow_version = latest_row["workflow_version"]
+	staging_sample_loc = f"`{file_info[staging]["sample_list_loc"][0]}`"
 
 	if "curated" in file_info:
 		production_combined_manifest = file_info["curated"]["combined_manifest_df"]
-		production_timestamps = "\n".join(f"- {item}" for item in production_combined_manifest["timestamp"].unique())
-		production_workflow_version = ", ".join(production_combined_manifest["workflow_version"].unique())
-		production_workflow_release = ", ".join(production_combined_manifest["workflow_release"].unique())
-		production_sample_loc = file_info["curated"]["sample_list_loc"][0]
+		production_timestamps = "\n".join(
+			f"- {item}"
+			for item in sorted(
+				(item for item in production_combined_manifest["timestamp"].dropna().unique() if str(item)[0].isdigit()),
+				reverse = True
+			)
+		)
+		production_pairs = (
+			production_combined_manifest[["workflow_version", "workflow_release"]]
+			.dropna()
+			.drop_duplicates()
+			.astype(str)
+			.apply(lambda row: f"[{row['workflow_version']}]({row['workflow_release']})", axis=1)
+		)
+		production_workflow_info = ", ".join(production_pairs)
+		production_sample_loc = f"`{file_info["curated"]["sample_list_loc"][0]}`"
 
 		# Compare different envs
 		same_files, new_files, deleted_files = compare_blob_names(file_info, staging)
-		new_files_rows = "\n".join(f"| {filename} |" for filename in new_files)
-		deleted_files_rows = "\n".join(f"| {filename} |" for filename in deleted_files)
+		if new_files:
+			new_files_rows = "\n".join(f"| {filename} |" for filename in new_files)
+		else:
+			new_files_rows = "| N/A |"
+		if deleted_files:
+			deleted_files_rows = "\n".join(f"| {filename} |" for filename in deleted_files)
+		else:
+			deleted_files_rows = "| N/A |"
 		modified_files = compare_md5_hashes(file_info, staging, same_files)
 		if same_files == ["N/A"]:
 			modified_files_rows = "| N/A | N/A |"
@@ -55,7 +92,7 @@ def generate_markdown_report(
 									for filename, info in modified_files.items())
 	else:
 		production_timestamps = "N/A"
-		production_workflow_version = "N/A"
+		production_workflow_info = "N/A"
 		production_sample_loc = "N/A"
 
 		new_files_rows = "\n".join(f"| {filename} |" for filename in file_info[staging]["gs_files"])
@@ -67,22 +104,22 @@ def generate_markdown_report(
 			for file in not_empty_tests
 		)
 	
-	previous_manifest_loc = get_combined_manifest_loc(f"{staging_bucket}/{workflow}/workflow_metadata/")
+	previous_manifest_loc = get_combined_manifest_loc(f"{staging_bucket}/{workflow}/archive/workflow_version/**")
 	if previous_manifest_loc == "":
 		previous_manifest_loc = "N/A"
 	else:
-		previous_manifest_loc = f"{previous_manifest_loc}MANIFEST.tsv"
+		previous_manifest_loc = f"`{previous_manifest_loc}`"
 
 	markdown_content = f"""# Info
 ## Initial environment
 **Environment:** [{staging}]
 
-**Bucket:** {staging_bucket}
+**Bucket:** `{staging_bucket}`
 
 **Processing timestamp(s):**
 {staging_timestamps}
 
-**Harmonized {workflow} workflow version:** [{staging_workflow_version}]({staging_workflow_release})
+**Harmonized {workflow} workflow version:** {staging_workflow_info}
 
 **Sample set:** {staging_sample_loc}
 
@@ -91,12 +128,12 @@ def generate_markdown_report(
 ## Target environment
 **Environment:** [curated]
 
-**Bucket:** {production_bucket}
+**Bucket:** `{production_bucket}`
 
 **Processing timestamp(s):**
 {production_timestamps}
 
-**Harmonized {workflow} workflow version:** [{production_workflow_version}]({production_workflow_release})
+**Harmonized {workflow} workflow version:** {production_workflow_info}
 
 **Sample set:** {production_sample_loc}
 
@@ -148,7 +185,7 @@ Individual data integrity test results for each file (a comprehensive variation 
 
 
 # Combined manifest file locations
-**New manifest:** {staging_bucket}/{workflow}/workflow_metadata/{timestamp}/MANIFEST.tsv
+**New manifest:** `{staging_bucket}/{workflow}/archive/workflow_version/{latest_workflow_version}/workflow_metadata/{timestamp}/MANIFEST.tsv`
 
 **Previous manifest:** {previous_manifest_loc}
 """

@@ -2,6 +2,7 @@
 
 import logging
 import subprocess
+import json
 import pandas as pd
 import re
 from io import StringIO
@@ -15,21 +16,16 @@ from google.cloud import storage
 completed_platforming_raw_buckets = [
 	# Single Nucleus RNAseq hybsel
 	"gs://asap-raw-team-scherzer-pmdbs-sn-rnaseq-mtg-hybsel",
-	# Human PMDBS Single Nucleus/Cell RNAseq
-	"gs://asap-raw-team-jakobsson-pmdbs-sn-rnaseq-v2", # temp
 	# Mouse Single Nucleus/Cell RNAseq
 	"gs://asap-raw-team-biederer-mouse-sc-rnaseq",
 	"gs://asap-raw-team-cragg-mouse-sn-rnaseq-striatum",
-	# Human PMDBS Spatial Transcriptomics Nanostring GeoMx
-	"gs://asap-raw-team-edwards-pmdbs-spatial-geomx-th",
-	# Mouse Spatial Transcriptomics 10x Visium
-	"gs://asap-raw-team-cragg-mouse-spatial-visium-striatum",
 ]
 
 embargoed_platforming_raw_buckets = [
-	# Human PMDBS Spatial Transcriptomics Nanostring GeoMx
-	"gs://asap-raw-team-vila-pmdbs-spatial-geomx-thlc",
-	"gs://asap-raw-team-vila-pmdbs-spatial-geomx-unmasked",
+	# Multimodal Seq
+	"gs://asap-raw-team-wood-pmdbs-multimodal-seq",
+	# Human PMDBS Bulk RNAseq
+	"gs://asap-raw-team-jakobsson-pmdbs-bulk-rnaseq"
 ]
 
 unembargoed_platforming_raw_buckets = [
@@ -67,68 +63,113 @@ def run_command(command):
 			raise
 
 
-def change_gg_storage_admin_to_read_write(bucket_name):
+def check_admin_binding(type, bucket_name):
 	team_name = get_team_name(bucket_name)
-	team_gg = "asap-team-" + team_name + "@dnastack.com"
-	run_command([
-		"gcloud",
-		"storage",
-		"buckets",
-		"remove-iam-policy-binding",
-		bucket_name,
-		f"--member=group:{team_gg}",
-		"--role=roles/storage.admin"
-	])
-	run_command([
+	role_admin = "roles/storage.admin"
+	if type == "gg":
+		team_gg = "asap-team-" + team_name + "@dnastack.com"
+		member = f"group:{team_gg}"
+		policy_json = run_command([
+			"gcloud",
+			"storage",
+			"buckets",
+			"get-iam-policy",
+			bucket_name,
+			"--format=json"
+		])
+		policy = json.loads(policy_json)
+		has_admin_binding = any(
+			binding["role"] == role_admin and member in binding.get("members", [])
+			for binding in policy.get("bindings", [])
+		)
+		return member, role_admin, has_admin_binding
+	if type == "sa":
+		team_sa = "raw-admin-" + team_name + "@dnastack-asap-parkinsons.iam.gserviceaccount.com"
+		member = f"serviceAccount:{team_sa}"
+		policy_json = run_command([
+			"gcloud",
+			"storage",
+			"buckets",
+			"get-iam-policy",
+			bucket_name,
+			"--format=json"
+		])
+		policy = json.loads(policy_json)
+		has_admin_binding = any(
+			binding["role"] == role_admin and member in binding.get("members", [])
+			for binding in policy.get("bindings", [])
+		)
+		return member, role_admin, has_admin_binding
+
+
+def change_gg_storage_admin_to_read_write(bucket_name):
+	member, role_admin, has_admin_binding = check_admin_binding("gg", bucket_name)
+	if has_admin_binding:
+		print(f"[INFO] Removing Storage Admin access and granting Storage Object Creator and Viewer to CRN Teams for [{bucket_name}] on Google Group")
+		run_command([
+			"gcloud",
+			"storage",
+			"buckets",
+			"remove-iam-policy-binding",
+			bucket_name,
+			f"--member={member}",
+			f"--role={role_admin}"
+		])
+		run_command([
 		"gcloud",
 		"storage",
 		"buckets",
 		"add-iam-policy-binding",
 		bucket_name,
-		f"--member=group:{team_gg}",
+		f"--member={member}",
 		"--role=roles/storage.objectViewer"
-	])
-	run_command([
-		"gcloud",
-		"storage",
-		"buckets",
-		"add-iam-policy-binding",
-		bucket_name,
-		f"--member=group:{team_gg}",
-		"--role=roles/storage.objectCreator"
-	])
+		])
+		run_command([
+			"gcloud",
+			"storage",
+			"buckets",
+			"add-iam-policy-binding",
+			bucket_name,
+			f"--member={member}",
+			"--role=roles/storage.objectCreator"
+		])
+	else:
+		print(f"[INFO] Storage Object Creator and Viewer already granted to CRN Teams' permissions for [{bucket_name}] on Google Group")
 
 
 def change_sa_storage_admin_to_read_write(bucket_name):
-	team_name = get_team_name(bucket_name)
-	team_sa = "raw-admin-" + team_name + "@dnastack-asap-parkinsons.iam.gserviceaccount.com"
-	run_command([
-		"gcloud",
-		"storage",
-		"buckets",
-		"remove-iam-policy-binding",
-		bucket_name,
-		f"--member=serviceAccount:{team_sa}",
-		"--role=roles/storage.admin"
-	])
-	run_command([
-		"gcloud",
-		"storage",
-		"buckets",
-		"add-iam-policy-binding",
-		bucket_name,
-		f"--member=serviceAccount:{team_sa}",
-		"--role=roles/storage.objectViewer"
-	])
-	run_command([
-		"gcloud",
-		"storage",
-		"buckets",
-		"add-iam-policy-binding",
-		bucket_name,
-		f"--member=serviceAccount:{team_sa}",
-		"--role=roles/storage.objectCreator"
-	])
+	member, role_admin, has_admin_binding = check_admin_binding("sa", bucket_name)
+	if has_admin_binding:
+		print(f"[INFO] Removing Storage Admin access and granting Storage Object Creator and Viewer to CRN Teams for [{bucket_name}] on Service Account")
+		run_command([
+			"gcloud",
+			"storage",
+			"buckets",
+			"remove-iam-policy-binding",
+			bucket_name,
+			f"--member={member}",
+			f"--role={role_admin}"
+		])
+		run_command([
+			"gcloud",
+			"storage",
+			"buckets",
+			"add-iam-policy-binding",
+			bucket_name,
+			f"--member={member}",
+			"--role=roles/storage.objectViewer"
+		])
+		run_command([
+			"gcloud",
+			"storage",
+			"buckets",
+			"add-iam-policy-binding",
+			bucket_name,
+			f"--member={member}",
+			"--role=roles/storage.objectCreator"
+		])
+	else:
+		print(f"[INFO] Storage Object Creator and Viewer already granted to CRN Teams' permissions for [{bucket_name}] on Service Account")
 
 
 ##########################################################################
@@ -148,16 +189,25 @@ unembargoed_team_dev_buckets = [
 	"gs://asap-dev-team-lee-pmdbs-bulk-rnaseq-mfg",
 	"gs://asap-dev-team-wood-pmdbs-bulk-rnaseq",
 	#"gs://asap-dev-cohort-pmdbs-bulk-rnaseq",
+	# Human PMDBS Spatial Transcriptomics Nanostring GeoMx
+	"gs://asap-dev-team-edwards-pmdbs-spatial-geomx-th",
+	# Mouse Spatial Transcriptomics 10x Visium
+	"gs://asap-dev-team-cragg-mouse-spatial-visium-striatum",
 ]
 
 embargoed_team_dev_buckets = [
+	# Human PMDBS Single Nucleus/Cell RNAseq
 	"gs://asap-dev-team-sulzer-pmdbs-sn-rnaseq",
+	# Human PMDBS Spatial Transcriptomics Nanostring GeoMx
+	"gs://asap-dev-team-vila-pmdbs-spatial-geomx-thlc",
+	"gs://asap-dev-team-vila-pmdbs-spatial-geomx-unmasked",
 ]
 
 
 def list_dirs(bucket_name):
 	command = [
-		"gsutil",
+		"gcloud",
+		"storage",
 		"ls",
 		bucket_name
 	]
@@ -177,7 +227,11 @@ ALL_TEAMS = [
 	"team-scherzer",
 	"team-sulzer",
 	"team-voet",
-	"team-wood"
+	"team-wood",
+	"team-biederer",
+	"team-cragg",
+	"team-edwards",
+	"team-vila",
 ]
 
 def list_teams():
@@ -191,7 +245,7 @@ def list_gs_files(bucket, workflow_name):
 	blob_names = []
 	gs_files = []
 	sample_list_loc = []
-	pattern = re.compile(rf"{workflow_name}/workflow_metadata/\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}-\d{{2}}-\d{{2}}Z/")
+	pattern = re.compile(rf"{workflow_name}/archive/")
 	for blob in blobs:
 		if not pattern.match(blob.name):
 			blob_names.append(blob.name)
@@ -204,7 +258,7 @@ def list_gs_files(bucket, workflow_name):
 def read_manifest_files(bucket, workflow_name):
 	blobs = bucket.list_blobs(prefix=workflow_name) # This has to be called again because 'Iterator has already started'
 	manifest_dfs = []
-	pattern = re.compile(rf"{workflow_name}/workflow_metadata/\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}-\d{{2}}-\d{{2}}Z/MANIFEST.tsv$")
+	pattern = re.compile(rf"{workflow_name}/archive/")
 	for blob in blobs:
 		if blob.name.endswith("MANIFEST.tsv") and not pattern.match(blob.name):
 			content = blob.download_as_text()
@@ -217,7 +271,7 @@ def read_manifest_files(bucket, workflow_name):
 def md5_check(bucket, workflow_name):
 	blobs = bucket.list_blobs(prefix=workflow_name)
 	hashes = {}
-	pattern = re.compile(rf"{workflow_name}/workflow_metadata/\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}-\d{{2}}-\d{{2}}Z/")
+	pattern = re.compile(rf"{workflow_name}/archive/")
 	for blob in blobs:
 		if not pattern.match(blob.name):
 			hashes[blob] = blob.md5_hash
@@ -227,7 +281,7 @@ def md5_check(bucket, workflow_name):
 def non_empty_check(bucket, workflow_name, GREEN_CHECKMARK, RED_X):
 	blobs = bucket.list_blobs(prefix=workflow_name)
 	not_empty_tests = {}
-	pattern = re.compile(rf"{workflow_name}/workflow_metadata/\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}-\d{{2}}-\d{{2}}Z/")
+	pattern = re.compile(rf"{workflow_name}/archive/")
 	for blob in blobs:
 		if not pattern.match(blob.name):
 			if blob.size <= 10:
@@ -301,8 +355,8 @@ def compare_md5_hashes(results, staging, same_files):
 ##############################################################
 def gcopy(source_path, destination_path):
 	command = [
-		"gsutil",
-		"-m",
+		"gcloud",
+		"storage",
 		"cp",
 		source_path,
 		destination_path
@@ -312,21 +366,30 @@ def gcopy(source_path, destination_path):
 	logging.error(result.stderr)
 
 
-# This will also upload the past data promotion reports and combined MANIFEST.tsv's in workflow_metadata folder
+def gmove(source_path, destination_path):
+	command = [
+		"gcloud",
+		"storage",
+		"mv",
+		source_path,
+		destination_path
+	]
+	result = subprocess.run(command, check=True, capture_output=True, text=True)
+	logging.info(result.stdout)
+	logging.error(result.stderr)
+
+
 def gsync(source_path, destination_path, dry_run):
 	command = [
-		"gsutil",
-		"-m",
+		"gcloud",
+		"storage",
 		"rsync",
-		"-d",
 		"-r",
-		"-x",
-		"archive",
 		source_path,
 		destination_path
 	]
 	if dry_run:
-		command.insert(4, "-n")
+		command.insert(4, "--dry-run")
 	result = subprocess.run(command, check=True, capture_output=True, text=True)
 	logging.info(result.stdout)
 	logging.error(result.stderr)
