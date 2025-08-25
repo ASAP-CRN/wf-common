@@ -22,6 +22,10 @@ completed_platforming_raw_buckets = [
 ]
 
 embargoed_platforming_raw_buckets = [
+	# Multimodal Seq
+	"gs://asap-raw-team-wood-pmdbs-multimodal-seq",
+	# Human PMDBS Bulk RNAseq
+	"gs://asap-raw-team-jakobsson-pmdbs-bulk-rnaseq"
 ]
 
 unembargoed_platforming_raw_buckets = [

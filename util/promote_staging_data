@@ -186,6 +186,8 @@ def main(args):
 			logging.error(f"Data cannot be promoted for [{team}-{args.source}-{dataset}]; exiting")
 			sys.exit(1)
 
+		logging.info("Script complete")
+
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(
