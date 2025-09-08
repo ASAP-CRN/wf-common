@@ -19,13 +19,13 @@ completed_platforming_raw_buckets = [
 	# Mouse Single Nucleus/Cell RNAseq
 	"gs://asap-raw-team-biederer-mouse-sc-rnaseq",
 	"gs://asap-raw-team-cragg-mouse-sn-rnaseq-striatum",
+	# Human PMDBS Bulk RNAseq
+	"gs://asap-raw-team-jakobsson-pmdbs-bulk-rnaseq",
 ]
 
 embargoed_platforming_raw_buckets = [
 	# Multimodal Seq
-	"gs://asap-raw-team-wood-pmdbs-multimodal-seq",
-	# Human PMDBS Bulk RNAseq
-	"gs://asap-raw-team-jakobsson-pmdbs-bulk-rnaseq"
+	"gs://asap-raw-team-wood-pmdbs-multimodal-seq"
 ]
 
 unembargoed_platforming_raw_buckets = [
@@ -183,12 +183,12 @@ unembargoed_team_dev_buckets = [
 	"gs://asap-dev-team-scherzer-pmdbs-sn-rnaseq-mtg",
 	"gs://asap-dev-team-jakobsson-pmdbs-sn-rnaseq",
 	"gs://asap-dev-team-lee-pmdbs-sn-rnaseq",
-	#"gs://asap-dev-cohort-pmdbs-sc-rnaseq",
+	"gs://asap-dev-cohort-pmdbs-sc-rnaseq",
 	# Human PMDBS Bulk RNAseq
 	"gs://asap-dev-team-hardy-pmdbs-bulk-rnaseq",
 	"gs://asap-dev-team-lee-pmdbs-bulk-rnaseq-mfg",
 	"gs://asap-dev-team-wood-pmdbs-bulk-rnaseq",
-	#"gs://asap-dev-cohort-pmdbs-bulk-rnaseq",
+	"gs://asap-dev-cohort-pmdbs-bulk-rnaseq",
 	# Human PMDBS Spatial Transcriptomics Nanostring GeoMx
 	"gs://asap-dev-team-edwards-pmdbs-spatial-geomx-th",
 	# Mouse Spatial Transcriptomics 10x Visium
