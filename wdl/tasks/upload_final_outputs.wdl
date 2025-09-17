@@ -18,7 +18,7 @@ task upload_final_outputs {
 
 		echo -e "filename\tmd5_hash\ttimestamp\tworkflow\tworkflow_version\tworkflow_release" > MANIFEST.tsv
 		mkdir metadata
-		gcloud storage cp --billing-project="~{billing_project}" -I ./metadata/ \
+		gcloud storage cp --billing-project=~{billing_project} -I ./metadata/ \
 		< metadata_paths.txt
 
 		find metadata -type f -exec cat {} \; \
@@ -26,19 +26,19 @@ task upload_final_outputs {
 
 		while read -r staging_data_bucket || [[ -n "${staging_data_bucket}" ]]; do
 			# Remove files currently existing at the target path, if they exist
-			if gcloud storage ls --billing-project="${billing_project}" "${staging_data_bucket}/~{staging_data_path}/**"; then
-				gcloud storage rm --billing-project="${billing_project}" \
+			if gcloud storage ls --billing-project=~{billing_project} "${staging_data_bucket}/~{staging_data_path}/**"; then
+				gcloud storage rm --billing-project=~{billing_project} \
 					"${staging_data_bucket}/~{staging_data_path}/**"
 			fi
 
 			# Copy files to the staging data path
-			gcloud storage cp --billing-project="~{billing_project}" \
+			gcloud storage cp --billing-project=~{billing_project} \
 				-I \
 				"${staging_data_bucket}/~{staging_data_path}/" \
 			< ~{write_lines(output_file_paths)}
 
 			# Upload the manifest to the staging data path
-			gcloud storage cp --billing-project="~{billing_project}" \
+			gcloud storage cp --billing-project=~{billing_project} \
 				MANIFEST.tsv \
 				"${staging_data_bucket}/~{staging_data_path}/"
 
