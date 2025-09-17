@@ -68,9 +68,8 @@ for output_file in "${OUTPUT_FILES[@]}"; do
 	echo "${output_file}.meta.tsv" >> output_files.txt
 done
 
-gsutil \
-	-u "${BILLING_PROJECT}" \
-	-m cp \
+gcloud storage cp \
+	--billing-project="${BILLING_PROJECT}" \
 	-I \
 	"${DESTINATION_PATH}" \
 < output_files.txt
