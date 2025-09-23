@@ -43,8 +43,8 @@ gsync() {
   source_path="${1#/}/"
   destination_path="${2#/}/"
 
-  gsutil -m rsync \
-    -d \
+  gcloud storage rsync \
+    --delete-unmatched-destination-objects \
     -r \
     ${DRY_RUN_ARG} \
     "${source_path}" \
@@ -52,7 +52,7 @@ gsync() {
 }
 
 # Default to dry run if promotion is not selected
-DRY_RUN_ARG="-n"
+DRY_RUN_ARG="--dry-run"
 FOLDER_TYPE=""
 PREFIX=""
 DELETE=""
@@ -146,7 +146,7 @@ for team in "${TEAMS[@]}"; do
     response=$(echo "$response" | tr '[:upper:]' '[:lower:]')
     if [[ "$response" == "yes" ]]; then
       log "Starting deletion..."
-      gsutil -m rm -r "$raw_bucket"
+      gcloud storage rm -r "$raw_bucket"
     elif [[ "$response" == "no" ]]; then
       log "Deletion canceled"
     else
