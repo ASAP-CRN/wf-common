@@ -353,7 +353,7 @@ def compare_md5_hashes(results, staging, same_files):
 ##############################################################
 ##### PROMOTE WORKFLOW OUTPUTS - STAGING TO PROD SECTION #####
 ##############################################################
-def gcopy(source_path, destination_path):
+def gcopy(source_path, destination_path, recursive=False):
 	command = [
 		"gcloud",
 		"storage",
@@ -361,6 +361,8 @@ def gcopy(source_path, destination_path):
 		source_path,
 		destination_path
 	]
+	if recursive:
+		command.insert(3, "--recursive")
 	result = subprocess.run(command, check=True, capture_output=True, text=True)
 	logging.info(result.stdout)
 	logging.error(result.stderr)
