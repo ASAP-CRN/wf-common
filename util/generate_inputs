@@ -133,7 +133,6 @@ def main(args):
 
                 if args.workflow_name == "pmdbs_bulk_rnaseq_analysis":
                     projects[team_id]["project_sample_metadata_csv"] = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/metadata/release/SAMPLE.csv"
-                    projects[team_id]["project_condition_metadata_csv"] = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/metadata/release/CONDITION.csv"
 
                 if args.workflow_name == "spatial_geomx_analysis":
                     projects[team_id] = {
