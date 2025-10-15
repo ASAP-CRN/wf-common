@@ -29,13 +29,13 @@ embargoed_platforming_raw_buckets = [
 ]
 
 unembargoed_platforming_raw_buckets = [
-	"team-jakobsson-invitro-bulk-rnaseq-dopaminergic",
-	"team-jakobsson-invitro-bulk-rnaseq-microglia",
-	"team-wood-pmdbs-multimodal-seq",
-	"team-scherzer-pmdbs-sn-rnaseq-mtg",
-	"team-scherzer-pmdbs-sn-rnaseq-mtg-hybsel",
-	"team-scherzer-pmdbs-spatial-visium-mtg",
-	"team-scherzer-pmdbs-genetics"
+	"gs://team-jakobsson-invitro-bulk-rnaseq-dopaminergic",
+	"gs://team-jakobsson-invitro-bulk-rnaseq-microglia",
+	"gs://team-wood-pmdbs-multimodal-seq",
+	"gs://team-scherzer-pmdbs-sn-rnaseq-mtg",
+	"gs://team-scherzer-pmdbs-sn-rnaseq-mtg-hybsel",
+	"gs://team-scherzer-pmdbs-spatial-visium-mtg",
+	"gs://team-scherzer-pmdbs-genetics"
 ]
 
 
