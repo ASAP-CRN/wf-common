@@ -25,10 +25,17 @@ completed_platforming_raw_buckets = [
 
 embargoed_platforming_raw_buckets = [
 	# Multimodal Seq
-	"gs://asap-raw-team-wood-pmdbs-multimodal-seq"
+	# "gs://asap-raw-team-wood-pmdbs-multimodal-seq" # AM: assumed unembargoed as on completed list
 ]
 
 unembargoed_platforming_raw_buckets = [
+	"team-jakobsson-invitro-bulk-rnaseq-dopaminergic",
+	"team-jakobsson-invitro-bulk-rnaseq-microglia",
+	"team-wood-pmdbs-multimodal-seq",
+	"team-scherzer-pmdbs-sn-rnaseq-mtg",
+	"team-scherzer-pmdbs-sn-rnaseq-mtg-hybsel",
+	"team-scherzer-pmdbs-spatial-visium-mtg",
+	"team-scherzer-pmdbs-genetics"
 ]
 
 
