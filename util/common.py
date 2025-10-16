@@ -29,17 +29,17 @@ embargoed_platforming_raw_buckets = [
 ]
 
 unembargoed_platforming_raw_buckets = [
-	"gs://team-jakobsson-invitro-bulk-rnaseq-dopaminergic",
-	"gs://team-jakobsson-invitro-bulk-rnaseq-microglia",
-	"gs://team-wood-pmdbs-multimodal-seq",
-	"gs://team-scherzer-pmdbs-sn-rnaseq-mtg",
-	"gs://team-scherzer-pmdbs-sn-rnaseq-mtg-hybsel",
-	"gs://team-scherzer-pmdbs-spatial-visium-mtg",
-	"gs://team-scherzer-pmdbs-genetics"
+	"gs://asap-raw-team-jakobsson-invitro-bulk-rnaseq-dopaminergic",
+	"gs://asap-raw-team-jakobsson-invitro-bulk-rnaseq-microglia",
+	"gs://asap-raw-team-wood-pmdbs-multimodal-seq",
+	"gs://asap-raw-team-scherzer-pmdbs-sn-rnaseq-mtg",
+	"gs://asap-raw-team-scherzer-pmdbs-sn-rnaseq-mtg-hybsel",
+	"gs://asap-raw-team-scherzer-pmdbs-spatial-visium-mtg",
+	"gs://asap-raw-team-scherzer-pmdbs-genetics"
 ]
 
 
-def remove_internal_qc_label(bucket_name):
+def remove_internal_qc_label(bucket_name, billing_project=None):
 	command = [
 		"gcloud",
 		"storage",
@@ -48,17 +48,21 @@ def remove_internal_qc_label(bucket_name):
 		bucket_name,
 		"--remove-labels=internal-qc-data"
 	]
+	if billing_project:
+		command += ["--billing-project", billing_project]
 	result = subprocess.run(command, check=True, capture_output=True, text=True)
 	return result.stdout
 
 
 def get_team_name(bucket_name):
-	match = re.search(r"team-(.*?)-(mouse|pmdbs)", bucket_name)
+	match = re.search(r"team-(.*?)-(mouse|pmdbs|invitro)", bucket_name)
 	team = match.group(1)
 	return team
 
 
-def run_command(command):
+def run_command(command, billing_project=None):
+	if billing_project:
+		command += ["--billing-project", billing_project]
 	try:
 		result = subprocess.run(command, check=True, capture_output=True, text=True)
 		return result.stdout
@@ -70,7 +74,7 @@ def run_command(command):
 			raise
 
 
-def check_admin_binding(type, bucket_name):
+def check_admin_binding(type, bucket_name, billing_project=None):
 	team_name = get_team_name(bucket_name)
 	role_admin = "roles/storage.admin"
 	if type == "gg":
@@ -83,7 +87,7 @@ def check_admin_binding(type, bucket_name):
 			"get-iam-policy",
 			bucket_name,
 			"--format=json"
-		])
+		], billing_project=billing_project)
 		policy = json.loads(policy_json)
 		has_admin_binding = any(
 			binding["role"] == role_admin and member in binding.get("members", [])
@@ -100,7 +104,7 @@ def check_admin_binding(type, bucket_name):
 			"get-iam-policy",
 			bucket_name,
 			"--format=json"
-		])
+		], billing_project=billing_project)
 		policy = json.loads(policy_json)
 		has_admin_binding = any(
 			binding["role"] == role_admin and member in binding.get("members", [])
@@ -109,8 +113,8 @@ def check_admin_binding(type, bucket_name):
 		return member, role_admin, has_admin_binding
 
 
-def change_gg_storage_admin_to_read_write(bucket_name):
-	member, role_admin, has_admin_binding = check_admin_binding("gg", bucket_name)
+def change_gg_storage_admin_to_read_write(bucket_name, billing_project=None):
+	member, role_admin, has_admin_binding = check_admin_binding("gg", bucket_name, billing_project=billing_project)
 	if has_admin_binding:
 		print(f"[INFO] Removing Storage Admin access and granting Storage Object Creator and Viewer to CRN Teams for [{bucket_name}] on Google Group")
 		run_command([
@@ -121,7 +125,7 @@ def change_gg_storage_admin_to_read_write(bucket_name):
 			bucket_name,
 			f"--member={member}",
 			f"--role={role_admin}"
-		])
+		], billing_project=billing_project)
 		run_command([
 		"gcloud",
 		"storage",
@@ -130,7 +134,7 @@ def change_gg_storage_admin_to_read_write(bucket_name):
 		bucket_name,
 		f"--member={member}",
 		"--role=roles/storage.objectViewer"
-		])
+		], billing_project=billing_project)
 		run_command([
 			"gcloud",
 			"storage",
@@ -139,13 +143,13 @@ def change_gg_storage_admin_to_read_write(bucket_name):
 			bucket_name,
 			f"--member={member}",
 			"--role=roles/storage.objectCreator"
-		])
+		], billing_project=billing_project)
 	else:
 		print(f"[INFO] Storage Object Creator and Viewer already granted to CRN Teams' permissions for [{bucket_name}] on Google Group")
 
 
-def change_sa_storage_admin_to_read_write(bucket_name):
-	member, role_admin, has_admin_binding = check_admin_binding("sa", bucket_name)
+def change_sa_storage_admin_to_read_write(bucket_name, billing_project=None):
+	member, role_admin, has_admin_binding = check_admin_binding("sa", bucket_name, billing_project=billing_project)
 	if has_admin_binding:
 		print(f"[INFO] Removing Storage Admin access and granting Storage Object Creator and Viewer to CRN Teams for [{bucket_name}] on Service Account")
 		run_command([
@@ -156,7 +160,7 @@ def change_sa_storage_admin_to_read_write(bucket_name):
 			bucket_name,
 			f"--member={member}",
 			f"--role={role_admin}"
-		])
+		], billing_project=billing_project)
 		run_command([
 			"gcloud",
 			"storage",
@@ -165,7 +169,7 @@ def change_sa_storage_admin_to_read_write(bucket_name):
 			bucket_name,
 			f"--member={member}",
 			"--role=roles/storage.objectViewer"
-		])
+		], billing_project=billing_project)
 		run_command([
 			"gcloud",
 			"storage",
@@ -174,7 +178,7 @@ def change_sa_storage_admin_to_read_write(bucket_name):
 			bucket_name,
 			f"--member={member}",
 			"--role=roles/storage.objectCreator"
-		])
+		], billing_project=billing_project)
 	else:
 		print(f"[INFO] Storage Object Creator and Viewer already granted to CRN Teams' permissions for [{bucket_name}] on Service Account")
 
@@ -211,15 +215,17 @@ embargoed_team_dev_buckets = [
 ]
 
 
-def list_dirs(bucket_name):
-	command = [
-		"gcloud",
-		"storage",
-		"ls",
-		bucket_name
-	]
-	result = subprocess.run(command, check=True, capture_output=True, text=True)
-	return result.stdout
+def list_dirs(bucket_name, billing_project=None):
+    command = [
+        "gcloud",
+        "storage",
+        "ls",
+    ]
+    if billing_project:
+        command += ["--billing-project", billing_project]
+    command.append(bucket_name)
+    result = subprocess.run(command, check=True, capture_output=True, text=True)
+    return result.stdout
 
 
 #######################################
@@ -360,48 +366,38 @@ def compare_md5_hashes(results, staging, same_files):
 ##############################################################
 ##### PROMOTE WORKFLOW OUTPUTS - STAGING TO PROD SECTION #####
 ##############################################################
-def gcopy(source_path, destination_path, recursive=False):
-	command = [
-		"gcloud",
-		"storage",
-		"cp",
-		source_path,
-		destination_path
-	]
-	if recursive:
-		command.insert(3, "--recursive")
-	result = subprocess.run(command, check=True, capture_output=True, text=True)
-	logging.info(result.stdout)
-	logging.error(result.stderr)
+def gcopy(source_path, destination_path, recursive=False, billing_project=None):
+    command = ["gcloud", "storage", "cp"]
+    if recursive:
+        command.append("--recursive")
+    if billing_project:
+        command += ["--billing-project", billing_project]
+    command += [source_path, destination_path]
+    result = subprocess.run(command, check=True, capture_output=True, text=True)
+    logging.info(result.stdout)
+    logging.error(result.stderr)
 
 
-def gmove(source_path, destination_path):
-	command = [
-		"gcloud",
-		"storage",
-		"mv",
-		source_path,
-		destination_path
-	]
-	result = subprocess.run(command, check=True, capture_output=True, text=True)
-	logging.info(result.stdout)
-	logging.error(result.stderr)
+def gmove(source_path, destination_path, billing_project=None):
+    command = ["gcloud", "storage", "mv"]
+    if billing_project:
+        command += ["--billing-project", billing_project]
+    command += [source_path, destination_path]
+    result = subprocess.run(command, check=True, capture_output=True, text=True)
+    logging.info(result.stdout)
+    logging.error(result.stderr)
 
 
-def gsync(source_path, destination_path, dry_run):
-	command = [
-		"gcloud",
-		"storage",
-		"rsync",
-		"-r",
-		source_path,
-		destination_path
-	]
-	if dry_run:
-		command.insert(4, "--dry-run")
-	result = subprocess.run(command, check=True, capture_output=True, text=True)
-	logging.info(result.stdout)
-	logging.error(result.stderr)
+def gsync(source_path, destination_path, dry_run, billing_project=None):
+    command = ["gcloud", "storage", "rsync", "-r"]
+    if dry_run:
+        command.append("--dry-run")
+    if billing_project:
+        command += ["--billing-project", billing_project]
+    command += [source_path, destination_path]
+    result = subprocess.run(command, check=True, capture_output=True, text=True)
+    logging.info(result.stdout)
+    logging.error(result.stderr)
 
 
 def add_verily_read_access(bucket_name):
