@@ -25,22 +25,23 @@ logging.basicConfig(
 )
 
 
-def gsync_artifacts(source_path, destination_path, dry_run):
-	command = [
-		"gcloud",
-		"storage",
-		"rsync",
-		"-r",
-		"-x",
-		"cellranger_counts|bam_files",
-		source_path,
-		destination_path
-	]
-	if dry_run:
-		command.insert(4, "--dry-run")
-	result = subprocess.run(command, check=True, capture_output=True, text=True)
-	logging.info(result.stdout)
-	logging.error(result.stderr)
+def gsync_artifacts(source_path, destination_path, dry_run, billing_project=None):
+    command = [
+        "gcloud",
+        "storage",
+        "rsync",
+        "-r",
+        "-x",
+        "cellranger_counts|bam_files",
+    ]
+    if dry_run:
+        command.append("--dry-run")
+    if billing_project:
+        command += ["--billing-project", billing_project]
+    command += [source_path, destination_path]
+    result = subprocess.run(command, check=True, capture_output=True, text=True)
+    logging.info(result.stdout)
+    logging.error(result.stderr)
 
 
 def main(args):
@@ -65,28 +66,28 @@ def main(args):
 			logging.info(f"Not promoting data for previously released raw buckets: [{raw_buckets_to_promote}]")
 		for raw_bucket in raw_buckets_to_promote:
 			curated_bucket = raw_bucket.replace("raw", "curated")
-			dirs = list_dirs(raw_bucket)
+			dirs = list_dirs(raw_bucket, billing_project=args.billing_project)
 
 			# Metadata
 			logging.info(f"Promoting metadata/release in raw to [{curated_bucket}]")
-			gsync(f"{raw_bucket}/metadata/release", f"{curated_bucket}/metadata/release", dry_run)
+			gsync(f"{raw_bucket}/metadata/release", f"{curated_bucket}/metadata/release", dry_run, billing_project=args.billing_project)
 
 			# File metadata
 			if "file_metadata" in dirs:
 				logging.info(f"Promoting file_metadata in raw to [{curated_bucket}]")
-				gsync(f"{raw_bucket}/file_metadata", f"{curated_bucket}/file_metadata", dry_run)
+				gsync(f"{raw_bucket}/file_metadata", f"{curated_bucket}/file_metadata", dry_run, billing_project=args.billing_project)
 
 			# Artifacts
 			if "artifacts" in dirs:
 				logging.info(f"Promoting artifacts in raw to [{curated_bucket}]")
-				gsync_artifacts(f"{raw_bucket}/artifacts", f"{curated_bucket}/artifacts", dry_run)
+				gsync_artifacts(f"{raw_bucket}/artifacts", f"{curated_bucket}/artifacts", dry_run, billing_project=args.billing_project)
 			else:
 				logging.info(f"Raw bucket does not have artifacts directory [{raw_bucket}]; skipping")
 
 			# Spatial
 			if "spatial" in dirs:
 				logging.info(f"Promoting spatial in raw to [{curated_bucket}]")
-				gsync_artifacts(f"{raw_bucket}/spatial", f"{curated_bucket}/spatial", dry_run)
+				gsync_artifacts(f"{raw_bucket}/spatial", f"{curated_bucket}/spatial", dry_run, billing_project=args.billing_project)
 			else:
 				logging.info(f"Raw bucket does not have spatial directory [{raw_bucket}]; skipping")
 
@@ -97,10 +98,10 @@ def main(args):
 			else:
 				# Remove internal-qc-data label from released raw buckets
 				logging.info(f"Removing internal-qc-data label from [{raw_bucket}]")
-				remove_internal_qc_label(raw_bucket)
+				remove_internal_qc_label(raw_bucket, billing_project=args.billing_project)
 				# Remove Storage Admin access from CRN Teams and grant Storage Object Creator and Viewer to released raw buckets
-				change_gg_storage_admin_to_read_write(raw_bucket)
-				change_sa_storage_admin_to_read_write(raw_bucket)
+				change_gg_storage_admin_to_read_write(raw_bucket, billing_project=args.billing_project)
+				change_sa_storage_admin_to_read_write(raw_bucket, billing_project=args.billing_project)
 
 
 	# if args.type_of_release == "minor" or args.type_of_release == "major":
@@ -108,11 +109,11 @@ def main(args):
 		all_team_dev_buckets = unembargoed_team_dev_buckets + embargoed_team_dev_buckets
 		for dev_bucket in all_team_dev_buckets:
 			raw_bucket = dev_bucket.replace("dev", "raw")
-			dirs = list_dirs(raw_bucket)
+			dirs = list_dirs(raw_bucket, billing_project=args.billing_project)
 
 			# Metadata
 			logging.info(f"Promoting metadata/release in raw to [{dev_bucket}]")
-			gsync(f"{raw_bucket}/metadata/release", f"{dev_bucket}/metadata/release", dry_run)
+			gsync(f"{raw_bucket}/metadata/release", f"{dev_bucket}/metadata/release", dry_run, billing_project=args.billing_project)
 			if dev_bucket in unembargoed_team_dev_buckets:
 				uat_bucket = dev_bucket.replace("dev", "uat")
 				logging.info(f"Team dataset is lifted from internal QC- also promoting metadata/release in raw to [{uat_bucket}]")
@@ -121,28 +122,28 @@ def main(args):
 			# File metadata
 			if "file_metadata" in dirs:
 				logging.info(f"Promoting file_metadata in raw to [{dev_bucket}]")
-				gsync(f"{raw_bucket}/file_metadata", f"{dev_bucket}/file_metadata", dry_run)
+				gsync(f"{raw_bucket}/file_metadata", f"{dev_bucket}/file_metadata", dry_run, billing_project=args.billing_project)
 				if dev_bucket in unembargoed_team_dev_buckets:
 					logging.info(f"Team dataset is lifted from internal QC- also promoting file_metadata in raw to [{uat_bucket}]")
-					gsync(f"{raw_bucket}/file_metadata", f"{uat_bucket}/file_metadata", dry_run)
+					gsync(f"{raw_bucket}/file_metadata", f"{uat_bucket}/file_metadata", dry_run, billing_project=args.billing_project)
 
 			# Artifacts
 			if "artifacts" in dirs:
 				logging.info(f"Promoting artifacts in raw to [{dev_bucket}]")
-				gsync_artifacts(f"{raw_bucket}/artifacts", f"{dev_bucket}/artifacts", dry_run)
+				gsync_artifacts(f"{raw_bucket}/artifacts", f"{dev_bucket}/artifacts", dry_run, billing_project=args.billing_project)
 				if dev_bucket in unembargoed_team_dev_buckets:
 					logging.info(f"Team dataset is lifted from internal QC- also promoting artifacts in raw to [{uat_bucket}]")
-					gsync_artifacts(f"{raw_bucket}/artifacts", f"{uat_bucket}/artifacts", dry_run)
+					gsync_artifacts(f"{raw_bucket}/artifacts", f"{uat_bucket}/artifacts", dry_run, billing_project=args.billing_project)
 			else:
 				logging.info(f"Raw bucket does not have artifacts directory [{raw_bucket}]; skipping")
 
 			# Spatial
 			if "spatial" in dirs:
 				logging.info(f"Promoting spatial in raw to [{dev_bucket}]")
-				gsync(f"{raw_bucket}/spatial", f"{dev_bucket}/spatial", dry_run)
+				gsync(f"{raw_bucket}/spatial", f"{dev_bucket}/spatial", dry_run, billing_project=args.billing_project)
 				if dev_bucket in unembargoed_team_dev_buckets:
 					logging.info(f"Team dataset is lifted from internal QC- also promoting spatial in raw to [{uat_bucket}]")
-					gsync(f"{raw_bucket}/spatial", f"{uat_bucket}/spatial", dry_run)
+					gsync(f"{raw_bucket}/spatial", f"{uat_bucket}/spatial", dry_run, billing_project=args.billing_project)
 			else:
 				logging.info(f"Raw bucket does not have spatial directory [{raw_bucket}]; skipping")
 
@@ -181,6 +182,12 @@ if __name__ == "__main__":
 		required=False,
 		help="Promote data (default is dry run)."
 	)
+	parser.add_argument(
+        "--billing-project",
+        type=str,
+        required=False,
+        help="Billing project ID to use for requester pays buckets."
+    )
 
 	args = parser.parse_args()
 
