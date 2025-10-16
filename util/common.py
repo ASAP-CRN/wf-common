@@ -21,21 +21,22 @@ completed_platforming_raw_buckets = [
 	"gs://asap-raw-team-cragg-mouse-sn-rnaseq-striatum",
 	# Human PMDBS Bulk RNAseq
 	"gs://asap-raw-team-jakobsson-pmdbs-bulk-rnaseq",
-]
-
-embargoed_platforming_raw_buckets = [
-	# Multimodal Seq
-	# "gs://asap-raw-team-wood-pmdbs-multimodal-seq" # AM: assumed unembargoed as on completed list
-]
-
-unembargoed_platforming_raw_buckets = [
-	"gs://asap-raw-team-jakobsson-invitro-bulk-rnaseq-dopaminergic",
-	"gs://asap-raw-team-jakobsson-invitro-bulk-rnaseq-microglia",
-	"gs://asap-raw-team-wood-pmdbs-multimodal-seq",
+	# PMDBS Single Nucleus/Cell RNAseq
 	"gs://asap-raw-team-scherzer-pmdbs-sn-rnaseq-mtg",
 	"gs://asap-raw-team-scherzer-pmdbs-sn-rnaseq-mtg-hybsel",
 	"gs://asap-raw-team-scherzer-pmdbs-spatial-visium-mtg",
-	"gs://asap-raw-team-scherzer-pmdbs-genetics"
+	"gs://asap-raw-team-scherzer-pmdbs-genetics",
+	# Multimodal Seq
+	"gs://asap-raw-team-wood-pmdbs-multimodal-seq"
+	# Invitro Bulk RNAseq
+	"gs://asap-raw-team-jakobsson-invitro-bulk-rnaseq-dopaminergic",
+	"gs://asap-raw-team-jakobsson-invitro-bulk-rnaseq-microglia",
+]
+
+embargoed_platforming_raw_buckets = [
+]
+
+unembargoed_platforming_raw_buckets = [
 ]
 
 
