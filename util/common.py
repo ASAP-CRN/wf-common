@@ -19,6 +19,7 @@ completed_platforming_raw_buckets = [
 	# Mouse Single Nucleus/Cell RNAseq
 	"gs://asap-raw-team-biederer-mouse-sc-rnaseq",
 	"gs://asap-raw-team-cragg-mouse-sn-rnaseq-striatum",
+	"gs://asap-raw-team-schlossmacher-mouse-sn-rnaseq-osn-aav-transd",
 	# Human PMDBS Bulk RNAseq
 	"gs://asap-raw-team-jakobsson-pmdbs-bulk-rnaseq",
 	# PMDBS Single Nucleus/Cell RNAseq
@@ -27,10 +28,12 @@ completed_platforming_raw_buckets = [
 	"gs://asap-raw-team-scherzer-pmdbs-spatial-visium-mtg",
 	"gs://asap-raw-team-scherzer-pmdbs-genetics",
 	# Multimodal Seq
-	"gs://asap-raw-team-wood-pmdbs-multimodal-seq"
+	"gs://asap-raw-team-wood-pmdbs-multimodal-seq",
 	# Invitro Bulk RNAseq
 	"gs://asap-raw-team-jakobsson-invitro-bulk-rnaseq-dopaminergic",
 	"gs://asap-raw-team-jakobsson-invitro-bulk-rnaseq-microglia",
+    # Invitro proteomics
+	"gs://asap-raw-team-alessi-invitro-ms-p-hek293-gtip",
 ]
 
 embargoed_platforming_raw_buckets = [
