@@ -19,13 +19,26 @@ completed_platforming_raw_buckets = [
 	# Mouse Single Nucleus/Cell RNAseq
 	"gs://asap-raw-team-biederer-mouse-sc-rnaseq",
 	"gs://asap-raw-team-cragg-mouse-sn-rnaseq-striatum",
+	"gs://asap-raw-team-schlossmacher-mouse-sn-rnaseq-osn-aav-transd",
+	"gs://asap-raw-team-alessi-mouse-sn-rnaseq-dorsal-striatum-g2019s",
 	# Human PMDBS Bulk RNAseq
 	"gs://asap-raw-team-jakobsson-pmdbs-bulk-rnaseq",
+	# PMDBS Single Nucleus/Cell RNAseq
+	"gs://asap-raw-team-scherzer-pmdbs-sn-rnaseq-mtg",
+	"gs://asap-raw-team-scherzer-pmdbs-genetics",
+	# Multimodal Seq
+	"gs://asap-raw-team-wood-pmdbs-multimodal-seq",
+	# Invitro Bulk RNAseq
+	"gs://asap-raw-team-jakobsson-invitro-bulk-rnaseq-dopaminergic",
+	"gs://asap-raw-team-jakobsson-invitro-bulk-rnaseq-microglia",
+    # Invitro Proteomics
+	"gs://asap-raw-team-alessi-invitro-ms-p-hek293-gtip",
+	# PMDBS Spatial Transcriptomics
+	"gs://asap-raw-team-scherzer-pmdbs-spatial-visium-mtg",
 ]
 
+
 embargoed_platforming_raw_buckets = [
-	# Multimodal Seq
-	"gs://asap-raw-team-wood-pmdbs-multimodal-seq"
 ]
 
 unembargoed_platforming_raw_buckets = [
@@ -46,7 +59,7 @@ def remove_internal_qc_label(bucket_name):
 
 
 def get_team_name(bucket_name):
-	match = re.search(r"team-(.*?)-(mouse|pmdbs)", bucket_name)
+	match = re.search(r"team-(.*?)-(mouse|pmdbs|invitro)", bucket_name)
 	team = match.group(1)
 	return team
 
