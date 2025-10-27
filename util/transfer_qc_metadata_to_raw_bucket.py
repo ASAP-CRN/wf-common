@@ -49,8 +49,6 @@ def main(args):
     file_metadata_dir = dataset_dir / "file_metadata"
     
     bucket_name = f"gs://asap-raw-team-{team_name}-{dataset_name}"
-    # bucket_name = "gs://test_bucket_alexm"
-    # bucket_name = "gs://asap-raw-team-jakobsson-pmdbs-bulk-rnaseq"
     file_metadata_bucket = f"{bucket_name}/file_metadata"
     metadata_bucket = f"{bucket_name}/metadata"
     
