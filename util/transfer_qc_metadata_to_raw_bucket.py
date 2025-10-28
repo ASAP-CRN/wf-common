@@ -2,8 +2,11 @@
 # Transfer locally saved QC'd metadata to the raw Google bucket
 # Usage: python3 transfer_qc_metadata_to_raw_bucket.py -t jakobsson -ds pmdbs-bulk-rnaseq
 # Defaults to dry run unless -p flag is added!
-# NOTE: This script assumes that you have cloned asap-crn-cloud-dataset-metadata
-# ----- and that its root is at the same level as wf-common
+# NOTE on assumptions made:
+# 1.   You have cloned asap-crn-cloud-dataset-metadata and its root is at the
+# ---- same level as wf-common
+# 2.   The metadata/ and file_metadata/ directories of the target dataset exist
+# ---- locally in asap-crn-cloud-dataset-metadata and contain the QC'd metadata
 
 import argparse
 import logging
@@ -18,7 +21,9 @@ logging.basicConfig(
 	format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-# NOTE: Temporarily assumes that you have cloned asap-crn-cloud-dataset-metadata
+# NOTE: Assumes that you have cloned asap-crn-cloud-dataset-metadata. Going
+# ----  forward we may split, but for now this contains both code to do dataset 
+# ----  QC as well as storing the resulting output, to be sync'd to a raw bucket
 repo_root = Path(__file__).resolve().parents[1]
 metadata_root = repo_root.parent / "asap-crn-cloud-dataset-metadata"
 
@@ -64,6 +69,7 @@ def main(args):
     else:
         raise ValueError(f"Local file metadata directory not found: {file_metadata_dir}")
     
+    # metadata/ expected to have further subdirs: this syncs recursively
     if metadata_dir.exists():
         logging.info(f"Transferring local metadata directory to [{metadata_bucket}]")
         gsync(source_path=metadata_dir, destination_path=metadata_bucket, dry_run=dry_run)
