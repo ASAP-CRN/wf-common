@@ -14,7 +14,7 @@ from google.cloud import storage
 ######################################################################
 # Urgent and Minor Release or platforming exercise during a Major Release
 completed_platforming_raw_buckets = [
-	# Single Nucleus RNAseq hybsel
+	# Human Single Nucleus RNAseq hybsel
 	"gs://asap-raw-team-scherzer-pmdbs-sn-rnaseq-mtg-hybsel",
 	# Mouse Single Nucleus/Cell RNAseq
 	"gs://asap-raw-team-biederer-mouse-sc-rnaseq",
@@ -23,7 +23,7 @@ completed_platforming_raw_buckets = [
 	"gs://asap-raw-team-alessi-mouse-sn-rnaseq-dorsal-striatum-g2019s",
 	# Human PMDBS Bulk RNAseq
 	"gs://asap-raw-team-jakobsson-pmdbs-bulk-rnaseq",
-	# PMDBS Single Nucleus/Cell RNAseq
+	# Human PMDBS Single Nucleus/Cell RNAseq (other)
 	"gs://asap-raw-team-scherzer-pmdbs-sn-rnaseq-mtg",
 	"gs://asap-raw-team-scherzer-pmdbs-genetics",
 	# Multimodal Seq
@@ -31,9 +31,9 @@ completed_platforming_raw_buckets = [
 	# Invitro Bulk RNAseq
 	"gs://asap-raw-team-jakobsson-invitro-bulk-rnaseq-dopaminergic",
 	"gs://asap-raw-team-jakobsson-invitro-bulk-rnaseq-microglia",
-    # Invitro Proteomics
+	# Invitro Proteomics
 	"gs://asap-raw-team-alessi-invitro-ms-p-hek293-gtip",
-	# PMDBS Spatial Transcriptomics
+	# Human PMDBS Spatial Transcriptomics
 	"gs://asap-raw-team-scherzer-pmdbs-spatial-visium-mtg",
 ]
 
