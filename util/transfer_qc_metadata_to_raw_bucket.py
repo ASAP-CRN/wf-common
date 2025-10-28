@@ -1,6 +1,9 @@
+#!/usr/bin/env python3
 # Transfer locally saved QC'd metadata to the raw Google bucket
 # Usage: python3 transfer_qc_metadata_to_raw_bucket.py -t jakobsson -ds pmdbs-bulk-rnaseq
 # Defaults to dry run unless -p flag is added!
+# NOTE: This script assumes that you have cloned asap-crn-cloud-dataset-metadata
+# ----- and that its root is at the same level as wf-common
 
 import argparse
 import logging
@@ -15,6 +18,7 @@ logging.basicConfig(
 	format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
+# NOTE: Temporarily assumes that you have cloned asap-crn-cloud-dataset-metadata
 repo_root = Path(__file__).resolve().parents[1]
 metadata_root = repo_root.parent / "asap-crn-cloud-dataset-metadata"
 
