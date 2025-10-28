@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 # Transfer locally saved QC'd metadata to the raw Google bucket
 # Usage: python3 transfer_qc_metadata_to_raw_bucket.py -t jakobsson -ds pmdbs-bulk-rnaseq
 # Defaults to dry run unless -p flag is added!
