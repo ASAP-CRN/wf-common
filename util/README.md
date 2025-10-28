@@ -18,9 +18,9 @@
 # Scripts used to copy data for different Data Release scenarios
 | Data Release Scenario | Script Used |
 | :- | :- |
-| Urgent | <ul><li>[`transfer_qc_metadata_and_contributed_data`](./transfer_qc_metadata_and_contributed_data)</li></ul> |
-| Minor | <ul><li>[`transfer_qc_metadata_and_contributed_data`](./transfer_qc_metadata_and_contributed_data)</li><li>[`promote_staging_data`](./promote_staging_data)</li></ul> |
-| Major | <ul><li>[`transfer_qc_metadata_and_contributed_data`](./transfer_qc_metadata_and_contributed_data)</li><li>[`promote_staging_data`](./promote_staging_data)</li></ul> |
+| Urgent | <ul><li>[`transfer_qc_metadata_to_raw_bucket`](./transfer_qc_metadata_to_raw_bucket.py)</li></ul> <ul><li>[`transfer_qc_metadata_and_contributed_data`](./transfer_qc_metadata_and_contributed_data)</li></ul> |
+| Minor | <ul><li>[`transfer_qc_metadata_to_raw_bucket`](./transfer_qc_metadata_to_raw_bucket.py)</li></ul> <ul><li>[`transfer_qc_metadata_and_contributed_data`](./transfer_qc_metadata_and_contributed_data)</li><li>[`promote_staging_data`](./promote_staging_data)</li></ul> |
+| Major | <ul><li>[`transfer_qc_metadata_to_raw_bucket`](./transfer_qc_metadata_to_raw_bucket.py)</li></ul> <ul><li>[`transfer_qc_metadata_and_contributed_data`](./transfer_qc_metadata_and_contributed_data)</li><li>[`promote_staging_data`](./promote_staging_data)</li></ul> |
 
 **Scripts used in different Data Release Scenarios diagram:**
 ![Scripts used in different Data Release Scenarios diagram](./data_promotion_diagram.svg "Data promotion diagram")
