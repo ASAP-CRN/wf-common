@@ -11,10 +11,8 @@
 
 import argparse
 import logging
-import re
-import subprocess
 from pathlib import Path
-from common import gsync, bucket_exists, strip_team_name
+from common import gsync, check_bucket_exists, strip_team_name
 
 
 logging.basicConfig(
@@ -46,7 +44,7 @@ def main(args):
     file_metadata_bucket = f"{bucket_name}/file_metadata"
     metadata_bucket = f"{bucket_name}/metadata"
     
-    bucket_exists(bucket_name)
+    check_bucket_exists(bucket_name)
 
     if file_metadata_dir.exists():
         logging.info(f"Transferring local file_metadata directory to [{file_metadata_bucket}]")

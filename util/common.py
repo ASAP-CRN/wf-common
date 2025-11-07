@@ -257,7 +257,7 @@ ALL_TEAMS = [
 ]
 
 
-def bucket_exists(bucket_url: str) -> None:
+def check_bucket_exists(bucket_url: str) -> None:
     """Terminate early if the target bucket does not exist"""
     command = ["gcloud", "storage", "buckets", "describe", bucket_url]
     try:
