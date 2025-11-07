@@ -64,6 +64,15 @@ def get_team_name(bucket_name):
 	return team
 
 
+def strip_team_name(team_name: str) -> str:
+    """Strip 'team' prefix if present: dataset directories do not have 'team' prefix"""
+    norm = re.sub(r'^\s*team[-_ ]*', '', team_name.strip(), flags=re.IGNORECASE)
+    norm = norm.strip().lower()
+    if not norm:
+        raise ValueError("team_name is empty after stripping 'team' prefix")
+    return norm
+
+
 def run_command(command):
 	try:
 		result = subprocess.run(command, check=True, capture_output=True, text=True)
@@ -246,6 +255,16 @@ ALL_TEAMS = [
 	"team-edwards",
 	"team-vila",
 ]
+
+
+def bucket_exists(bucket_url: str) -> None:
+    """Terminate early if the target bucket does not exist"""
+    command = ["gcloud", "storage", "buckets", "describe", bucket_url]
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        raise ValueError(f"Bucket not found: {bucket_url}, see: {e}")
+
 
 def list_teams():
 	logging.info("Available teams:")
