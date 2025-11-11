@@ -7,6 +7,7 @@
 
 import argparse
 import logging
+import subprocess
 from common import check_bucket_exists, strip_team_name, list_dirs
 
 logging.basicConfig(
@@ -32,8 +33,9 @@ def list_and_format_bucket_dirs(bucket_name: str) -> list[str]:
 
 
 def get_bucket_structure(bucket_name: str) -> tuple[dict, dict, dict]:
-    """"Return three dicts that track whether the required, recommended,
-    and optional directories are present in the bucket.
+    """"
+    Return three dicts that track whether the required, recommended,and optional
+    directories are present in the bucket.
     """
     bucket_dirs = list_and_format_bucket_dirs(bucket_name)
     
@@ -61,7 +63,14 @@ def check_metadata_files_present(bucket_name: str) -> None:
     metadata_dir = f"{bucket_name}/metadata/"
     
     # Getting all files in metadata/
-    output = list_dirs(metadata_dir)
+    try:
+        output = list_dirs(metadata_dir)
+    except subprocess.CalledProcessError as e:
+        raise ValueError(
+            f"metadata/ directory not found in bucket: {bucket_name}. "
+            f"Expected path: {metadata_dir}"
+        )
+
     files_in_metadata = [
         line.strip().replace(metadata_dir, "")
         for line in output.strip().split("\n")
@@ -107,6 +116,10 @@ def validate_raw_bucket_structure(bucket_name: str) -> None:
             logging.error(f"Missing required directory: {dir_name}")
         else:
             logging.info(f"Found required directory: {dir_name}")
+    
+    missing_required = get_missing_directories(required_results)
+    if missing_required:
+        raise ValueError(f"Missing required directories: {missing_required}")
     
     # Log recommended directories
     for dir_name, exists in recommended_results.items():
