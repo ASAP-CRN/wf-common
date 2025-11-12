@@ -17,7 +17,8 @@ task validate_workflow_name {
 		elif [[ ~{workflow_name} == "mouse_sc_rnaseq" ]]; then
 			echo "Running: [~{workflow_name}]"
 		else
-			echo "Error: Invalid workflow_name for sc/sn RNAseq: [~{workflow_name}]" >&2
+			echo "[ERROR] Invalid workflow name for sc/sn RNAseq: [~{workflow_name}]"
+			echo "Please select a valid workflow name for sc/sn RNAseq:\n  pmdbs_sc_rnaseq\n  pmdbs_multimodal_sc_rnaseq\n  mouse_sc_rnaseq"
 			exit 1
 		fi
 	>>>
