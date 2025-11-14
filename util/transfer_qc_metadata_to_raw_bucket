@@ -11,10 +11,8 @@
 
 import argparse
 import logging
-import re
-import subprocess
 from pathlib import Path
-from common import gsync
+from common import gsync, check_bucket_exists, strip_team_name
 
 
 logging.basicConfig(
@@ -29,28 +27,12 @@ repo_root = Path(__file__).resolve().parents[1]
 metadata_root = repo_root.parent / "asap-crn-cloud-dataset-metadata"
 
 
-def check_team_name(team_name: str) -> str:
-    """Strip 'team' prefix if present"""
-    norm = re.sub(r'^\s*team[-_ ]*', '', team_name.strip(), flags=re.IGNORECASE)
-    norm = norm.strip().lower()
-    if not norm:
-        raise ValueError("team_name is empty after stripping 'team' prefix")
-    return norm
-
-
-def bucket_exists(bucket_url: str) -> None:
-    command = ["gcloud", "storage", "buckets", "describe", bucket_url]
-    try:
-        subprocess.run(command, check=True, capture_output=True, text=True)
-    except subprocess.CalledProcessError as e:
-        raise ValueError(f"Bucket not found: {bucket_url}, see: {e}")
-
 
 def main(args):
 
     dry_run = not args.promote
     
-    team_name = check_team_name(args.team_name)
+    team_name = strip_team_name(args.team_name)
     dataset_name = args.dataset_name
     dataset_name_long = f"{team_name}-{dataset_name}"
     
@@ -62,7 +44,7 @@ def main(args):
     file_metadata_bucket = f"{bucket_name}/file_metadata"
     metadata_bucket = f"{bucket_name}/metadata"
     
-    bucket_exists(bucket_name)
+    check_bucket_exists(bucket_name)
 
     if file_metadata_dir.exists():
         logging.info(f"Transferring local file_metadata directory to [{file_metadata_bucket}]")

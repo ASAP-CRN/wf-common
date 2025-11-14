@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+
+# Transfer metadata submitted by contributors to the raw bucket to a local dataset
+# directory to prepare for QC.
+# Defaults to dry run unless -p flag is added!
+# Usage: python3 transfer_raw_bucket_metadata_to_local -t jakobsson -ds pmdbs-bulk-rnaseq
+# NOTE on assumptions made:
+# 1.   You have cloned asap-crn-cloud-dataset-metadata and its root is at the
+# ---- same level as wf-common
+# 2.   The raw bucket exists and has metadata in the metadata/ subdirectory
+# 3.   The local dataset directory exists (created by initialization script)
+
+import argparse
+import logging
+from pathlib import Path
+from common import gsync, check_bucket_exists, strip_team_name
+from validate_raw_bucket_structure import check_metadata_files_present
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+ 
+repo_root = Path(__file__).resolve().parents[1] # back to 1
+metadata_root = repo_root.parent / "asap-crn-cloud-dataset-metadata"
+
+
+def check_local_metadata_repo_exists(metadata_root: Path) -> None:
+    """Ensure that the local asap-crn-cloud-dataset-metadata repo exists"""
+    if not metadata_root.exists():
+        raise ValueError(
+            f"Local asap-crn-cloud-dataset-metadata repo not found at: {metadata_root}. "
+            f"This repo is expected to be at the same level as wf-common."
+        )
+
+
+def check_dataset_dir_exists(dataset_dir: Path) -> None:
+    """Ensure that the local dataset directory exists"""
+    if not dataset_dir.exists():
+        raise ValueError(f"Local dataset directory not found at: {dataset_dir}")
+    
+
+def main(args):
+
+    dry_run = not args.promote
+    
+    team_name = strip_team_name(args.team_name)
+    dataset_name = args.dataset_name
+    dataset_name_long = f"{team_name}-{dataset_name}"
+    
+    dataset_dir = metadata_root / "datasets" / dataset_name_long
+    og_metadata_dir = dataset_dir / "metadata" / "og"
+    
+    bucket_name = f"gs://asap-raw-team-{team_name}-{dataset_name}"
+    metadata_in_bucket = f"{bucket_name}/metadata"
+    
+    check_local_metadata_repo_exists(metadata_root)
+    check_dataset_dir_exists(dataset_dir)
+    check_bucket_exists(bucket_name)
+    check_metadata_files_present(bucket_name)
+    
+    # Create metadata/og directory if it doesn't exist
+    og_metadata_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Transfer metadata from bucket to local og directory
+    logging.info(f"Transferring metadata from [{metadata_in_bucket}] to {og_metadata_dir}")
+    gsync(
+        source_path=metadata_in_bucket, 
+        destination_path=og_metadata_dir, 
+        dry_run=dry_run
+    )
+    
+
+if __name__ == "__main__":
+    
+    parser = argparse.ArgumentParser(
+        description="Sync metadata from raw bucket to local metadata/og directory"
+    )
+    
+    parser.add_argument(
+        "-t",
+        "--team_name",
+        required=True,
+        help="The team name of the dataset"
+    )
+    parser.add_argument(
+        "-ds",
+        "--dataset_name",
+        required=True,
+        help="The name of the dataset"
+    )
+    parser.add_argument(
+        "-p",
+        "--promote",
+        action="store_true",
+        required=False,
+        help="Promote data (default is dry run)."
+    )
+
+    args = parser.parse_args()
+    main(args)
