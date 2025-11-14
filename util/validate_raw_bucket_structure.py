@@ -15,6 +15,7 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
+# TODO: minimal metadata is currently a point of conversation, may be updated
 required_dirs = ["metadata/"]
 recommended_dirs = ["artifacts/"]
 optional_dirs = ["fastqs/", "scripts/"]
