@@ -12,18 +12,20 @@ task validate_workflow_name {
 		# Sc/sn RNAseq pipeline
 		if [[ ~{workflow_name} == "pmdbs_sc_rnaseq" ]]; then
 			echo "Running: [~{workflow_name}]"
-		elif [[ ~{workflow_name} == "pmdbs_multimodal_sc_rnaseq" ]]; then
-			echo "Running: [~{workflow_name}]"
+			echo "true" > workflow_name_validated.txt
 		elif [[ ~{workflow_name} == "mouse_sc_rnaseq" ]]; then
 			echo "Running: [~{workflow_name}]"
+			echo "true" > workflow_name_validated.txt
 		else
 			echo "[ERROR] Invalid workflow name for sc/sn RNAseq: [~{workflow_name}]"
-			printf "Please select a valid workflow name for sc/sn RNAseq:\n  pmdbs_sc_rnaseq\n  pmdbs_multimodal_sc_rnaseq\n  mouse_sc_rnaseq"
+			printf "Please select a valid workflow name for sc/sn RNAseq:\n  pmdbs_sc_rnaseq\n  mouse_sc_rnaseq"
+			echo "false" > workflow_name_validated.txt
 			exit 1
 		fi
 	>>>
 
 	output {
+		Boolean workflow_name_validated = read_boolean("workflow_name_validated.txt")
 	}
 
 	runtime {
