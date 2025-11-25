@@ -114,7 +114,6 @@ END {
 echo "Calculating the sample breakdown"
 awk -F'\t' '
 NR==1 {
-    # Identify column indexes
     for (i=1; i<=NF; i++) {
         if ($i == "sample_count") sample_col = i
         if ($i == "gcp_raw_bucket") bucket_col = i
