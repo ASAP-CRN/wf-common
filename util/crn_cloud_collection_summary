@@ -1,0 +1,165 @@
+#!/bin/bash
+
+set -eEuo pipefail
+
+usage() {
+cat << EOF
+
+  Track the ASAP raw/curated buckets, size, and sample breakdown in the CRN Cloud.
+  Note:
+  - Raw bucket sizes include files that are used for development
+  - Storage size used for this project is much larger since unreleased data is stored in there as well
+  - Sample breakdown is ongoing as more data modalities are being added
+  - Samples included in the same data modality does NOT mean all samples went through curation
+
+  Usage: $0 [OPTIONS]
+
+  OPTIONS
+    -h  Display this message and exit
+
+EOF
+}
+
+while getopts ":h" OPTION; do
+  case ${OPTION} in
+    h) usage; exit 1;;
+  esac
+done
+
+
+dnastack use cloud.parkinsonsroadmap.org
+INDIVIDUAL_DATASETS=$(dnastack collections list | jq -r '.[] | select(.tags[]?.label == "Individual Dataset") | .slugName')
+
+echo "Got "$(echo "$INDIVIDUAL_DATASETS" | wc -l | tr -d '[:space:]')" individual datasets from CRN Cloud"
+
+date_str=$(date +"%Y-%m-%d")
+output_file="crn_cloud_collection_summary.$date_str.tsv"
+echo -e "gcp_raw_bucket\tgcp_raw_bucket_size\tgcp_curated_bucket\tgcp_curated_bucket_size\tsample_count" > "$output_file"
+
+while IFS= read -r slug; do
+    underscored_slug="${slug//-/_}"
+
+    # Split slug into parts
+    IFS='-' read -r -a parts <<< "$slug"
+
+    if [[ "${parts[0]}" == "prod" && "${parts[1]}" == "team" ]]; then
+        team_name="${parts[2]}"
+    elif [[ "${parts[0]}" == "prod" ]]; then
+        team_name="${parts[1]}"
+    else
+        echo "Cannot parse team name for slug: $slug" >&2
+        continue
+    fi
+
+    echo "Detected [$slug] for team [$team_name]..."
+
+    echo "Getting GCP raw bucket info "
+    gcp_raw_uri=$(dnastack collections query -c "$slug" \
+        "SELECT gcp_uri FROM \"collections\".\"$underscored_slug\".\"${team_name}_data\" LIMIT 1" \
+        -o csv)
+    gcp_raw_bucket=$(echo "$gcp_raw_uri" | cut -d'/' -f1-3 | tail -n +2)
+    # Exception - some datasets do not have gs uri's in their DATA.csv
+    if [[ "$gcp_raw_bucket" != gs://* ]]; then
+        echo "[WARNING] [$slug] DATA.csv does not have gcp_uri"
+        echo "Trying to grab bucket name from slug..."
+        gcp_raw_bucket=$(echo "$slug" | sed 's;prod-;gs://asap-raw-team-;g')
+        if gcloud storage buckets describe "$gcp_raw_bucket" >/dev/null 2>&1; then
+            echo "Bucket exists; continuing"
+        else
+            echo "Bucket does NOT exist; skipping"
+            continue
+        fi
+    fi
+    gcp_raw_bucket_size=$(gcloud storage du -s "$gcp_raw_bucket" | grep -oE '^[0-9]+')
+
+    echo "Getting GCP curated bucket info"
+    gcp_prod_bucket=$(echo $gcp_raw_bucket | sed 's/raw/curated/g')
+    gcp_prod_bucket_size=$(gcloud storage du -s "$gcp_prod_bucket" | grep -oE '^[0-9]+')
+
+    echo "Getting # of samples"
+    sample_count=$(dnastack collections query -c "$slug" \
+        "SELECT COUNT(*) AS sample_count FROM \"collections\".\"$underscored_slug\".\"${team_name}_sample\"" \
+        -o csv \
+        | tail -n +2)
+
+    echo -e "${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${gcp_prod_bucket}\t${gcp_prod_bucket_size}\t${sample_count}" >> "$output_file"
+done <<< "$INDIVIDUAL_DATASETS"
+
+echo "Calculating the total size of raw and curated buckets"
+awk -F'\t' '
+NR==1 {
+    for(i=1;i<=NF;i++){
+        if($i=="gcp_raw_bucket_size") raw_col=i
+        if($i=="gcp_curated_bucket_size") prod_col=i
+    }
+    next
+}
+
+NR>1 {
+    if (raw_col > 0) total_raw += $raw_col
+    if (prod_col > 0) total_prod += $prod_col
+}
+
+END {
+    tb_raw  = total_raw  / (1024^4)
+    tb_prod = total_prod / (1024^4)
+    tb_grand = (total_raw + total_prod) / (1024^4)
+
+    print "=== BUCKET SIZE SUMMARY ==="
+    printf "Total raw size (TB):   %.1f\n", tb_raw
+    printf "Total prod size (TB):  %.1f\n", tb_prod
+    printf "Grand total (TB):      %.1f\n", tb_grand
+}' "$output_file"
+
+echo "Calculating the sample breakdown"
+awk -F'\t' '
+NR==1 {
+    for (i=1; i<=NF; i++) {
+        if ($i == "sample_count") sample_col = i
+        if ($i == "gcp_raw_bucket") bucket_col = i
+    }
+    next
+}
+
+NR>1 {
+    count = $sample_col
+    bucket = $bucket_col
+
+    total_samples += count
+
+    # Grouping logic
+    if (bucket ~ /sc-rnaseq/ || bucket ~ /sn-rnaseq/) {
+        grp["sc_sn"] += count
+    } else if (bucket ~ /bulk-rnaseq/) {
+        grp["bulk"] += count
+    } else if (bucket ~ /spatial/) {
+        grp["spatial"] += count
+    } else if (bucket ~ /ms-p/) {
+        grp["ms_p"] += count
+    } else {
+        grp["other"] += count
+        other_buckets[bucket] = 1  # track bucket name
+    }
+}
+
+END {
+    print "=== SAMPLE COUNT SUMMARY ==="
+    print "Total samples:", total_samples
+    print ""
+
+    print "=== BREAKDOWN ==="
+    printf "sc/sn RNAseq: %d\n", grp["sc_sn"]
+    printf "bulk RNAseq:  %d\n", grp["bulk"]
+    printf "spatial:      %d\n", grp["spatial"]
+    printf "proteomics:   %d\n", grp["ms_p"]
+    printf "other:        %d\n", grp["other"]
+    print ""
+
+    print "=== BUCKETS IN 'OTHER' GROUP ==="
+    for (b in other_buckets) {
+        print b
+    }
+}
+' "$output_file"
+
+echo "Saved results to [$(pwd)/$output_file]"
