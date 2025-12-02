@@ -22,7 +22,7 @@ task get_workflow_name {
 			echo "Running: [${workflow_name}]"
 		else
 			echo "[ERROR] Invalid organism for sc/sn RNAseq: [~{organism}]"
-			printf "Please select a valid workflow name for sc/sn RNAseq:\n  human\n  mouse"
+			printf "Please select a valid organism for sc/sn RNAseq:\n  human\n  mouse"
 			exit 1
 		fi
 	>>>
