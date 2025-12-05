@@ -26,8 +26,6 @@ completed_platforming_raw_buckets = [
 	# Human PMDBS Single Nucleus/Cell RNAseq (other)
 	"gs://asap-raw-team-scherzer-pmdbs-sn-rnaseq-mtg",
 	"gs://asap-raw-team-scherzer-pmdbs-genetics",
-	# Multimodal Seq
-	"gs://asap-raw-team-wood-pmdbs-multimodal-seq",
 	# Invitro Bulk RNAseq
 	"gs://asap-raw-team-jakobsson-invitro-bulk-rnaseq-dopaminergic",
 	"gs://asap-raw-team-jakobsson-invitro-bulk-rnaseq-microglia",
