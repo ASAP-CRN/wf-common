@@ -98,6 +98,9 @@ while IFS= read -r slug; do
     echo -e "${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${gcp_prod_bucket}\t${gcp_prod_bucket_size}\t${sample_count}" >> "$output_file"
 done <<< "$INDIVIDUAL_DATASETS"
 
+# Clean up
+sed "s/[[:space:]]*$//" "$output_file" | tr -d "\r" > temp.tsv && mv temp.tsv "$output_file"
+
 echo "Calculating the sample breakdown"
 awk -F'\t' '
 NR==1 {
@@ -125,6 +128,8 @@ NR>1 {
         grp["ms_p"] += count
     } else if (bucket ~ /parsebio/) {
         grp["parsebio"] += count
+    } else if (bucket ~ /multimodal/) {
+        grp["multimodal"] += count
     } else if (bucket ~ /metagenome/) {
         grp["metagenomics"] += count
     } else {
@@ -144,6 +149,7 @@ END {
     printf "spatial:      %d\n", grp["spatial"]
     printf "proteomics:   %d\n", grp["ms_p"]
     printf "parsebio:     %d\n", grp["parsebio"]
+    printf "multimodal:   %d\n", grp["multimodal"]
     printf "metagenomics: %d\n", grp["metagenomics"]
     printf "other:        %d\n", grp["other"]
     print ""

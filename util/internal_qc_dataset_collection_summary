@@ -87,123 +87,132 @@ while IFS= read -r bucket; do
     echo -e "${team}\t${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${sample_count}" >> "$output_file"
 done <<< "$RAW_BUCKETS"
 
-if "${SAMPLES_ONLY}"; then
-    echo "Calculating the sample breakdown"
-    awk -F'\t' '
-    NR==1 {
-        for (i=1; i<=NF; i++) {
-            if ($i == "sample_count") sample_col = i
-            if ($i == "gcp_raw_bucket") bucket_col = i
-            if ($i == "team") team_col = i
-        }
+# Clean up
+sed "s/[[:space:]]*$//" "$output_file" | tr -d "\r" > temp.tsv && mv temp.tsv "$output_file"
+
+echo "Calculating the sample breakdown"
+awk -F'\t' '
+NR==1 {
+    for (i=1; i<=NF; i++) {
+        if ($i == "sample_count") sample_col = i
+        if ($i == "gcp_raw_bucket") bucket_col = i
+        if ($i == "team") team_col = i
+    }
+    next
+}
+
+NR>1 {
+    count = $sample_col
+    bucket = $bucket_col
+    asap_team = $team_col
+
+    if (count == "NA") {
+        na_buckets[bucket] = 1
         next
     }
 
-    NR>1 {
-        count = $sample_col
-        bucket = $bucket_col
-        asap_team = $team_col
+    total_samples += count
+    team_samples[asap_team] += count
 
-        if (count == "NA") {
-            na_buckets[bucket] = 1
-            next
-        }
-
-        total_samples += count
-        team_samples[asap_team] += count
-
-        # Grouping logic
-        category = ""
-        if (bucket ~ /sc-rnaseq/ || bucket ~ /sn-rnaseq/) {
-            category = "sc_sn"
-            grp["sc_sn"] += count
-        } else if (bucket ~ /bulk-rnaseq/) {
-            category = "bulk"
-            grp["bulk"] += count
-        } else if (bucket ~ /spatial/) {
-            category = "spatial"
-            grp["spatial"] += count
-        } else if (bucket ~ /ms-p/) {
-            category = "ms_p"
-            grp["ms_p"] += count
-        } else if (bucket ~ /parsebio/) {
-            category = "parsebio"
-            grp["parsebio"] += count
-        } else if (bucket ~ /metagenome/) {
-            category = "metagenomics"
-            grp["metagenomics"] += count
-        } else {
-            category = "other"
-            grp["other"] += count
-            other_buckets[bucket] = 1  # track bucket name
-        }
-
-        team_category[asap_team, category] += count
-        team_list[asap_team] = 1
-        category_list[category] = 1
+    # Grouping logic
+    category = ""
+    if (bucket ~ /sc-rnaseq/ || bucket ~ /sn-rnaseq/) {
+        category = "sc_sn"
+        grp["sc_sn"] += count
+    } else if (bucket ~ /bulk-rnaseq/) {
+        category = "bulk"
+        grp["bulk"] += count
+    } else if (bucket ~ /spatial/) {
+        category = "spatial"
+        grp["spatial"] += count
+    } else if (bucket ~ /ms-p/) {
+        category = "ms_p"
+        grp["ms_p"] += count
+    } else if (bucket ~ /parsebio/) {
+        category = "parsebio"
+        grp["parsebio"] += count
+    } else if (bucket ~ /multimodal/) {
+        category = "multimodal"
+        grp["multimodal"] += count
+    } else if (bucket ~ /metagenome/) {
+        category = "metagenomics"
+        grp["metagenomics"] += count
+    } else {
+        category = "other"
+        grp["other"] += count
+        other_buckets[bucket] = 1  # track bucket name
     }
 
-    END {
-        print "=== SAMPLE COUNT SUMMARY ==="
-        print "Total samples:", total_samples
-        print ""
+    team_category[asap_team, category] += count
+    team_list[asap_team] = 1
+    category_list[category] = 1
+}
 
-        print "=== BREAKDOWN ==="
-        printf "sc/sn RNAseq: %d\n", grp["sc_sn"]
-        printf "bulk RNAseq:  %d\n", grp["bulk"]
-        printf "spatial:      %d\n", grp["spatial"]
-        printf "proteomics:   %d\n", grp["ms_p"]
-        printf "parsebio:     %d\n", grp["parsebio"]
-        printf "metagenomics: %d\n", grp["metagenomics"]
-        printf "other:        %d\n", grp["other"]
-        print ""
+END {
+    print "=== SAMPLE COUNT SUMMARY ==="
+    print "Total samples:", total_samples
+    print ""
 
-        if (length(other_buckets) > 0) {
-            print "=== BUCKETS IN '\''OTHER'\'' CATEGORY ==="
-            for (b in other_buckets) {
-                print b
-            }
-            print ""
-        }
-        
-        print "=== BREAKDOWN BY TEAM ==="
-        for (team in team_samples) {
-            team_name = toupper(substr(team, 1, 1)) substr(team, 2)
-            printf "%d samples belong to Team %s\n", team_samples[team], team_name
+    print "=== BREAKDOWN ==="
+    printf "sc/sn RNAseq: %d\n", grp["sc_sn"]
+    printf "bulk RNAseq:  %d\n", grp["bulk"]
+    printf "spatial:      %d\n", grp["spatial"]
+    printf "proteomics:   %d\n", grp["ms_p"]
+    printf "parsebio:     %d\n", grp["parsebio"]
+    printf "multimodal:   %d\n", grp["multimodal"]
+    printf "metagenomics: %d\n", grp["metagenomics"]
+    printf "other:        %d\n", grp["other"]
+    print ""
+
+    if (length(other_buckets) > 0) {
+        print "=== BUCKETS IN '\''OTHER'\'' CATEGORY ==="
+        for (b in other_buckets) {
+            print b
         }
         print ""
+    }
     
-        print "=== BREAKDOWN BY TEAM AND DATA TYPE ==="
-        for (team in team_list) {
-            team_name = toupper(substr(team, 1, 1)) substr(team, 2)
-            printf "Team %s:\n", team_name
-            
-            if (team_category[team, "sc_sn"] > 0)
-                printf "  sc/sn RNAseq: %d\n", team_category[team, "sc_sn"]
-            if (team_category[team, "bulk"] > 0)
-                printf "  bulk RNAseq:  %d\n", team_category[team, "bulk"]
-            if (team_category[team, "spatial"] > 0)
-                printf "  spatial:      %d\n", team_category[team, "spatial"]
-            if (team_category[team, "ms_p"] > 0)
-                printf "  proteomics:   %d\n", team_category[team, "ms_p"]
-            if (team_category[team, "parsebio"] > 0)
-                printf "  parsebio:     %d\n", team_category[team, "parsebio"]
-            if (team_category[team, "metagenomics"] > 0)
-                printf "  metagenomics: %d\n", team_category[team, "metagenomics"]
-            if (team_category[team, "other"] > 0)
-                printf "  other:        %d\n", team_category[team, "other"]
-            print ""
-        }
+    print "=== BREAKDOWN BY TEAM ==="
+    for (team in team_samples) {
+        team_name = toupper(substr(team, 1, 1)) substr(team, 2)
+        printf "%d samples belong to Team %s\n", team_samples[team], team_name
+    }
+    print ""
+
+    print "=== BREAKDOWN BY TEAM AND DATA TYPE ==="
+    for (team in team_list) {
+        team_name = toupper(substr(team, 1, 1)) substr(team, 2)
+        printf "Team %s:\n", team_name
         
-        if (length(na_buckets) > 0) {
-            print ""
-            print "=== BUCKETS WITH NO SAMPLE.CSV FOUND ==="
-            for (b in na_buckets) {
-                print b
-            }
+        if (team_category[team, "sc_sn"] > 0)
+            printf "  sc/sn RNAseq: %d\n", team_category[team, "sc_sn"]
+        if (team_category[team, "bulk"] > 0)
+            printf "  bulk RNAseq:  %d\n", team_category[team, "bulk"]
+        if (team_category[team, "spatial"] > 0)
+            printf "  spatial:      %d\n", team_category[team, "spatial"]
+        if (team_category[team, "ms_p"] > 0)
+            printf "  proteomics:   %d\n", team_category[team, "ms_p"]
+        if (team_category[team, "parsebio"] > 0)
+            printf "  parsebio:     %d\n", team_category[team, "parsebio"]
+        if (team_category[team, "multimodal"] > 0)
+            printf "  multimodal:     %d\n", team_category[team, "multimodal"]
+        if (team_category[team, "metagenomics"] > 0)
+            printf "  metagenomics: %d\n", team_category[team, "metagenomics"]
+        if (team_category[team, "other"] > 0)
+            printf "  other:        %d\n", team_category[team, "other"]
+        print ""
+    }
+    
+    if (length(na_buckets) > 0) {
+        print ""
+        print "=== BUCKETS WITH NO SAMPLE.CSV FOUND ==="
+        for (b in na_buckets) {
+            print b
         }
-    }' "$output_file"
-else
+    }
+}' "$output_file"
+
+if ! "${SAMPLES_ONLY}"; then
     echo "Calculating the total size of raw buckets"
     awk -F'\t' '
     NR==1 {
