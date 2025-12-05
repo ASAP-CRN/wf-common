@@ -8,7 +8,7 @@ cat << EOF
   Track the ASAP raw/curated buckets, size, and sample breakdown in the CRN Cloud.
   Note:
   - Raw bucket sizes include files that are used for development
-  - Storage size used for this project is much larger since unreleased data is stored in there as well
+  - Storage size used for this project is much larger since unreleased data is stored in there as well and cross-team cohort data
   - Sample breakdown is ongoing as more data modalities are being added
   - Samples included in the same data modality does NOT mean all samples went through curation
 
@@ -85,18 +85,17 @@ while IFS= read -r slug; do
         | tail -n +2)
 
     if "${SAMPLES_ONLY}"; then
-        gcp_raw_bucket_size="N/A"
-        gcp_prod_bucket_size="N/A"
-        echo -e "${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${gcp_prod_bucket}\t${gcp_prod_bucket_size}\t${sample_count}" >> "$output_file"
+        gcp_raw_bucket_size="NA"
+        gcp_prod_bucket_size="NA"
     else
         echo "Getting GCP raw bucket size"
         gcp_raw_bucket_size=$(gcloud storage du -s "$gcp_raw_bucket" | grep -oE '^[0-9]+')
 
         echo "Getting GCP curated bucket size"
         gcp_prod_bucket_size=$(gcloud storage du -s "$gcp_prod_bucket" | grep -oE '^[0-9]+')
-
-        echo -e "${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${gcp_prod_bucket}\t${gcp_prod_bucket_size}\t${sample_count}" >> "$output_file"
     fi
+
+    echo -e "${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${gcp_prod_bucket}\t${gcp_prod_bucket_size}\t${sample_count}" >> "$output_file"
 done <<< "$INDIVIDUAL_DATASETS"
 
 echo "Calculating the sample breakdown"
@@ -124,6 +123,10 @@ NR>1 {
         grp["spatial"] += count
     } else if (bucket ~ /ms-p/) {
         grp["ms_p"] += count
+    } else if (bucket ~ /parsebio/) {
+        grp["parsebio"] += count
+    } else if (bucket ~ /metagenome/) {
+        grp["metagenomics"] += count
     } else {
         grp["other"] += count
         other_buckets[bucket] = 1  # track bucket name
@@ -140,6 +143,8 @@ END {
     printf "bulk RNAseq:  %d\n", grp["bulk"]
     printf "spatial:      %d\n", grp["spatial"]
     printf "proteomics:   %d\n", grp["ms_p"]
+    printf "parsebio:     %d\n", grp["parsebio"]
+    printf "metagenomics: %d\n", grp["metagenomics"]
     printf "other:        %d\n", grp["other"]
     print ""
 
