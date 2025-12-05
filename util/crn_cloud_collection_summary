@@ -99,58 +99,58 @@ while IFS= read -r slug; do
     fi
 done <<< "$INDIVIDUAL_DATASETS"
 
-if "${SAMPLES_ONLY}"; then
-    echo "Calculating the sample breakdown"
-    awk -F'\t' '
-    NR==1 {
-        for (i=1; i<=NF; i++) {
-            if ($i == "sample_count") sample_col = i
-            if ($i == "gcp_raw_bucket") bucket_col = i
-        }
-        next
+echo "Calculating the sample breakdown"
+awk -F'\t' '
+NR==1 {
+    for (i=1; i<=NF; i++) {
+        if ($i == "sample_count") sample_col = i
+        if ($i == "gcp_raw_bucket") bucket_col = i
     }
+    next
+}
 
-    NR>1 {
-        count = $sample_col
-        bucket = $bucket_col
+NR>1 {
+    count = $sample_col
+    bucket = $bucket_col
 
-        total_samples += count
+    total_samples += count
 
-        # Grouping logic
-        if (bucket ~ /sc-rnaseq/ || bucket ~ /sn-rnaseq/) {
-            grp["sc_sn"] += count
-        } else if (bucket ~ /bulk-rnaseq/) {
-            grp["bulk"] += count
-        } else if (bucket ~ /spatial/) {
-            grp["spatial"] += count
-        } else if (bucket ~ /ms-p/) {
-            grp["ms_p"] += count
-        } else {
-            grp["other"] += count
-            other_buckets[bucket] = 1  # track bucket name
-        }
+    # Grouping logic
+    if (bucket ~ /sc-rnaseq/ || bucket ~ /sn-rnaseq/) {
+        grp["sc_sn"] += count
+    } else if (bucket ~ /bulk-rnaseq/) {
+        grp["bulk"] += count
+    } else if (bucket ~ /spatial/) {
+        grp["spatial"] += count
+    } else if (bucket ~ /ms-p/) {
+        grp["ms_p"] += count
+    } else {
+        grp["other"] += count
+        other_buckets[bucket] = 1  # track bucket name
     }
+}
 
-    END {
-        print "=== SAMPLE COUNT SUMMARY ==="
-        print "Total samples:", total_samples
-        print ""
+END {
+    print "=== SAMPLE COUNT SUMMARY ==="
+    print "Total samples:", total_samples
+    print ""
 
-        print "=== BREAKDOWN ==="
-        printf "sc/sn RNAseq: %d\n", grp["sc_sn"]
-        printf "bulk RNAseq:  %d\n", grp["bulk"]
-        printf "spatial:      %d\n", grp["spatial"]
-        printf "proteomics:   %d\n", grp["ms_p"]
-        printf "other:        %d\n", grp["other"]
-        print ""
+    print "=== BREAKDOWN ==="
+    printf "sc/sn RNAseq: %d\n", grp["sc_sn"]
+    printf "bulk RNAseq:  %d\n", grp["bulk"]
+    printf "spatial:      %d\n", grp["spatial"]
+    printf "proteomics:   %d\n", grp["ms_p"]
+    printf "other:        %d\n", grp["other"]
+    print ""
 
-        print "=== BUCKETS IN 'OTHER' GROUP ==="
-        for (b in other_buckets) {
-            print b
-        }
+    print "=== BUCKETS IN 'OTHER' GROUP ==="
+    for (b in other_buckets) {
+        print b
     }
-    ' "$output_file"
-else
+}
+' "$output_file"
+
+if ! "${SAMPLES_ONLY}"; then
     echo "Calculating the total size of raw and curated buckets"
     awk -F'\t' '
     NR==1 {
