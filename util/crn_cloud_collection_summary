@@ -8,7 +8,7 @@ cat << EOF
   Track the ASAP raw/curated buckets, size, and sample breakdown in the CRN Cloud.
   Note:
   - Raw bucket sizes include files that are used for development
-  - Storage size used for this project is much larger since unreleased data is stored in there as well
+  - Storage size used for this project is much larger since unreleased data is stored in there as well and cross-team cohort data
   - Sample breakdown is ongoing as more data modalities are being added
   - Samples included in the same data modality does NOT mean all samples went through curation
 
@@ -16,13 +16,17 @@ cat << EOF
 
   OPTIONS
     -h  Display this message and exit
+    -s  Grab no. of samples only
 
 EOF
 }
 
-while getopts ":h" OPTION; do
+SAMPLES_ONLY=false
+
+while getopts ":hs" OPTION; do
   case ${OPTION} in
     h) usage; exit 1;;
+    s) SAMPLES_ONLY=true;;
   esac
 done
 
@@ -53,7 +57,7 @@ while IFS= read -r slug; do
 
     echo "Detected [$slug] for team [$team_name]..."
 
-    echo "Getting GCP raw bucket info "
+    echo "Getting GCP raw bucket name"
     gcp_raw_uri=$(dnastack collections query -c "$slug" \
         "SELECT gcp_uri FROM \"collections\".\"$underscored_slug\".\"${team_name}_data\" LIMIT 1" \
         -o csv)
@@ -70,11 +74,9 @@ while IFS= read -r slug; do
             continue
         fi
     fi
-    gcp_raw_bucket_size=$(gcloud storage du -s "$gcp_raw_bucket" | grep -oE '^[0-9]+')
 
-    echo "Getting GCP curated bucket info"
+    echo "Getting GCP curated bucket name"
     gcp_prod_bucket=$(echo $gcp_raw_bucket | sed 's/raw/curated/g')
-    gcp_prod_bucket_size=$(gcloud storage du -s "$gcp_prod_bucket" | grep -oE '^[0-9]+')
 
     echo "Getting # of samples"
     sample_count=$(dnastack collections query -c "$slug" \
@@ -82,34 +84,22 @@ while IFS= read -r slug; do
         -o csv \
         | tail -n +2)
 
+    if "${SAMPLES_ONLY}"; then
+        gcp_raw_bucket_size="NA"
+        gcp_prod_bucket_size="NA"
+    else
+        echo "Getting GCP raw bucket size"
+        gcp_raw_bucket_size=$(gcloud storage du -s "$gcp_raw_bucket" | grep -oE '^[0-9]+')
+
+        echo "Getting GCP curated bucket size"
+        gcp_prod_bucket_size=$(gcloud storage du -s "$gcp_prod_bucket" | grep -oE '^[0-9]+')
+    fi
+
     echo -e "${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${gcp_prod_bucket}\t${gcp_prod_bucket_size}\t${sample_count}" >> "$output_file"
 done <<< "$INDIVIDUAL_DATASETS"
 
-echo "Calculating the total size of raw and curated buckets"
-awk -F'\t' '
-NR==1 {
-    for(i=1;i<=NF;i++){
-        if($i=="gcp_raw_bucket_size") raw_col=i
-        if($i=="gcp_curated_bucket_size") prod_col=i
-    }
-    next
-}
-
-NR>1 {
-    if (raw_col > 0) total_raw += $raw_col
-    if (prod_col > 0) total_prod += $prod_col
-}
-
-END {
-    tb_raw  = total_raw  / (1024^4)
-    tb_prod = total_prod / (1024^4)
-    tb_grand = (total_raw + total_prod) / (1024^4)
-
-    print "=== BUCKET SIZE SUMMARY ==="
-    printf "Total raw size (TB):   %.1f\n", tb_raw
-    printf "Total prod size (TB):  %.1f\n", tb_prod
-    printf "Grand total (TB):      %.1f\n", tb_grand
-}' "$output_file"
+# Clean up
+sed "s/[[:space:]]*$//" "$output_file" | tr -d "\r" > temp.tsv && mv temp.tsv "$output_file"
 
 echo "Calculating the sample breakdown"
 awk -F'\t' '
@@ -136,6 +126,12 @@ NR>1 {
         grp["spatial"] += count
     } else if (bucket ~ /ms-p/) {
         grp["ms_p"] += count
+    } else if (bucket ~ /parsebio/) {
+        grp["parsebio"] += count
+    } else if (bucket ~ /multimodal/) {
+        grp["multimodal"] += count
+    } else if (bucket ~ /metagenome/) {
+        grp["metagenomics"] += count
     } else {
         grp["other"] += count
         other_buckets[bucket] = 1  # track bucket name
@@ -152,6 +148,9 @@ END {
     printf "bulk RNAseq:  %d\n", grp["bulk"]
     printf "spatial:      %d\n", grp["spatial"]
     printf "proteomics:   %d\n", grp["ms_p"]
+    printf "parsebio:     %d\n", grp["parsebio"]
+    printf "multimodal:   %d\n", grp["multimodal"]
+    printf "metagenomics: %d\n", grp["metagenomics"]
     printf "other:        %d\n", grp["other"]
     print ""
 
@@ -161,5 +160,33 @@ END {
     }
 }
 ' "$output_file"
+
+if ! "${SAMPLES_ONLY}"; then
+    echo "Calculating the total size of raw and curated buckets"
+    awk -F'\t' '
+    NR==1 {
+        for(i=1;i<=NF;i++){
+            if($i=="gcp_raw_bucket_size") raw_col=i
+            if($i=="gcp_curated_bucket_size") prod_col=i
+        }
+        next
+    }
+
+    NR>1 {
+        if (raw_col > 0) total_raw += $raw_col
+        if (prod_col > 0) total_prod += $prod_col
+    }
+
+    END {
+        tb_raw  = total_raw  / (1024^4)
+        tb_prod = total_prod / (1024^4)
+        tb_grand = (total_raw + total_prod) / (1024^4)
+
+        print "=== BUCKET SIZE SUMMARY ==="
+        printf "Total raw size (TB):   %.1f\n", tb_raw
+        printf "Total prod size (TB):  %.1f\n", tb_prod
+        printf "Grand total (TB):      %.1f\n", tb_grand
+    }' "$output_file"
+fi
 
 echo "Saved results to [$(pwd)/$output_file]"
