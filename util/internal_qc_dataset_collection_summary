@@ -288,7 +288,7 @@ calculate_breakdown() {
         
         if (length(na_buckets) > 0) {
             print ""
-            printf "=== BUCKETS WITH NO %s.CSV FOUND ===\n", toupper(count_type)
+            printf "=== BUCKETS WITH NO SAMPLE.CSV FOUND ===\n"
             for (b in na_buckets) {
                 print b
             }
