@@ -88,7 +88,7 @@ while IFS= read -r slug; do
     subject_count=$(dnastack collections query -c "$slug" \
         "SELECT COUNT(DISTINCT subject_id) AS subject_count FROM \"collections\".\"$underscored_slug\".\"${team_name}_sample\"" \
         -o csv \
-        | tail -n +2 2>/dev/null || true)
+        | tail -n +2)
 
     if "${SAMPLES_SUBJECTS_ONLY}"; then
         gcp_raw_bucket_size="NA"
