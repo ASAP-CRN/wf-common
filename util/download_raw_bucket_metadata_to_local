@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
-# Transfer metadata submitted by contributors to the raw bucket to a local dataset
+# Download metadata submitted by contributors from the raw bucket to a local dataset
 # directory to prepare for QC.
 # Defaults to dry run unless -p flag is added!
-# Usage: python3 transfer_raw_bucket_metadata_to_local -t jakobsson -ds pmdbs-bulk-rnaseq
+# Usage: python3 download_raw_bucket_metadata_to_local -t jakobsson -ds pmdbs-bulk-rnaseq
 # NOTE on assumptions made:
 # 1.   You have cloned asap-crn-cloud-dataset-metadata and its root is at the
 # ---- same level as wf-common
@@ -63,8 +63,8 @@ def main(args):
     # Create metadata/og directory if it doesn't exist
     og_metadata_dir.mkdir(parents=True, exist_ok=True)
     
-    # Transfer metadata from bucket to local og directory
-    logging.info(f"Transferring metadata from [{metadata_in_bucket}] to {og_metadata_dir}")
+    # Download metadata from bucket to local og directory
+    logging.info(f"Downloading metadata from [{metadata_in_bucket}] to {og_metadata_dir}")
     gsync(
         source_path=metadata_in_bucket, 
         destination_path=og_metadata_dir, 
@@ -75,7 +75,7 @@ def main(args):
 if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(
-        description="Sync metadata from raw bucket to local metadata/og directory"
+        description="Download metadata from raw bucket to local metadata/og directory"
     )
     
     parser.add_argument(
