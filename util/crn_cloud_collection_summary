@@ -86,18 +86,9 @@ while IFS= read -r slug; do
 
     echo "Getting # of subjects"
     subject_count=$(dnastack collections query -c "$slug" \
-        "SELECT COUNT(DISTINCT asap_subject_id) AS subject_count FROM \"collections\".\"$underscored_slug\".\"${team_name}_sample\"" \
+        "SELECT COUNT(DISTINCT subject_id) AS subject_count FROM \"collections\".\"$underscored_slug\".\"${team_name}_sample\"" \
         -o csv \
         | tail -n +2 2>/dev/null || true)
-
-    # TMP - if dataset does not have ASAP Subject ID, use subject ID because it's a Mouse or Cell [12/08/25]
-    if [ -z "$subject_count" ]; then
-        echo "Using subject_id for [$underscored_slug]..."
-        subject_count=$(dnastack collections query -c "$slug" \
-            "SELECT COUNT(DISTINCT subject_id) AS subject_count FROM \"collections\".\"$underscored_slug\".\"${team_name}_sample\"" \
-            -o csv \
-            | tail -n +2)
-    fi
 
     if "${SAMPLES_SUBJECTS_ONLY}"; then
         gcp_raw_bucket_size="NA"
@@ -116,171 +107,103 @@ done <<< "$INDIVIDUAL_DATASETS"
 # Clean up
 sed "s/[[:space:]]*$//" "$output_file" | tr -d "\r" > temp.tsv && mv temp.tsv "$output_file"
 
-echo "Calculating the sample breakdown"
-awk -F'\t' '
-NR==1 {
-    for (i=1; i<=NF; i++) {
-        if ($i == "sample_count") sample_col = i
-        if ($i == "gcp_raw_bucket") bucket_col = i
+calculate_breakdown() {
+    local output_file="$1"
+    local count_type="$2"  # "sample" or "subject"
+    
+    echo "Calculating the ${count_type} breakdown"
+    awk -F'\t' -v count_type="$count_type" '
+    NR==1 {
+        count_col_name = count_type "_count"
+        for (i=1; i<=NF; i++) {
+            if ($i == count_col_name) count_col = i
+            if ($i == "gcp_raw_bucket") bucket_col = i
+        }
+        next
     }
-    next
+    NR>1 {
+        count = $count_col
+        bucket = $bucket_col
+        total_count += count
+        
+        # Data modality grouping logic
+        if (bucket ~ /sc-rnaseq/ || bucket ~ /sn-rnaseq/) {
+            grp["sc_sn"] += count
+        } else if (bucket ~ /bulk-rnaseq/) {
+            grp["bulk"] += count
+        } else if (bucket ~ /spatial/) {
+            grp["spatial"] += count
+        } else if (bucket ~ /ms-p/) {
+            grp["ms_p"] += count
+        } else if (bucket ~ /parsebio/) {
+            grp["parsebio"] += count
+        } else if (bucket ~ /multimodal/) {
+            grp["multimodal"] += count
+        } else if (bucket ~ /metagenome/) {
+            grp["metagenomics"] += count
+        } else {
+            grp["other"] += count
+            other_buckets[bucket] = 1
+        }
+        
+        # Data origin grouping logic
+        if (bucket ~ /human/ || bucket ~ /pmdbs/) {
+            origin["human"] += count
+        } else if (bucket ~ /mouse/) {
+            origin["mouse"] += count
+        } else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/) {
+            origin["cell"] += count
+        } else {
+            origin["other"] += count
+            origin_other_buckets[bucket] = 1
+        }
+    }
+    END {
+        printf "=== %s COUNT SUMMARY ===\n", toupper(count_type)
+        printf "Total %ss: %d\n", count_type, total_count
+        print ""
+        
+        print "=== BREAKDOWN BY DATA TYPE ==="
+        printf "sc/sn RNAseq: %d\n", grp["sc_sn"]
+        printf "bulk RNAseq:  %d\n", grp["bulk"]
+        printf "spatial:      %d\n", grp["spatial"]
+        printf "proteomics:   %d\n", grp["ms_p"]
+        printf "parsebio:     %d\n", grp["parsebio"]
+        printf "multimodal:   %d\n", grp["multimodal"]
+        printf "metagenomics: %d\n", grp["metagenomics"]
+        printf "other:        %d\n", grp["other"]
+        print ""
+        
+        print "=== BUCKETS IN \"OTHER\" DATA MODALITY GROUP ==="
+        if (length(other_buckets) > 0) {
+            for (b in other_buckets) {
+                print b
+            }
+            print ""
+        }
+        
+        printf "=== %s ORIGIN BREAKDOWN ===\n", toupper(count_type)
+        printf "human:        %d\n", origin["human"]
+        printf "mouse:        %d\n", origin["mouse"]
+        printf "cell:         %d\n", origin["cell"]
+        printf "other:        %d\n", origin["other"]
+        print ""
+        
+        print "=== BUCKETS IN \"OTHER\" ORIGIN GROUP ==="
+        if (length(origin_other_buckets) > 0) {
+            for (b in origin_other_buckets) {
+                print b
+            }
+        }
+    }
+    ' "$output_file"
 }
 
-NR>1 {
-    count = $sample_col
-    bucket = $bucket_col
-
-    total_samples += count
-
-    # Data modality grouping logic
-    if (bucket ~ /sc-rnaseq/ || bucket ~ /sn-rnaseq/) {
-        grp["sc_sn"] += count
-    } else if (bucket ~ /bulk-rnaseq/) {
-        grp["bulk"] += count
-    } else if (bucket ~ /spatial/) {
-        grp["spatial"] += count
-    } else if (bucket ~ /ms-p/) {
-        grp["ms_p"] += count
-    } else if (bucket ~ /parsebio/) {
-        grp["parsebio"] += count
-    } else if (bucket ~ /multimodal/) {
-        grp["multimodal"] += count
-    } else if (bucket ~ /metagenome/) {
-        grp["metagenomics"] += count
-    } else {
-        grp["other"] += count
-        other_buckets[bucket] = 1  # track bucket name
-    }
-    # Sample origin grouping logic
-    if (bucket ~ /human/ || bucket ~ /pmdbs/) {
-        origin["human"] += count
-    } else if (bucket ~ /mouse/) {
-        origin["mouse"] += count
-    } else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/) {
-        origin["cell"] += count
-    } else {
-        origin["other"] += count
-        origin_other_buckets[bucket] = 1  # track bucket name
-    }
-}
-
-END {
-    print "=== SAMPLE COUNT SUMMARY ==="
-    print "Total samples:", total_samples
-    print ""
-
-    print "=== BREAKDOWN ==="
-    printf "sc/sn RNAseq: %d\n", grp["sc_sn"]
-    printf "bulk RNAseq:  %d\n", grp["bulk"]
-    printf "spatial:      %d\n", grp["spatial"]
-    printf "proteomics:   %d\n", grp["ms_p"]
-    printf "parsebio:     %d\n", grp["parsebio"]
-    printf "multimodal:   %d\n", grp["multimodal"]
-    printf "metagenomics: %d\n", grp["metagenomics"]
-    printf "other:        %d\n", grp["other"]
-    print ""
-
-    print "=== BUCKETS IN \"OTHER\" DATA MODALITY GROUP ==="
-    for (b in other_buckets) {
-        print b
-    }
-
-    print "=== SAMPLE ORIGIN BREAKDOWN ==="
-    printf "human:        %d\n", origin["human"]
-    printf "mouse:        %d\n", origin["mouse"]
-    printf "cell:         %d\n", origin["cell"]
-    printf "other:        %d\n", origin["other"]
-    print ""
-
-    print "=== BUCKETS IN \"OTHER\" ORIGIN GROUP ==="
-    for (b in origin_other_buckets) {
-        print b
-    }
-}
-' "$output_file"
-
-echo "Calculating the subject breakdown"
-awk -F'\t' '
-NR==1 {
-    for (i=1; i<=NF; i++) {
-        if ($i == "subject_count") subject_col = i
-        if ($i == "gcp_raw_bucket") bucket_col = i
-    }
-    next
-}
-
-NR>1 {
-    count = $subject_col
-    bucket = $bucket_col
-
-    total_subjects += count
-
-    # Data modality grouping logic
-    if (bucket ~ /sc-rnaseq/ || bucket ~ /sn-rnaseq/) {
-        grp["sc_sn"] += count
-    } else if (bucket ~ /bulk-rnaseq/) {
-        grp["bulk"] += count
-    } else if (bucket ~ /spatial/) {
-        grp["spatial"] += count
-    } else if (bucket ~ /ms-p/) {
-        grp["ms_p"] += count
-    } else if (bucket ~ /parsebio/) {
-        grp["parsebio"] += count
-    } else if (bucket ~ /multimodal/) {
-        grp["multimodal"] += count
-    } else if (bucket ~ /metagenome/) {
-        grp["metagenomics"] += count
-    } else {
-        grp["other"] += count
-        other_buckets[bucket] = 1  # track bucket name
-    }
-    # Sample origin grouping logic
-    if (bucket ~ /human/ || bucket ~ /pmdbs/) {
-        origin["human"] += count
-    } else if (bucket ~ /mouse/) {
-        origin["mouse"] += count
-    } else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/) {
-        origin["cell"] += count
-    } else {
-        origin["other"] += count
-        origin_other_buckets[bucket] = 1  # track bucket name
-    }
-}
-
-END {
-    print "=== SUBJECT COUNT SUMMARY ==="
-    print "Total subjects:", total_subjects
-    print ""
-
-    print "=== BREAKDOWN ==="
-    printf "sc/sn RNAseq: %d\n", grp["sc_sn"]
-    printf "bulk RNAseq:  %d\n", grp["bulk"]
-    printf "spatial:      %d\n", grp["spatial"]
-    printf "proteomics:   %d\n", grp["ms_p"]
-    printf "parsebio:     %d\n", grp["parsebio"]
-    printf "multimodal:   %d\n", grp["multimodal"]
-    printf "metagenomics: %d\n", grp["metagenomics"]
-    printf "other:        %d\n", grp["other"]
-    print ""
-
-    print "=== BUCKETS IN \"OTHER\" DATA MODALITY GROUP ==="
-    for (b in other_buckets) {
-        print b
-    }
-
-    print "=== SUBJECT ORIGIN BREAKDOWN ==="
-    printf "human:        %d\n", origin["human"]
-    printf "mouse:        %d\n", origin["mouse"]
-    printf "cell:         %d\n", origin["cell"]
-    printf "other:        %d\n", origin["other"]
-    print ""
-
-    print "=== BUCKETS IN \"OTHER\" ORIGIN GROUP ==="
-    for (b in origin_other_buckets) {
-        print b
-    }
-}
-' "$output_file"
+calculate_breakdown "$output_file" "sample"
+echo ""
+echo "========================================"
+echo ""
+calculate_breakdown "$output_file" "subject"
 
 if ! "${SAMPLES_SUBJECTS_ONLY}"; then
     echo "Calculating the total size of raw and curated buckets"

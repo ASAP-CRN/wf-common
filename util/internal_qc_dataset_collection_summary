@@ -5,35 +5,61 @@ set -eEuo pipefail
 usage() {
 cat << EOF
 
-  Track datasets in internal QC by getting their ASAP raw buckets, size, and sample breakdown in GCP.
+  Track datasets in internal QC by getting their ASAP raw buckets, size, sample breakdown, and subject breakdown in GCP.
   Note:
   - Raw bucket sizes include files that are used for development
   - Storage size used for this project is much larger since unreleased data is stored in there as well and cross-team cohort data
-  - Sample breakdown is ongoing as more data modalities are being added
-  - Sample count can change as our Data Curators collaborate with CRN Teams to define this
+  - Sample and subject breakdown is ongoing as more data modalities are being added
+  - Sample and subject count can change as our Data Curators collaborate with CRN Teams to define this
 
   Usage: $0 [OPTIONS]
 
   OPTIONS
     -h  Display this message and exit
-    -s  Grab no. of samples only
+    -s  Grab no. of samples and subjects only
 
 EOF
 }
 
-SAMPLES_ONLY=false
+SAMPLES_SUBJECTS_ONLY=false
 
 while getopts ":hs" OPTION; do
   case ${OPTION} in
     h) usage; exit 1;;
-    s) SAMPLES_ONLY=true;;
+    s) SAMPLES_SUBJECTS_ONLY=true;;
   esac
 done
 
 
 date_str=$(date +"%Y-%m-%d")
 output_file="internal_qc_dataset_collection_summary.$date_str.tsv"
-echo -e "team\tgcp_raw_bucket\tgcp_raw_bucket_size\tsample_count" > "$output_file"
+echo -e "team\tgcp_raw_bucket\tgcp_raw_bucket_size\tsample_count\tsubject_count" > "$output_file"
+
+get_unique_column_count() {
+    local csv_content="$1"
+    local column_name="$2"
+
+    local col_no
+    col_no=$(echo "$csv_content" \
+        | head -n 1 \
+        | tr "," "\n" \
+        | grep -n "^${column_name}$" \
+        | cut -d: -f1)
+
+    if [[ -z "$col_no" ]]; then
+        echo ""
+        return 0
+    fi
+
+    echo "$csv_content" \
+        | cut -d "," -f "$col_no" \
+        | tail -n +2 \
+        | sed -r "/^\s*$/d" \
+        | sort -u \
+        | wc -l \
+        | tr -d '[:space:]'
+}
+
 
 all_raw_buckets=$(gcloud storage buckets list \
     --format="value(name)" \
@@ -58,161 +84,225 @@ while IFS= read -r bucket; do
     team=$(echo "$bucket" | sed "s/^asap-raw-team-//" | cut -d'-' -f1)
     gcp_raw_bucket=$(echo "gs://$bucket")
 
-    echo "Trying to get # of samples"
+    echo "Trying to get # of samples and subjects"
     sample_count="NA"
+    subject_count="NA"
     # First try: metadata/release/SAMPLE.csv
     if gcloud storage ls "$gcp_raw_bucket/metadata/release/SAMPLE.csv" &>/dev/null; then
         echo "  Found metadata/release/SAMPLE.csv"
-        sample_count=$(gcloud storage cat "$gcp_raw_bucket/metadata/release/SAMPLE.csv" | tail -n +2 | wc -l)
+        sample_csv=$(gcloud storage cat "$gcp_raw_bucket/metadata/release/SAMPLE.csv")
+        sample_values=$(get_unique_column_count "$sample_csv" "Sample ID")
+        subject_values=$(get_unique_column_count "$sample_csv" "Subject ID")
     else
     # Second try: search metadata/ for any SAMPLE.csv
         echo "  metadata/release/SAMPLE.csv not found, searching metadata folder for SAMPLE.csv..."
-        sample_csv=$(gcloud storage ls -r "$gcp_raw_bucket/metadata" 2>/dev/null | grep "SAMPLE.csv" | head -n 1 || true)
+        sample_csv_loc=$(gcloud storage ls -r "$gcp_raw_bucket/metadata" 2>/dev/null | grep "SAMPLE.csv" | head -n 1 || true)
 
-        if [ -n "$sample_csv" ]; then
-            echo "  Found SAMPLE.csv at: $sample_csv"
-            sample_count=$(gcloud storage cat "$sample_csv" | tail -n +2 | wc -l)
+        if [ -n "$sample_csv_loc" ]; then
+            echo "  Found SAMPLE.csv at: $sample_csv_loc"
+            sample_csv=$(gcloud storage cat "$sample_csv_loc")
+            sample_values=$(get_unique_column_count "$sample_csv" "Sample ID")
+            subject_values=$(get_unique_column_count "$sample_csv" "Subject ID")
         else
             echo "  No SAMPLE.csv found in metadata/ path"
         fi
     fi
 
-    if "${SAMPLES_ONLY}"; then
+    if "${SAMPLES_SUBJECTS_ONLY}"; then
         gcp_raw_bucket_size="NA"
     else
         echo "Getting GCP raw bucket size"
         gcp_raw_bucket_size=$(gcloud storage du -s "$gcp_raw_bucket" | grep -oE '^[0-9]+')
     fi
 
-    echo -e "${team}\t${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${sample_count}" >> "$output_file"
+    echo -e "${team}\t${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${sample_count}\t${subject_count}" >> "$output_file"
 done <<< "$RAW_BUCKETS"
 
 # Clean up
 sed "s/[[:space:]]*$//" "$output_file" | tr -d "\r" > temp.tsv && mv temp.tsv "$output_file"
 
-echo "Calculating the sample breakdown"
-awk -F'\t' '
-NR==1 {
-    for (i=1; i<=NF; i++) {
-        if ($i == "sample_count") sample_col = i
-        if ($i == "gcp_raw_bucket") bucket_col = i
-        if ($i == "team") team_col = i
-    }
-    next
-}
-
-NR>1 {
-    count = $sample_col
-    bucket = $bucket_col
-    asap_team = $team_col
-
-    if (count == "NA") {
-        na_buckets[bucket] = 1
+calculate_breakdown() {
+    local output_file="$1"
+    local count_type="$2"
+    
+    echo "Calculating the ${count_type} breakdown"
+    awk -F'\t' -v count_type="$count_type" '
+    NR==1 {
+        count_col_name = count_type "_count"
+        for (i=1; i<=NF; i++) {
+            if ($i == count_col_name) count_col = i
+            if ($i == "gcp_raw_bucket") bucket_col = i
+            if ($i == "team") team_col = i
+        }
         next
     }
 
-    total_samples += count
-    team_samples[asap_team] += count
+    NR>1 {
+        count = $count_col
+        bucket = $bucket_col
+        asap_team = $team_col
 
-    # Grouping logic
-    category = ""
-    if (bucket ~ /sc-rnaseq/ || bucket ~ /sn-rnaseq/) {
-        category = "sc_sn"
-        grp["sc_sn"] += count
-    } else if (bucket ~ /bulk-rnaseq/) {
-        category = "bulk"
-        grp["bulk"] += count
-    } else if (bucket ~ /spatial/) {
-        category = "spatial"
-        grp["spatial"] += count
-    } else if (bucket ~ /ms-p/) {
-        category = "ms_p"
-        grp["ms_p"] += count
-    } else if (bucket ~ /parsebio/) {
-        category = "parsebio"
-        grp["parsebio"] += count
-    } else if (bucket ~ /multimodal/) {
-        category = "multimodal"
-        grp["multimodal"] += count
-    } else if (bucket ~ /metagenome/) {
-        category = "metagenomics"
-        grp["metagenomics"] += count
-    } else {
-        category = "other"
-        grp["other"] += count
-        other_buckets[bucket] = 1  # track bucket name
+        if (count == "NA") {
+            na_buckets[bucket] = 1
+            next
+        }
+
+        total_count += count
+        team_count[asap_team] += count
+
+        # Data modality grouping logic
+        data_type_category = ""
+        if (bucket ~ /sc-rnaseq/ || bucket ~ /sn-rnaseq/) {
+            data_type_category = "sc_sn"
+            grp["sc_sn"] += count
+        } else if (bucket ~ /bulk-rnaseq/) {
+            data_type_category = "bulk"
+            grp["bulk"] += count
+        } else if (bucket ~ /spatial/) {
+            data_type_category = "spatial"
+            grp["spatial"] += count
+        } else if (bucket ~ /ms-p/) {
+            data_type_category = "ms_p"
+            grp["ms_p"] += count
+        } else if (bucket ~ /parsebio/) {
+            data_type_category = "parsebio"
+            grp["parsebio"] += count
+        } else if (bucket ~ /multimodal/) {
+            data_type_category = "multimodal"
+            grp["multimodal"] += count
+        } else if (bucket ~ /metagenome/) {
+            data_type_category = "metagenomics"
+            grp["metagenomics"] += count
+        } else {
+            data_type_category = "other"
+            grp["other"] += count
+            other_buckets[bucket] = 1
+        }
+
+        # Data origin grouping logic
+        if (bucket ~ /human/ || bucket ~ /pmdbs/) {
+            origin_category = "human"
+            origin["human"] += count
+        } else if (bucket ~ /mouse/) {
+            origin_category = "mouse"
+            origin["mouse"] += count
+        } else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/) {
+            origin_category = "cell"
+            origin["cell"] += count
+        } else {
+            origin_category = "other"
+            origin["other"] += count
+            origin_other_buckets[bucket] = 1
+        }
+
+        team_data_type_category[asap_team, data_type_category] += count
+        team_origin_category[asap_team, origin_category] += count
+        team_list[asap_team] = 1
     }
 
-    team_category[asap_team, category] += count
-    team_list[asap_team] = 1
-    category_list[category] = 1
+    END {
+        printf "=== %s COUNT SUMMARY ===\n", toupper(count_type)
+        printf "Total %ss: %d\n", count_type, total_count
+        print ""
+
+        printf "=== BREAKDOWN BY DATA TYPE ===\n"
+        printf "sc/sn RNAseq: %d\n", grp["sc_sn"]
+        printf "bulk RNAseq:  %d\n", grp["bulk"]
+        printf "spatial:      %d\n", grp["spatial"]
+        printf "proteomics:   %d\n", grp["ms_p"]
+        printf "parsebio:     %d\n", grp["parsebio"]
+        printf "multimodal:   %d\n", grp["multimodal"]
+        printf "metagenomics: %d\n", grp["metagenomics"]
+        printf "other:        %d\n", grp["other"]
+        print ""
+
+        print "=== BUCKETS IN \"OTHER\" DATA TYPE GROUP ==="
+        if (length(other_buckets) > 0) {
+            for (b in other_buckets) {
+                print b
+            }
+            print ""
+        }
+
+        print "=== BREAKDOWN BY DATA ORIGIN ==="
+        printf "human:        %d\n", origin["human"]
+        printf "mouse:        %d\n", origin["mouse"]
+        printf "cell:         %d\n", origin["cell"]
+        printf "other:        %d\n", origin["other"]
+        print ""
+
+        print "=== BUCKETS IN \"OTHER\" ORIGIN GROUP ==="
+        if (length(origin_other_buckets) > 0) {
+            for (b in origin_other_buckets) {
+                print b
+            }
+            print ""
+        }
+        
+        printf "=== BREAKDOWN BY TEAM ===\n"
+        for (team in team_count) {
+            team_name = toupper(substr(team, 1, 1)) substr(team, 2)
+            printf "%d %ss belong to Team %s\n", team_count[team], count_type, team_name
+        }
+        print ""
+
+        printf "=== BREAKDOWN BY TEAM AND DATA TYPE ===\n"
+        for (team in team_list) {
+            team_name = toupper(substr(team, 1, 1)) substr(team, 2)
+            printf "Team %s:\n", team_name
+            
+            if (team_data_type_category[team, "sc_sn"] > 0)
+                printf "  sc/sn RNAseq: %d\n", team_data_type_category[team, "sc_sn"]
+            if (team_data_type_category[team, "bulk"] > 0)
+                printf "  bulk RNAseq:  %d\n", team_data_type_category[team, "bulk"]
+            if (team_data_type_category[team, "spatial"] > 0)
+                printf "  spatial:      %d\n", team_data_type_category[team, "spatial"]
+            if (team_data_type_category[team, "ms_p"] > 0)
+                printf "  proteomics:   %d\n", team_data_type_category[team, "ms_p"]
+            if (team_data_type_category[team, "parsebio"] > 0)
+                printf "  parsebio:     %d\n", team_data_type_category[team, "parsebio"]
+            if (team_data_type_category[team, "multimodal"] > 0)
+                printf "  multimodal:   %d\n", team_data_type_category[team, "multimodal"]
+            if (team_data_type_category[team, "metagenomics"] > 0)
+                printf "  metagenomics: %d\n", team_data_type_category[team, "metagenomics"]
+            if (team_data_type_category[team, "other"] > 0)
+                printf "  other:        %d\n", team_data_type_category[team, "other"]
+            print ""
+        }
+
+        printf "=== BREAKDOWN BY TEAM AND DATA ORIGIN ===\n"
+        for (team in team_list) {
+            team_name = toupper(substr(team, 1, 1)) substr(team, 2)
+            printf "Team %s:\n", team_name
+            
+            if (team_origin_category[team, "human"] > 0)
+                printf "  human:    %d\n", team_origin_category[team, "human"]
+            if (team_origin_category[team, "mouse"] > 0)
+                printf "  mouse:    %d\n", team_origin_category[team, "mouse"]
+            if (team_origin_category[team, "cell"] > 0)
+                printf "  cell:     %d\n", team_origin_category[team, "cell"]
+            if (team_origin_category[team, "other"] > 0)
+                printf "  other:    %d\n", team_origin_category[team, "other"]
+            print ""
+        }
+        
+        if (length(na_buckets) > 0) {
+            print ""
+            printf "=== BUCKETS WITH NO %s.CSV FOUND ===\n", toupper(count_type)
+            for (b in na_buckets) {
+                print b
+            }
+        }
+    }' "$output_file"
 }
 
-END {
-    print "=== SAMPLE COUNT SUMMARY ==="
-    print "Total samples:", total_samples
-    print ""
+calculate_breakdown "$output_file" "sample"
+echo ""
+echo "========================================"
+echo ""
+calculate_breakdown "$output_file" "subject"
 
-    print "=== BREAKDOWN ==="
-    printf "sc/sn RNAseq: %d\n", grp["sc_sn"]
-    printf "bulk RNAseq:  %d\n", grp["bulk"]
-    printf "spatial:      %d\n", grp["spatial"]
-    printf "proteomics:   %d\n", grp["ms_p"]
-    printf "parsebio:     %d\n", grp["parsebio"]
-    printf "multimodal:   %d\n", grp["multimodal"]
-    printf "metagenomics: %d\n", grp["metagenomics"]
-    printf "other:        %d\n", grp["other"]
-    print ""
-
-    if (length(other_buckets) > 0) {
-        print "=== BUCKETS IN '\''OTHER'\'' CATEGORY ==="
-        for (b in other_buckets) {
-            print b
-        }
-        print ""
-    }
-    
-    print "=== BREAKDOWN BY TEAM ==="
-    for (team in team_samples) {
-        team_name = toupper(substr(team, 1, 1)) substr(team, 2)
-        printf "%d samples belong to Team %s\n", team_samples[team], team_name
-    }
-    print ""
-
-    print "=== BREAKDOWN BY TEAM AND DATA TYPE ==="
-    for (team in team_list) {
-        team_name = toupper(substr(team, 1, 1)) substr(team, 2)
-        printf "Team %s:\n", team_name
-        
-        if (team_category[team, "sc_sn"] > 0)
-            printf "  sc/sn RNAseq: %d\n", team_category[team, "sc_sn"]
-        if (team_category[team, "bulk"] > 0)
-            printf "  bulk RNAseq:  %d\n", team_category[team, "bulk"]
-        if (team_category[team, "spatial"] > 0)
-            printf "  spatial:      %d\n", team_category[team, "spatial"]
-        if (team_category[team, "ms_p"] > 0)
-            printf "  proteomics:   %d\n", team_category[team, "ms_p"]
-        if (team_category[team, "parsebio"] > 0)
-            printf "  parsebio:     %d\n", team_category[team, "parsebio"]
-        if (team_category[team, "multimodal"] > 0)
-            printf "  multimodal:     %d\n", team_category[team, "multimodal"]
-        if (team_category[team, "metagenomics"] > 0)
-            printf "  metagenomics: %d\n", team_category[team, "metagenomics"]
-        if (team_category[team, "other"] > 0)
-            printf "  other:        %d\n", team_category[team, "other"]
-        print ""
-    }
-    
-    if (length(na_buckets) > 0) {
-        print ""
-        print "=== BUCKETS WITH NO SAMPLE.CSV FOUND ==="
-        for (b in na_buckets) {
-            print b
-        }
-    }
-}' "$output_file"
-
-if ! "${SAMPLES_ONLY}"; then
+if ! "${SAMPLES_SUBJECTS_ONLY}"; then
     echo "Calculating the total size of raw buckets"
     awk -F'\t' '
     NR==1 {
