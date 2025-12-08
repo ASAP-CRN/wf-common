@@ -17,26 +17,21 @@ completed_platforming_raw_buckets = [
 	# Human Single Nucleus RNAseq hybsel
 	"gs://asap-raw-team-scherzer-pmdbs-sn-rnaseq-mtg-hybsel",
 	# Mouse Single Nucleus/Cell RNAseq
-	"gs://asap-raw-team-biederer-mouse-sc-rnaseq",
-	"gs://asap-raw-team-cragg-mouse-sn-rnaseq-striatum",
 	"gs://asap-raw-team-schlossmacher-mouse-sn-rnaseq-osn-aav-transd",
 	"gs://asap-raw-team-alessi-mouse-sn-rnaseq-dorsal-striatum-g2019s",
-	# Human PMDBS Bulk RNAseq
-	"gs://asap-raw-team-jakobsson-pmdbs-bulk-rnaseq",
 	# Human PMDBS Single Nucleus/Cell RNAseq (other)
-	"gs://asap-raw-team-scherzer-pmdbs-sn-rnaseq-mtg",
 	"gs://asap-raw-team-scherzer-pmdbs-genetics",
 	# Invitro Bulk RNAseq
 	"gs://asap-raw-team-jakobsson-invitro-bulk-rnaseq-dopaminergic",
 	"gs://asap-raw-team-jakobsson-invitro-bulk-rnaseq-microglia",
 	# Invitro Proteomics
 	"gs://asap-raw-team-alessi-invitro-ms-p-hek293-gtip",
-	# Human PMDBS Spatial Transcriptomics
-	"gs://asap-raw-team-scherzer-pmdbs-spatial-visium-mtg",
 ]
 
 
 embargoed_platforming_raw_buckets = [
+	# Metagenomics
+	"gs://asap-raw-team-schapira-fecal-metagenome-human-baseline",
 ]
 
 unembargoed_platforming_raw_buckets = [
@@ -203,21 +198,29 @@ unembargoed_team_dev_buckets = [
 	"gs://asap-dev-team-scherzer-pmdbs-sn-rnaseq-mtg",
 	"gs://asap-dev-team-jakobsson-pmdbs-sn-rnaseq",
 	"gs://asap-dev-team-lee-pmdbs-sn-rnaseq",
+	"gs://asap-dev-team-sulzer-pmdbs-sn-rnaseq",
 	"gs://asap-dev-cohort-pmdbs-sc-rnaseq",
+	# Mouse Single Nucleus/Cell RNAseq
+	"gs://asap-dev-team-biederer-mouse-sc-rnaseq",
+	"gs://asap-dev-team-cragg-mouse-sn-rnaseq-striatum",
+	"gs://asap-dev-cohort-mouse-sc-rnaseq",
 	# Human PMDBS Bulk RNAseq
 	"gs://asap-dev-team-hardy-pmdbs-bulk-rnaseq",
 	"gs://asap-dev-team-lee-pmdbs-bulk-rnaseq-mfg",
 	"gs://asap-dev-team-wood-pmdbs-bulk-rnaseq",
+	"gs://asap-dev-team-jakobsson-pmdbs-bulk-rnaseq",
 	"gs://asap-dev-cohort-pmdbs-bulk-rnaseq",
 	# Human PMDBS Spatial Transcriptomics Nanostring GeoMx
 	"gs://asap-dev-team-edwards-pmdbs-spatial-geomx-th",
+	# Human Spatial Transcriptomics 10x Visium
+	"gs://asap-dev-team-scherzer-pmdbs-spatial-visium-mtg",
 	# Mouse Spatial Transcriptomics 10x Visium
 	"gs://asap-dev-team-cragg-mouse-spatial-visium-striatum",
 ]
 
 embargoed_team_dev_buckets = [
-	# Human PMDBS Single Nucleus/Cell RNAseq
-	"gs://asap-dev-team-sulzer-pmdbs-sn-rnaseq",
+	# Human PMDBS Multimodal Seq
+	"gs://asap-raw-team-wood-pmdbs-multimodal-seq",
 	# Human PMDBS Spatial Transcriptomics Nanostring GeoMx
 	"gs://asap-dev-team-vila-pmdbs-spatial-geomx-thlc",
 	"gs://asap-dev-team-vila-pmdbs-spatial-geomx-unmasked",
