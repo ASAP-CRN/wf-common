@@ -91,8 +91,8 @@ while IFS= read -r bucket; do
     if gcloud storage ls "$gcp_raw_bucket/metadata/release/SAMPLE.csv" &>/dev/null; then
         echo "  Found metadata/release/SAMPLE.csv"
         sample_csv=$(gcloud storage cat "$gcp_raw_bucket/metadata/release/SAMPLE.csv")
-        sample_values=$(get_unique_column_count "$sample_csv" "Sample ID")
-        subject_values=$(get_unique_column_count "$sample_csv" "Subject ID")
+        sample_values=$(get_unique_column_count "$sample_csv" "sample_id")
+        subject_values=$(get_unique_column_count "$sample_csv" "subject_id")
     else
     # Second try: search metadata/ for any SAMPLE.csv
         echo "  metadata/release/SAMPLE.csv not found, searching metadata folder for SAMPLE.csv..."
@@ -101,8 +101,8 @@ while IFS= read -r bucket; do
         if [ -n "$sample_csv_loc" ]; then
             echo "  Found SAMPLE.csv at: $sample_csv_loc"
             sample_csv=$(gcloud storage cat "$sample_csv_loc")
-            sample_values=$(get_unique_column_count "$sample_csv" "Sample ID")
-            subject_values=$(get_unique_column_count "$sample_csv" "Subject ID")
+            sample_values=$(get_unique_column_count "$sample_csv" "sample_id")
+            subject_values=$(get_unique_column_count "$sample_csv" "subject_id")
         else
             echo "  No SAMPLE.csv found in metadata/ path"
         fi
