@@ -16,6 +16,7 @@ from common import (
 	remove_internal_qc_label,
 	change_gg_storage_admin_to_read_write,
 	change_sa_storage_admin_to_read_write,
+	add_verily_read_access,
 )
 
 
@@ -93,11 +94,15 @@ def main(args):
 			# GCP bucket permissions and labels
 			if dry_run:
 				logging.info(f"Would remove internal-qc-data label from [{raw_bucket}]")
+				logging.info(f"Would grant storage.objectViewer permission to asap-cloud-readers@verily-bvdp.com on [{raw_bucket}]")
 				logging.info(f"Would remove Storage Admin access and grant Storage Object Creator and Viewer to CRN Teams for [{raw_bucket}] on Google Group and Service Account")
 			else:
 				# Remove internal-qc-data label from released raw buckets
 				logging.info(f"Removing internal-qc-data label from [{raw_bucket}]")
 				remove_internal_qc_label(raw_bucket)
+				# Add Verily access
+				logging.info(f"Granting storage.objectViewer permission to asap-cloud-readers@verily-bvdp.com on [{raw_bucket}]")
+				add_verily_read_access(raw_bucket)
 				# Remove Storage Admin access from CRN Teams and grant Storage Object Creator and Viewer to released raw buckets
 				change_gg_storage_admin_to_read_write(raw_bucket)
 				change_sa_storage_admin_to_read_write(raw_bucket)
