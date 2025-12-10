@@ -3,7 +3,7 @@
 # Transfer locally saved QC'd metadata to the raw Google bucket
 # Usage: 
 #   Single dataset:
-#     python3 transfer_qc_metadata_to_raw_bucket.py -t jakobsson -ds pmdbs-bulk-rnaseq
+#     python3 transfer_qc_metadata_to_raw_bucket -t jakobsson -ds pmdbs-bulk-rnaseq
 #
 # Batch processing (datasets.csv field 1 is team, field 2 is dataset, no header):
 #     while IFS=, read -r team dataset; do
