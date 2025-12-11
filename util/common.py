@@ -442,6 +442,23 @@ def gsync(source_path, destination_path, dry_run):
 	logging.error(result.stderr)
 
 
+def gsync_del(source_path, destination_path, dry_run):
+	command = [
+		"gcloud",
+		"storage",
+		"rsync",
+		"--delete-unmatched-destination-objects",
+		"-r",
+		source_path,
+		destination_path
+	]
+	if dry_run:
+		command.insert(4, "--dry-run")
+	result = subprocess.run(command, check=True, capture_output=True, text=True)
+	logging.info(result.stdout)
+	logging.error(result.stderr)
+
+
 def add_verily_read_access(bucket_name):
 	command = [
 		"gcloud",

@@ -15,6 +15,7 @@ from common import (
 	list_dirs,
 	gremove,
 	gsync,
+	gsync_del,
 	remove_internal_qc_label,
 	change_gg_storage_admin_to_read_write,
 	change_sa_storage_admin_to_read_write,
@@ -77,7 +78,7 @@ def main(args):
 			# File metadata
 			if "file_metadata" in dirs:
 				logging.info(f"Promoting file_metadata in raw to [{curated_bucket}]")
-				gsync(f"{raw_bucket}/file_metadata", f"{curated_bucket}/file_metadata", dry_run)
+				gsync_del(f"{raw_bucket}/file_metadata", f"{curated_bucket}/file_metadata", dry_run)
 
 			# Artifacts
 			if "artifacts" in dirs:
@@ -135,10 +136,10 @@ def main(args):
 			# File metadata
 			if "file_metadata" in dirs:
 				logging.info(f"Promoting file_metadata in raw to [{dev_bucket}]")
-				gsync(f"{raw_bucket}/file_metadata", f"{dev_bucket}/file_metadata", dry_run)
+				gsync_del(f"{raw_bucket}/file_metadata", f"{dev_bucket}/file_metadata", dry_run)
 				if dev_bucket in unembargoed_team_dev_buckets:
 					logging.info(f"Team dataset is lifted from internal QC- also promoting file_metadata in raw to [{uat_bucket}]")
-					gsync(f"{raw_bucket}/file_metadata", f"{uat_bucket}/file_metadata", dry_run)
+					gsync_del(f"{raw_bucket}/file_metadata", f"{uat_bucket}/file_metadata", dry_run)
 
 			# Artifacts
 			if "artifacts" in dirs:
