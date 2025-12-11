@@ -2,6 +2,7 @@
 
 import argparse
 import sys
+import re
 import logging
 import subprocess
 from google.cloud import storage
@@ -12,6 +13,7 @@ from common import (
 	unembargoed_team_dev_buckets,
 	embargoed_team_dev_buckets,
 	list_dirs,
+	gremove,
 	gsync,
 	remove_internal_qc_label,
 	change_gg_storage_admin_to_read_write,
@@ -69,8 +71,8 @@ def main(args):
 			dirs = list_dirs(raw_bucket)
 
 			# Metadata
-			logging.info(f"Promoting metadata/release in raw to [{curated_bucket}]")
-			gsync(f"{raw_bucket}/metadata/release", f"{curated_bucket}/metadata/release", dry_run)
+			logging.info(f"Promoting metadata/release/<release_version> in raw to [{curated_bucket}]")
+			gsync(f"{raw_bucket}/metadata/release/{args.release_version}", f"{curated_bucket}/metadata/release/{args.release_version}", dry_run)
 
 			# File metadata
 			if "file_metadata" in dirs:
@@ -79,14 +81,14 @@ def main(args):
 
 			# Artifacts
 			if "artifacts" in dirs:
-				logging.info(f"Promoting artifacts in raw to [{curated_bucket}]")
+				logging.info(f"Promoting artifacts in raw to [{curated_bucket}] while excluding cellranger_counts and bam_files folders")
 				gsync_artifacts(f"{raw_bucket}/artifacts", f"{curated_bucket}/artifacts", dry_run)
 			else:
 				logging.info(f"Raw bucket does not have artifacts directory [{raw_bucket}]; skipping")
 
 			# Spatial
 			if "spatial" in dirs:
-				logging.info(f"Promoting spatial in raw to [{curated_bucket}]")
+				logging.info(f"Promoting spatial in raw to [{curated_bucket}] while excluding cellranger_counts and bam_files folders")
 				gsync_artifacts(f"{raw_bucket}/spatial", f"{curated_bucket}/spatial", dry_run)
 			else:
 				logging.info(f"Raw bucket does not have spatial directory [{raw_bucket}]; skipping")
@@ -107,6 +109,13 @@ def main(args):
 				change_gg_storage_admin_to_read_write(raw_bucket)
 				change_sa_storage_admin_to_read_write(raw_bucket)
 
+			# Remove old metadata that's in metadata/release/
+			if dry_run:
+				logging.info(f"Would delete files in {raw_bucket}/metadata/release while preserving version folders")
+			else:
+				logging.info(f"Deleting files in {raw_bucket}/metadata/release while preserving version folders")
+				gremove(f"{raw_bucket}/metadata/release/*")
+
 
 	# if args.type_of_release == "minor" or args.type_of_release == "major":
 	if args.type_of_release == "major":
@@ -116,12 +125,12 @@ def main(args):
 			dirs = list_dirs(raw_bucket)
 
 			# Metadata
-			logging.info(f"Promoting metadata/release in raw to [{dev_bucket}]")
-			gsync(f"{raw_bucket}/metadata/release", f"{dev_bucket}/metadata/release", dry_run)
+			logging.info(f"Promoting metadata/release/<release_version> in raw to [{dev_bucket}]")
+			gsync(f"{raw_bucket}/metadata/release/{args.release_version}", f"{dev_bucket}/metadata/release/{args.release_version}", dry_run)
 			if dev_bucket in unembargoed_team_dev_buckets:
 				uat_bucket = dev_bucket.replace("dev", "uat")
-				logging.info(f"Team dataset is lifted from internal QC- also promoting metadata/release in raw to [{uat_bucket}]")
-				gsync(f"{raw_bucket}/metadata/release", f"{uat_bucket}/metadata/release", dry_run)
+				logging.info(f"Team dataset is lifted from internal QC- also promoting metadata/release/<release_version> in raw to [{uat_bucket}]")
+				gsync(f"{raw_bucket}/metadata/release/{args.release_version}", f"{uat_bucket}/metadata/release/{args.release_version}", dry_run)
 
 			# File metadata
 			if "file_metadata" in dirs:
@@ -133,7 +142,7 @@ def main(args):
 
 			# Artifacts
 			if "artifacts" in dirs:
-				logging.info(f"Promoting artifacts in raw to [{dev_bucket}]")
+				logging.info(f"Promoting artifacts in raw to [{dev_bucket}] while excluding cellranger_counts and bam_files folders")
 				gsync_artifacts(f"{raw_bucket}/artifacts", f"{dev_bucket}/artifacts", dry_run)
 				if dev_bucket in unembargoed_team_dev_buckets:
 					logging.info(f"Team dataset is lifted from internal QC- also promoting artifacts in raw to [{uat_bucket}]")
@@ -143,7 +152,7 @@ def main(args):
 
 			# Spatial
 			if "spatial" in dirs:
-				logging.info(f"Promoting spatial in raw to [{dev_bucket}]")
+				logging.info(f"Promoting spatial in raw to [{dev_bucket}] while excluding cellranger_counts and bam_files folders")
 				gsync(f"{raw_bucket}/spatial", f"{dev_bucket}/spatial", dry_run)
 				if dev_bucket in unembargoed_team_dev_buckets:
 					logging.info(f"Team dataset is lifted from internal QC- also promoting spatial in raw to [{uat_bucket}]")
@@ -154,7 +163,7 @@ def main(args):
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(
-		description="Promote metadata/release, file_metadata, artifacts, and spatial in raw buckets to staging (Minor/Major release) or straight to production (Urgent/Minor release)."
+		description="Promote metadata/release/<release_version>, file_metadata, artifacts, and spatial in raw buckets to staging (Minor/Major release) or straight to production (Urgent/Minor release)."
 	)
 
 	parser.add_argument(
@@ -180,6 +189,12 @@ if __name__ == "__main__":
 		help="Promote all datasets despite previous release status."
 	)
 	parser.add_argument(
+		"-v",
+		"--release-version",
+		required=False,
+		help="Release version."
+	)
+	parser.add_argument(
 		"-p",
 		"--promote",
 		action="store_true",
@@ -191,5 +206,11 @@ if __name__ == "__main__":
 
 	if not args.list and not args.type_of_release:
 		parser.error("--type-of-release (-t) is required unless --list (-l) is specified")
+
+	pattern = r"^v\d+\.\d+\.\d+$"
+	if not re.match(pattern, args.release_version):
+		raise ValueError(
+			f"Release version: [{args.release_version}] is invalid. Expected format example: v4.0.0"
+		)
 
 	main(args)

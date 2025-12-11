@@ -414,6 +414,18 @@ def gmove(source_path, destination_path):
 	logging.error(result.stderr)
 
 
+def gremove(destination_path):
+	command = [
+		"gcloud",
+		"storage",
+		"rm",
+		destination_path
+	]
+	result = subprocess.run(command, check=True, capture_output=True, text=True)
+	logging.info(result.stdout)
+	logging.error(result.stderr)
+
+
 def gsync(source_path, destination_path, dry_run):
 	command = [
 		"gcloud",
