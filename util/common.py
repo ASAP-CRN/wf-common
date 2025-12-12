@@ -383,19 +383,24 @@ def compare_md5_hashes(results, staging, same_files):
 ##############################################################
 ##### PROMOTE WORKFLOW OUTPUTS - STAGING TO PROD SECTION #####
 ##############################################################
-def gcopy(source_path, destination_path, recursive=False):
-	command = [
-		"gcloud",
-		"storage",
-		"cp",
-		source_path,
-		destination_path
-	]
-	if recursive:
-		command.insert(3, "--recursive")
-	result = subprocess.run(command, check=True, capture_output=True, text=True)
-	logging.info(result.stdout)
-	logging.error(result.stderr)
+def gcopy(source_path, destination_path, recursive=False, dry_run=False):
+    command = [
+        "gcloud",
+        "storage",
+        "cp",
+        source_path,
+        destination_path
+    ]
+    if recursive:
+        command.insert(3, "--recursive")
+    
+    if dry_run: # gcloud cp does not have a native dry run flag
+        logging.info(f"[DRY RUN] Would copy: {source_path} -> {destination_path}")
+        return
+    
+    result = subprocess.run(command, check=True, capture_output=True, text=True)
+    logging.info(result.stdout)
+    logging.error(result.stderr)
 
 
 def gmove(source_path, destination_path):
