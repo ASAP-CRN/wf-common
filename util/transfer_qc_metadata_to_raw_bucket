@@ -1,8 +1,17 @@
 #!/usr/bin/env python3
 
 # Transfer locally saved QC'd metadata to the raw Google bucket
-# Usage: python3 transfer_qc_metadata_to_raw_bucket.py -t jakobsson -ds pmdbs-bulk-rnaseq
+# Usage: 
+#   Single dataset:
+#     python3 transfer_qc_metadata_to_raw_bucket -t jakobsson -ds pmdbs-bulk-rnaseq
+#
+# Batch processing (datasets.csv field 1 is team, field 2 is dataset, no header):
+#     while IFS=, read -r team dataset; do
+#         python3 transfer_qc_metadata_to_raw_bucket -t "$team" -ds "$dataset" -p
+#     done < datasets.csv
+#
 # Defaults to dry run unless -p flag is added!
+# 
 # NOTE on assumptions made:
 # 1.   You have cloned asap-crn-cloud-dataset-metadata and its root is at the
 # ---- same level as wf-common
@@ -40,7 +49,12 @@ def main(args):
     metadata_dir = dataset_dir / "metadata"
     file_metadata_dir = dataset_dir / "file_metadata"
     
-    bucket_name = f"gs://asap-raw-team-{team_name}-{dataset_name}"
+    # No team- prefix for cohorts
+    if team_name == "cohort":
+        bucket_name = f"gs://asap-raw-{team_name}-{dataset_name}"
+    else:
+        bucket_name = f"gs://asap-raw-team-{team_name}-{dataset_name}"
+    
     file_metadata_bucket = f"{bucket_name}/file_metadata"
     metadata_bucket = f"{bucket_name}/metadata"
     
