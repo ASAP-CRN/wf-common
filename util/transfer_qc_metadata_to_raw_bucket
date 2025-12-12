@@ -83,10 +83,12 @@ def main(args):
                           destination_path=f"{file_metadata_bucket}/{file_name}", 
                           dry_run=dry_run)
                 else:
-                    gcopy(source_path=file_path, 
-                          destination_path=f"{file_metadata_bucket}/{file_name}",
-                          recursive=False, 
-                          dry_run=dry_run)
+                    if dry_run:
+                        logging.info(f"Would copy {file_path} to {file_metadata_bucket}/{file_name}")
+                    else:
+                        gcopy(source_path=file_path, 
+                              destination_path=f"{file_metadata_bucket}/{file_name}",
+                              recursive=False)
  
             else:
                 logging.warning(f"File not found, skipping: {file_name}")
