@@ -421,7 +421,11 @@ def gremove(destination_path):
 		"rm",
 		destination_path
 	]
-	result = subprocess.run(command, check=True, capture_output=True, text=True)
+	try:
+		result = subprocess.run(command, check=True, capture_output=True, text=True)
+	except subprocess.CalledProcessError:
+		logging.info(f"No files found at {destination_path}; skipping deletion.")
+		return
 	logging.info(result.stdout)
 	logging.error(result.stderr)
 

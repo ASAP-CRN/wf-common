@@ -72,8 +72,9 @@ def main(args):
 			dirs = list_dirs(raw_bucket)
 
 			# Metadata
-			logging.info(f"Promoting metadata/release/{args.release_version} in raw to [{curated_bucket}]")
-			gsync(f"{raw_bucket}/metadata/release/{args.release_version}", f"{curated_bucket}/metadata/release/{args.release_version}", dry_run)
+			if "metadata" in dirs:
+				logging.info(f"Promoting metadata/release/{args.release_version} in raw to [{curated_bucket}]")
+				gsync(f"{raw_bucket}/metadata/release/{args.release_version}", f"{curated_bucket}/metadata/release/{args.release_version}", dry_run)
 
 			# File metadata
 			if "file_metadata" in dirs:
@@ -110,12 +111,13 @@ def main(args):
 				change_gg_storage_admin_to_read_write(raw_bucket)
 				change_sa_storage_admin_to_read_write(raw_bucket)
 
-			# Remove old metadata that's in metadata/release/
-			if dry_run:
-				logging.info(f"Would delete files in {curated_bucket}/metadata/release while preserving version folders")
-			else:
-				logging.info(f"Deleting files in {curated_bucket}/metadata/release while preserving version folders")
-				gremove(f"{curated_bucket}/metadata/release/*")
+			# Remove old metadata that's in PROD metadata/release/
+			if "metadata" in dirs:
+				if dry_run:
+					logging.info(f"Would delete files in {curated_bucket}/metadata/release while preserving version folders")
+				else:
+					logging.info(f"Deleting files in {curated_bucket}/metadata/release while preserving version folders")
+					gremove(f"{curated_bucket}/metadata/release/*")
 
 
 	# if args.type_of_release == "minor" or args.type_of_release == "major":
@@ -126,21 +128,13 @@ def main(args):
 			dirs = list_dirs(raw_bucket)
 
 			# Metadata
-			logging.info(f"Promoting metadata/release/{args.release_version} in raw to [{dev_bucket}]")
-			gsync(f"{raw_bucket}/metadata/release/{args.release_version}", f"{dev_bucket}/metadata/release/{args.release_version}", dry_run)
-			if dry_run:
-				logging.info(f"Would delete files in {dev_bucket}/metadata/release while preserving version folders")
-			else:
-				logging.info(f"Deleting files in {dev_bucket}/metadata/release while preserving version folders")
-				gremove(f"{dev_bucket}/metadata/release/*")
-			if dev_bucket in unembargoed_team_dev_buckets:
-				uat_bucket = dev_bucket.replace("dev", "uat")
-				logging.info(f"Team dataset is lifted from internal QC- also promoting metadata/release/{args.release_version} in raw to [{uat_bucket}]")
-				gsync(f"{raw_bucket}/metadata/release/{args.release_version}", f"{uat_bucket}/metadata/release/{args.release_version}", dry_run)
-				if dry_run:
-					logging.info(f"Would delete files in {uat_bucket}/metadata/release while preserving version folders")
-				else:
-					logging.info(f"Deleting files in {uat_bucket}/metadata/release while preserving version folders")
+			if "metadata" in dirs:
+				logging.info(f"Promoting metadata/release/{args.release_version} in raw to [{dev_bucket}]")
+				gsync(f"{raw_bucket}/metadata/release/{args.release_version}", f"{dev_bucket}/metadata/release/{args.release_version}", dry_run)
+				if dev_bucket in unembargoed_team_dev_buckets:
+					uat_bucket = dev_bucket.replace("dev", "uat")
+					logging.info(f"Team dataset is lifted from internal QC- also promoting metadata/release/{args.release_version} in raw to [{uat_bucket}]")
+					gsync(f"{raw_bucket}/metadata/release/{args.release_version}", f"{uat_bucket}/metadata/release/{args.release_version}", dry_run)
 
 			# File metadata
 			if "file_metadata" in dirs:
@@ -169,6 +163,22 @@ def main(args):
 					gsync(f"{raw_bucket}/spatial", f"{uat_bucket}/spatial", dry_run)
 			else:
 				logging.info(f"Raw bucket does not have spatial directory [{raw_bucket}]; skipping")
+
+			# Remove old metadata that's in DEV/UAT metadata/release/
+			if "metadata" in dirs:
+				if dry_run:
+					logging.info(f"Would delete files in {dev_bucket}/metadata/release while preserving version folders")
+				else:
+					logging.info(f"Deleting files in {dev_bucket}/metadata/release while preserving version folders")
+					gremove(f"{dev_bucket}/metadata/release/*")
+
+				if dev_bucket in unembargoed_team_dev_buckets:
+					uat_bucket = dev_bucket.replace("dev", "uat")
+					if dry_run:
+						logging.info(f"Would also delete files in {uat_bucket}/metadata/release while preserving version folders")
+					else:
+						logging.info(f"Also deleting files in {uat_bucket}/metadata/release while preserving version folders")
+						gremove(f"{uat_bucket}/metadata/release/*")
 
 
 if __name__ == "__main__":
