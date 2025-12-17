@@ -75,9 +75,9 @@ def main(args):
 	# Subset buckets/datasets based on workflow_name provided
 	WORKFLOW_FILTERS = {
 		"pmdbs_sc_rnaseq": ("pmdbs-sn-rnaseq", "pmdbs-sc-rnaseq"),
-		"pmdbs_bulk_rnaseq": ("pmdbs-bulk-rnaseq"),
-		"spatial_visium": ("spatial-visium"),
-		"spatial_geomx": ("spatial-geomx"),
+		"pmdbs_bulk_rnaseq": ("pmdbs-bulk-rnaseq",),
+		"spatial_visium": ("spatial-visium",),
+		"spatial_geomx": ("spatial-geomx",),
 		"mouse_sc_rnaseq": ("mouse-sn-rnaseq", "mouse-sc-rnaseq"),
 	}
 	patterns = WORKFLOW_FILTERS.get(args.workflow_name)
