@@ -7,7 +7,7 @@ import subprocess
 from datetime import datetime, timezone
 from google.cloud import storage
 from common import (
-	unembargoed_team_dev_buckets,
+	unembargoed_dev_buckets_and_workflow_version_outputs,
 	list_teams,
 	list_dirs,
 	list_gs_files,
@@ -82,12 +82,15 @@ def main(args):
 	}
 	patterns = WORKFLOW_FILTERS.get(args.workflow_name)
 	dev_buckets = [
-		bucket for bucket in unembargoed_team_dev_buckets
-		if any(pattern in bucket for pattern in patterns)
+		bucket
+		for bucket, version in unembargoed_dev_buckets_and_workflow_version_outputs.items()
+		if any(pattern in bucket for pattern in patterns) and version == args.workflow_version
 	]
 	logging.info(
-		"Processing buckets:\n%s",
-		"\n".join(dev_buckets)
+		"Processing buckets (workflow=%s, version=%s):\n%s",
+		args.workflow_name,
+		args.workflow_version,
+		"\n".join(dev_buckets) if dev_buckets else "(none)"
 	)
 
 	for bucket in dev_buckets:

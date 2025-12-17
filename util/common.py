@@ -226,6 +226,33 @@ embargoed_team_dev_buckets = [
 	"gs://asap-dev-team-vila-pmdbs-spatial-geomx-unmasked",
 ]
 
+unembargoed_dev_buckets_and_workflow_version_outputs = {
+	# Human PMDBS Single Nucleus/Cell RNAseq
+	"gs://asap-dev-team-hafler-pmdbs-sn-rnaseq-pfc": "v3.0.0",
+	"gs://asap-dev-team-hardy-pmdbs-sn-rnaseq": "v3.0.0",
+	"gs://asap-dev-team-scherzer-pmdbs-sn-rnaseq-mtg": "v3.0.0",
+	"gs://asap-dev-team-jakobsson-pmdbs-sn-rnaseq": "v3.0.0",
+	"gs://asap-dev-team-lee-pmdbs-sn-rnaseq": "v3.0.0",
+	"gs://asap-dev-team-sulzer-pmdbs-sn-rnaseq": "v3.1.0",
+	"gs://asap-dev-cohort-pmdbs-sc-rnaseq": "v3.1.0",
+	# Mouse Single Nucleus/Cell RNAseq
+	"gs://asap-dev-team-biederer-mouse-sc-rnaseq": "v4.0.0",
+	"gs://asap-dev-team-cragg-mouse-sn-rnaseq-striatum": "v4.0.0",
+	"gs://asap-dev-cohort-mouse-sc-rnaseq": "v4.0.0",
+	# Human PMDBS Bulk RNAseq
+	"gs://asap-dev-team-hardy-pmdbs-bulk-rnaseq": "v1.1.1",
+	"gs://asap-dev-team-lee-pmdbs-bulk-rnaseq-mfg": "v1.1.1",
+	"gs://asap-dev-team-wood-pmdbs-bulk-rnaseq": "v1.1.1",
+	"gs://asap-dev-team-jakobsson-pmdbs-bulk-rnaseq": "v1.1.1",
+	"gs://asap-dev-cohort-pmdbs-bulk-rnaseq": "v1.1.1",
+	# Human PMDBS Spatial Transcriptomics Nanostring GeoMx
+	"gs://asap-dev-team-edwards-pmdbs-spatial-geomx-th": "v1.0.0",
+	# Human Spatial Transcriptomics 10x Visium
+	"gs://asap-dev-team-scherzer-pmdbs-spatial-visium-mtg": "v1.0.1",
+	# Mouse Spatial Transcriptomics 10x Visium
+	"gs://asap-dev-team-cragg-mouse-spatial-visium-striatum": "v1.0.0",
+}
+
 
 def list_dirs(bucket_name):
 	command = [
