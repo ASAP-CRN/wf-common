@@ -198,7 +198,7 @@ if __name__ == "__main__":
 		"--type-of-release",
 		choices=['urgent', 'minor', 'major'],
 		type=str,
-		required=False,
+		required=True,
 		help="Type of release ['urgent', 'minor', 'major']."
 	)
 	parser.add_argument(
@@ -211,7 +211,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"-v",
 		"--release-version",
-		required=False,
+		required=True,
 		help="Release version."
 	)
 	parser.add_argument(
