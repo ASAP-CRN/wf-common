@@ -191,41 +191,6 @@ def change_sa_storage_admin_to_read_write(bucket_name):
 ##### PROMOTE QC'ED METADATA AND ARTIFACTS - STAGING TO PROD SECTION #####
 ##########################################################################
 # Minor and Major Release that includes pipeline/curated outputs
-unembargoed_team_dev_buckets = [
-	# Human PMDBS Single Nucleus/Cell RNAseq
-	"gs://asap-dev-team-hafler-pmdbs-sn-rnaseq-pfc",
-	"gs://asap-dev-team-hardy-pmdbs-sn-rnaseq",
-	"gs://asap-dev-team-scherzer-pmdbs-sn-rnaseq-mtg",
-	"gs://asap-dev-team-jakobsson-pmdbs-sn-rnaseq",
-	"gs://asap-dev-team-lee-pmdbs-sn-rnaseq",
-	"gs://asap-dev-team-sulzer-pmdbs-sn-rnaseq",
-	"gs://asap-dev-cohort-pmdbs-sc-rnaseq",
-	# Mouse Single Nucleus/Cell RNAseq
-	"gs://asap-dev-team-biederer-mouse-sc-rnaseq",
-	"gs://asap-dev-team-cragg-mouse-sn-rnaseq-striatum",
-	"gs://asap-dev-cohort-mouse-sc-rnaseq",
-	# Human PMDBS Bulk RNAseq
-	"gs://asap-dev-team-hardy-pmdbs-bulk-rnaseq",
-	"gs://asap-dev-team-lee-pmdbs-bulk-rnaseq-mfg",
-	"gs://asap-dev-team-wood-pmdbs-bulk-rnaseq",
-	"gs://asap-dev-team-jakobsson-pmdbs-bulk-rnaseq",
-	"gs://asap-dev-cohort-pmdbs-bulk-rnaseq",
-	# Human PMDBS Spatial Transcriptomics Nanostring GeoMx
-	"gs://asap-dev-team-edwards-pmdbs-spatial-geomx-th",
-	# Human Spatial Transcriptomics 10x Visium
-	"gs://asap-dev-team-scherzer-pmdbs-spatial-visium-mtg",
-	# Mouse Spatial Transcriptomics 10x Visium
-	"gs://asap-dev-team-cragg-mouse-spatial-visium-striatum",
-]
-
-embargoed_team_dev_buckets = [
-	# Human PMDBS Multimodal Seq
-	"gs://asap-raw-team-wood-pmdbs-multimodal-seq",
-	# Human PMDBS Spatial Transcriptomics Nanostring GeoMx
-	"gs://asap-dev-team-vila-pmdbs-spatial-geomx-thlc",
-	"gs://asap-dev-team-vila-pmdbs-spatial-geomx-unmasked",
-]
-
 unembargoed_dev_buckets_and_workflow_version_outputs = {
 	# Human PMDBS Single Nucleus/Cell RNAseq
 	"gs://asap-dev-team-hafler-pmdbs-sn-rnaseq-pfc": "v3.0.0",
@@ -252,6 +217,14 @@ unembargoed_dev_buckets_and_workflow_version_outputs = {
 	# Mouse Spatial Transcriptomics 10x Visium
 	"gs://asap-dev-team-cragg-mouse-spatial-visium-striatum": "v1.0.0",
 }
+
+embargoed_dev_buckets = [
+	# Human PMDBS Multimodal Seq
+	"gs://asap-raw-team-wood-pmdbs-multimodal-seq",
+	# Human PMDBS Spatial Transcriptomics Nanostring GeoMx
+	"gs://asap-dev-team-vila-pmdbs-spatial-geomx-thlc",
+	"gs://asap-dev-team-vila-pmdbs-spatial-geomx-unmasked",
+]
 
 
 def list_dirs(bucket_name):

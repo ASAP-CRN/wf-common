@@ -10,8 +10,8 @@ from common import (
 	completed_platforming_raw_buckets,
 	unembargoed_platforming_raw_buckets,
 	embargoed_platforming_raw_buckets,
-	unembargoed_team_dev_buckets,
-	embargoed_team_dev_buckets,
+	unembargoed_dev_buckets_and_workflow_version_outputs,
+	embargoed_dev_buckets,
 	list_dirs,
 	gremove,
 	gsync,
@@ -48,6 +48,9 @@ def gsync_artifacts(source_path, destination_path, dry_run):
 
 
 def main(args):
+	# Convert dict to list
+	unembargoed_team_dev_buckets = list(unembargoed_dev_buckets_and_workflow_version_outputs.keys())
+
 	if args.list:
 		logging.info("Urgent and Minor release or platforming exercise related info:")
 		logging.info(f"Previously released team buckets:\n" + "\n".join(completed_platforming_raw_buckets))
@@ -55,7 +58,7 @@ def main(args):
 		logging.info(f"Embargoed team buckets:\n" + "\n".join(embargoed_platforming_raw_buckets))
 		logging.info("Minor and Major release related info (pipeline/curated outputs present):")
 		logging.info(f"Unembargoed team buckets:\n" + "\n".join(unembargoed_team_dev_buckets))
-		logging.info(f"Embargoed team buckets:\n" + "\n".join(embargoed_team_dev_buckets))
+		logging.info(f"Embargoed team buckets:\n" + "\n".join(embargoed_dev_buckets))
 		sys.exit(0)
 
 	dry_run = not args.promote
@@ -122,7 +125,7 @@ def main(args):
 
 	# if args.type_of_release == "minor" or args.type_of_release == "major":
 	if args.type_of_release == "major":
-		all_team_dev_buckets = unembargoed_team_dev_buckets + embargoed_team_dev_buckets
+		all_team_dev_buckets = unembargoed_team_dev_buckets + embargoed_dev_buckets
 		for dev_bucket in all_team_dev_buckets:
 			raw_bucket = dev_bucket.replace("dev", "raw")
 			dirs = list_dirs(raw_bucket)
