@@ -81,19 +81,20 @@ def main(args):
 		"mouse_sc_rnaseq": ("mouse-sn-rnaseq", "mouse-sc-rnaseq"),
 	}
 	patterns = WORKFLOW_FILTERS.get(args.workflow_name)
-	dev_buckets = [
-		bucket
-		for bucket, version in unembargoed_dev_buckets_and_workflow_version_outputs.items()
-		if any(pattern in bucket for pattern in patterns) and version == args.workflow_version
-	]
+	dev_buckets_version = {
+		bucket: workflow_version
+		for bucket, workflow_version in unembargoed_dev_buckets_and_workflow_version_outputs.items()
+		if any(pattern in bucket for pattern in patterns)
+	}
 	logging.info(
-		"Processing buckets (workflow=%s, version=%s):\n%s",
+		"Processing buckets (workflow=%s):\n%s",
 		args.workflow_name,
-		args.workflow_version,
-		"\n".join(dev_buckets) if dev_buckets else "(none)"
+		"\n".join(dev_buckets_version.keys()) if dev_buckets_version else "(none)"
 	)
 
-	for bucket in dev_buckets:
+	for bucket, workflow_version in dev_buckets_version.items():
+		logging.info("Processing bucket %s with workflow version %s", bucket, workflow_version)
+
 		file_results = {}
 		team_dataset = bucket.replace("gs://asap-dev-", "")
 		team_dataset_underscore = team_dataset.replace("-", "_")
@@ -170,11 +171,11 @@ def main(args):
 			production_bucket = f"gs://asap-curated-{team_dataset}"
 
 			production_workflow_bucket = f"gs://asap-curated-{team_dataset}/{args.workflow_name}"
-			production_workflow_version_bucket = f"gs://asap-curated-{team_dataset}/{args.workflow_name}/archive/workflow_version/{args.workflow_version}"
+			production_workflow_version_bucket = f"gs://asap-curated-{team_dataset}/{args.workflow_name}/archive/workflow_version/{workflow_version}"
 			production_workflow_metadata_path = f"{production_workflow_version_bucket}/workflow_metadata/{formatted_time}"
 
-			dev_workflow_metadata_path = f"{staging_dev_bucket}/{args.workflow_name}/archive/workflow_version/{args.workflow_version}/workflow_metadata/{formatted_time}"
-			uat_workflow_metadata_path = f"{staging_uat_bucket}/{args.workflow_name}/archive/workflow_version/{args.workflow_version}/workflow_metadata/{formatted_time}"
+			dev_workflow_metadata_path = f"{staging_dev_bucket}/{args.workflow_name}/archive/workflow_version/{workflow_version}/workflow_metadata/{formatted_time}"
+			uat_workflow_metadata_path = f"{staging_uat_bucket}/{args.workflow_name}/archive/workflow_version/{workflow_version}/workflow_metadata/{formatted_time}"
 			file_results["uat"]["combined_manifest_df"].to_csv(f"{team_dataset_underscore}_MANIFEST.tsv", index=False, sep="\t")
 
 			cohort = "cohort" in team_dataset
@@ -212,7 +213,7 @@ def main(args):
 				with open(tmp_file, "w") as f:
 					pass
 				gmove(tmp_file, f"{production_workflow_version_bucket}/")
-			logging.info(f"Saving workflow version [{args.workflow_version}] of [{team_dataset}] production data in archive folder")
+			logging.info(f"Saving workflow version [{workflow_version}] of [{team_dataset}] production data in archive folder")
 			logging.info(f"\tProduction bucket path:\t\t[{production_workflow_bucket}]")
 			logging.info(f"\tProduction archive/workflow_version bucket path:\t[{production_workflow_version_bucket}]")
 			# Dry and real run will only work if staging data gets promoted to production in previous step
@@ -249,13 +250,6 @@ if __name__ == "__main__":
 		type=str,
 		required=True,
 		help="Workflow name used as a directory in bucket."
-	)
-	parser.add_argument(
-		"-r",
-		"--workflow-version",
-		type=str,
-		required=True,
-		help="Workflow/pipeline version to store current curated outputs in raw workflow_execution bucket (e.g. v1.0.0)."
 	)
 	parser.add_argument(
 		"-p",
