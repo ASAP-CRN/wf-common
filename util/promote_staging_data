@@ -125,7 +125,6 @@ def main(args):
 
 		bucket = client.get_bucket(f"asap-uat-{team_dataset}")
 		not_empty_test_results = non_empty_check(bucket, args.workflow_name, GREEN_CHECKMARK, RED_X)
-		logging.info(f"file_results keys: {file_results.keys()}")
 		metadata_present_test_results = associated_metadata_check(file_results["uat"]["combined_manifest_df"], file_results["uat"]["blob_names"], GREEN_CHECKMARK, RED_X)
 		data_integrity_test_results = {**not_empty_test_results, **metadata_present_test_results}
 		all_tests_result_status = "True"
