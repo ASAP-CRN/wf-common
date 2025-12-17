@@ -257,18 +257,18 @@ if __name__ == "__main__":
 		help="Workflow name used as a directory in bucket."
 	)
 	parser.add_argument(
-		"-p",
-		"--promote",
-		action="store_true",
-		required=False,
-		help="Promote data (default is dry run)."
-	)
-	parser.add_argument(
 		"-r",
 		"--workflow-version",
 		type=str,
 		required=True,
 		help="Workflow/pipeline version to store current curated outputs in raw workflow_execution bucket (e.g. v1.0.0)."
+	)
+	parser.add_argument(
+		"-p",
+		"--promote",
+		action="store_true",
+		required=False,
+		help="Promote data (default is dry run)."
 	)
 
 	args = parser.parse_args()
