@@ -21,7 +21,7 @@
 import argparse
 import logging
 from pathlib import Path
-from common import gsync, check_bucket_exists, strip_team_name
+from common import gsync, check_bucket_exists, strip_team_name, gcopy
 
 
 logging.basicConfig(
@@ -35,6 +35,11 @@ logging.basicConfig(
 repo_root = Path(__file__).resolve().parents[1]
 metadata_root = repo_root.parent / "asap-crn-cloud-dataset-metadata"
 
+FILE_METADATA_FILES_TO_SYNC = [
+    "artifacts.csv",
+    "raw_files.csv",
+    "curated_files.csv",
+]
 
 
 def main(args):
@@ -61,8 +66,19 @@ def main(args):
     check_bucket_exists(bucket_name)
 
     if file_metadata_dir.exists():
-        logging.info(f"Transferring local file_metadata directory to [{file_metadata_bucket}]")
-        gsync(source_path=file_metadata_dir, destination_path=file_metadata_bucket, dry_run=dry_run)
+        logging.info(f"Transferring selected local file_metadata directory to [{file_metadata_bucket}]")
+        for file_name in FILE_METADATA_FILES_TO_SYNC:
+            file_path = file_metadata_dir / file_name
+            if file_path.exists():
+                if dry_run:
+                    logging.info(f"Would copy {file_path} to {file_metadata_bucket}/{file_name}")
+                else:
+                    logging.info(f"Transferring file: {file_name}")
+                    gcopy(source_path=str(file_path), 
+                          destination_path=f"{file_metadata_bucket}/{file_name}",
+                          recursive=False)
+            else:
+                logging.warning(f"File not found, skipping: {file_name}")
     else:
         raise ValueError(f"Local file metadata directory not found: {file_metadata_dir}")
     
