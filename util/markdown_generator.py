@@ -18,8 +18,8 @@ def get_combined_manifest_loc(path):
 def generate_markdown_report(
 	timestamp,
 	staging,
-	team_dataset,
-	team_dataset_underscore,
+	dataset_id,
+	dataset_id_underscore,
 	workflow,
 	file_info,
 	not_empty_tests,
@@ -27,8 +27,8 @@ def generate_markdown_report(
 	test_boolean,
 	test_result
 ):
-	staging_bucket = f"gs://asap-{staging}-{team_dataset}"
-	production_bucket = f"gs://asap-curated-{team_dataset}"
+	staging_bucket = f"gs://asap-{staging}-{dataset_id}"
+	production_bucket = f"gs://asap-curated-{dataset_id}"
 
 	staging_combined_manifest = file_info[staging]["combined_manifest_df"]
 	staging_timestamps = "\n".join(
@@ -189,5 +189,5 @@ Individual data integrity test results for each file (a comprehensive variation 
 **Previous manifest:** {previous_manifest_loc}
 """
 
-	with open(f"{team_dataset_underscore}_data_promotion_report.md", "w") as file:
+	with open(f"{dataset_id_underscore}_data_promotion_report.md", "w") as file:
 		file.write(markdown_content)
