@@ -3,3 +3,8 @@
 
 # Python
 **/__pycache__/
+
+# promote_staging_data outputs
+promote_staging_data_script.log
+*_MANIFEST.tsv
+*_data_promotion_report.md

@@ -2,6 +2,7 @@
 
 import argparse
 import sys
+import re
 import logging
 import subprocess
 from google.cloud import storage
@@ -9,13 +10,16 @@ from common import (
 	completed_platforming_raw_buckets,
 	unembargoed_platforming_raw_buckets,
 	embargoed_platforming_raw_buckets,
-	unembargoed_team_dev_buckets,
-	embargoed_team_dev_buckets,
+	unembargoed_dev_buckets_and_workflow_version_outputs,
+	embargoed_dev_buckets,
 	list_dirs,
+	gremove,
 	gsync,
+	gsync_del,
 	remove_internal_qc_label,
 	change_gg_storage_admin_to_read_write,
 	change_sa_storage_admin_to_read_write,
+	add_verily_read_access,
 )
 
 
@@ -44,6 +48,9 @@ def gsync_artifacts(source_path, destination_path, dry_run):
 
 
 def main(args):
+	# Convert dict to list
+	unembargoed_team_dev_buckets = list(unembargoed_dev_buckets_and_workflow_version_outputs.keys())
+
 	if args.list:
 		logging.info("Urgent and Minor release or platforming exercise related info:")
 		logging.info(f"Previously released team buckets:\n" + "\n".join(completed_platforming_raw_buckets))
@@ -51,7 +58,7 @@ def main(args):
 		logging.info(f"Embargoed team buckets:\n" + "\n".join(embargoed_platforming_raw_buckets))
 		logging.info("Minor and Major release related info (pipeline/curated outputs present):")
 		logging.info(f"Unembargoed team buckets:\n" + "\n".join(unembargoed_team_dev_buckets))
-		logging.info(f"Embargoed team buckets:\n" + "\n".join(embargoed_team_dev_buckets))
+		logging.info(f"Embargoed team buckets:\n" + "\n".join(embargoed_dev_buckets))
 		sys.exit(0)
 
 	dry_run = not args.promote
@@ -68,24 +75,25 @@ def main(args):
 			dirs = list_dirs(raw_bucket)
 
 			# Metadata
-			logging.info(f"Promoting metadata/release in raw to [{curated_bucket}]")
-			gsync(f"{raw_bucket}/metadata/release", f"{curated_bucket}/metadata/release", dry_run)
+			if "metadata" in dirs:
+				logging.info(f"Promoting metadata/release/{args.release_version} in raw to [{curated_bucket}]")
+				gsync(f"{raw_bucket}/metadata/release/{args.release_version}", f"{curated_bucket}/metadata/release/{args.release_version}", dry_run)
 
 			# File metadata
 			if "file_metadata" in dirs:
 				logging.info(f"Promoting file_metadata in raw to [{curated_bucket}]")
-				gsync(f"{raw_bucket}/file_metadata", f"{curated_bucket}/file_metadata", dry_run)
+				gsync_del(f"{raw_bucket}/file_metadata", f"{curated_bucket}/file_metadata", dry_run)
 
 			# Artifacts
 			if "artifacts" in dirs:
-				logging.info(f"Promoting artifacts in raw to [{curated_bucket}]")
+				logging.info(f"Promoting artifacts in raw to [{curated_bucket}] while excluding cellranger_counts and bam_files folders")
 				gsync_artifacts(f"{raw_bucket}/artifacts", f"{curated_bucket}/artifacts", dry_run)
 			else:
 				logging.info(f"Raw bucket does not have artifacts directory [{raw_bucket}]; skipping")
 
 			# Spatial
 			if "spatial" in dirs:
-				logging.info(f"Promoting spatial in raw to [{curated_bucket}]")
+				logging.info(f"Promoting spatial in raw to [{curated_bucket}] while excluding cellranger_counts and bam_files folders")
 				gsync_artifacts(f"{raw_bucket}/spatial", f"{curated_bucket}/spatial", dry_run)
 			else:
 				logging.info(f"Raw bucket does not have spatial directory [{raw_bucket}]; skipping")
@@ -93,42 +101,55 @@ def main(args):
 			# GCP bucket permissions and labels
 			if dry_run:
 				logging.info(f"Would remove internal-qc-data label from [{raw_bucket}]")
+				logging.info(f"Would grant storage.objectViewer permission to asap-cloud-readers@verily-bvdp.com on [{raw_bucket}]")
 				logging.info(f"Would remove Storage Admin access and grant Storage Object Creator and Viewer to CRN Teams for [{raw_bucket}] on Google Group and Service Account")
 			else:
 				# Remove internal-qc-data label from released raw buckets
 				logging.info(f"Removing internal-qc-data label from [{raw_bucket}]")
 				remove_internal_qc_label(raw_bucket)
+				# Add Verily access
+				logging.info(f"Granting storage.objectViewer permission to asap-cloud-readers@verily-bvdp.com on [{raw_bucket}]")
+				add_verily_read_access(raw_bucket)
 				# Remove Storage Admin access from CRN Teams and grant Storage Object Creator and Viewer to released raw buckets
 				change_gg_storage_admin_to_read_write(raw_bucket)
 				change_sa_storage_admin_to_read_write(raw_bucket)
 
+			# Remove old metadata that's in PROD metadata/release/
+			if "metadata" in dirs:
+				if dry_run:
+					logging.info(f"Would delete files in {curated_bucket}/metadata/release while preserving version folders")
+				else:
+					logging.info(f"Deleting files in {curated_bucket}/metadata/release while preserving version folders")
+					gremove(f"{curated_bucket}/metadata/release/*")
+
 
 	# if args.type_of_release == "minor" or args.type_of_release == "major":
 	if args.type_of_release == "major":
-		all_team_dev_buckets = unembargoed_team_dev_buckets + embargoed_team_dev_buckets
+		all_team_dev_buckets = unembargoed_team_dev_buckets + embargoed_dev_buckets
 		for dev_bucket in all_team_dev_buckets:
 			raw_bucket = dev_bucket.replace("dev", "raw")
 			dirs = list_dirs(raw_bucket)
 
 			# Metadata
-			logging.info(f"Promoting metadata/release in raw to [{dev_bucket}]")
-			gsync(f"{raw_bucket}/metadata/release", f"{dev_bucket}/metadata/release", dry_run)
-			if dev_bucket in unembargoed_team_dev_buckets:
-				uat_bucket = dev_bucket.replace("dev", "uat")
-				logging.info(f"Team dataset is lifted from internal QC- also promoting metadata/release in raw to [{uat_bucket}]")
-				gsync(f"{raw_bucket}/metadata/release", f"{uat_bucket}/metadata/release", dry_run)
+			if "metadata" in dirs:
+				logging.info(f"Promoting metadata/release/{args.release_version} in raw to [{dev_bucket}]")
+				gsync(f"{raw_bucket}/metadata/release/{args.release_version}", f"{dev_bucket}/metadata/release/{args.release_version}", dry_run)
+				if dev_bucket in unembargoed_team_dev_buckets:
+					uat_bucket = dev_bucket.replace("dev", "uat")
+					logging.info(f"Team dataset is lifted from internal QC- also promoting metadata/release/{args.release_version} in raw to [{uat_bucket}]")
+					gsync(f"{raw_bucket}/metadata/release/{args.release_version}", f"{uat_bucket}/metadata/release/{args.release_version}", dry_run)
 
 			# File metadata
 			if "file_metadata" in dirs:
 				logging.info(f"Promoting file_metadata in raw to [{dev_bucket}]")
-				gsync(f"{raw_bucket}/file_metadata", f"{dev_bucket}/file_metadata", dry_run)
+				gsync_del(f"{raw_bucket}/file_metadata", f"{dev_bucket}/file_metadata", dry_run)
 				if dev_bucket in unembargoed_team_dev_buckets:
 					logging.info(f"Team dataset is lifted from internal QC- also promoting file_metadata in raw to [{uat_bucket}]")
-					gsync(f"{raw_bucket}/file_metadata", f"{uat_bucket}/file_metadata", dry_run)
+					gsync_del(f"{raw_bucket}/file_metadata", f"{uat_bucket}/file_metadata", dry_run)
 
 			# Artifacts
 			if "artifacts" in dirs:
-				logging.info(f"Promoting artifacts in raw to [{dev_bucket}]")
+				logging.info(f"Promoting artifacts in raw to [{dev_bucket}] while excluding cellranger_counts and bam_files folders")
 				gsync_artifacts(f"{raw_bucket}/artifacts", f"{dev_bucket}/artifacts", dry_run)
 				if dev_bucket in unembargoed_team_dev_buckets:
 					logging.info(f"Team dataset is lifted from internal QC- also promoting artifacts in raw to [{uat_bucket}]")
@@ -138,7 +159,7 @@ def main(args):
 
 			# Spatial
 			if "spatial" in dirs:
-				logging.info(f"Promoting spatial in raw to [{dev_bucket}]")
+				logging.info(f"Promoting spatial in raw to [{dev_bucket}] while excluding cellranger_counts and bam_files folders")
 				gsync(f"{raw_bucket}/spatial", f"{dev_bucket}/spatial", dry_run)
 				if dev_bucket in unembargoed_team_dev_buckets:
 					logging.info(f"Team dataset is lifted from internal QC- also promoting spatial in raw to [{uat_bucket}]")
@@ -146,10 +167,26 @@ def main(args):
 			else:
 				logging.info(f"Raw bucket does not have spatial directory [{raw_bucket}]; skipping")
 
+			# Remove old metadata that's in DEV/UAT metadata/release/
+			if "metadata" in dirs:
+				if dry_run:
+					logging.info(f"Would delete files in {dev_bucket}/metadata/release while preserving version folders")
+				else:
+					logging.info(f"Deleting files in {dev_bucket}/metadata/release while preserving version folders")
+					gremove(f"{dev_bucket}/metadata/release/*")
+
+				if dev_bucket in unembargoed_team_dev_buckets:
+					uat_bucket = dev_bucket.replace("dev", "uat")
+					if dry_run:
+						logging.info(f"Would also delete files in {uat_bucket}/metadata/release while preserving version folders")
+					else:
+						logging.info(f"Also deleting files in {uat_bucket}/metadata/release while preserving version folders")
+						gremove(f"{uat_bucket}/metadata/release/*")
+
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(
-		description="Promote metadata/release, file_metadata, artifacts, and spatial in raw buckets to staging (Minor/Major release) or straight to production (Urgent/Minor release)."
+		description="Promote metadata/release/<release_version>, file_metadata, artifacts, and spatial in raw buckets to staging (Minor/Major release) or straight to production (Urgent/Minor release)."
 	)
 
 	parser.add_argument(
@@ -164,7 +201,7 @@ if __name__ == "__main__":
 		"--type-of-release",
 		choices=['urgent', 'minor', 'major'],
 		type=str,
-		required=False,
+		required=True,
 		help="Type of release ['urgent', 'minor', 'major']."
 	)
 	parser.add_argument(
@@ -173,6 +210,12 @@ if __name__ == "__main__":
 		action="store_true",
 		required=False,
 		help="Promote all datasets despite previous release status."
+	)
+	parser.add_argument(
+		"-v",
+		"--release-version",
+		required=True,
+		help="Release version."
 	)
 	parser.add_argument(
 		"-p",
@@ -186,5 +229,11 @@ if __name__ == "__main__":
 
 	if not args.list and not args.type_of_release:
 		parser.error("--type-of-release (-t) is required unless --list (-l) is specified")
+
+	pattern = r"^v\d+\.\d+\.\d+$"
+	if not re.match(pattern, args.release_version):
+		raise ValueError(
+			f"Release version: [{args.release_version}] is invalid. Expected format example: v4.0.0"
+		)
 
 	main(args)

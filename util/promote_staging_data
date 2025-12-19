@@ -7,7 +7,7 @@ import subprocess
 from datetime import datetime, timezone
 from google.cloud import storage
 from common import (
-	ALL_TEAMS,
+	unembargoed_dev_buckets_and_workflow_version_outputs,
 	list_teams,
 	list_dirs,
 	list_gs_files,
@@ -68,23 +68,41 @@ def main(args):
 		list_teams()
 		sys.exit(0)
 
-	for team in args.teams:
-		if team not in ALL_TEAMS:
-			logging.error(f"Team [{team}] is not one of the available teams")
-			list_teams()
-			sys.exit(1)
-
 	dry_run = not args.promote
 	namespaces = ["uat", "curated"]
 	client = storage.Client()
 
-	for team, dataset in zip(args.teams, args.datasets):
+	# Subset buckets/datasets based on workflow_name provided
+	WORKFLOW_FILTERS = {
+		"pmdbs_sc_rnaseq": ("pmdbs-sn-rnaseq", "pmdbs-sc-rnaseq"),
+		"pmdbs_bulk_rnaseq": ("pmdbs-bulk-rnaseq",),
+		"spatial_visium": ("spatial-visium",),
+		"spatial_geomx": ("spatial-geomx",),
+		"mouse_sc_rnaseq": ("mouse-sn-rnaseq", "mouse-sc-rnaseq"),
+	}
+	patterns = WORKFLOW_FILTERS.get(args.workflow_name)
+	dev_buckets_version = {
+		bucket: workflow_version
+		for bucket, workflow_version in unembargoed_dev_buckets_and_workflow_version_outputs.items()
+		if any(pattern in bucket for pattern in patterns)
+	}
+	logging.info(
+		"Processing buckets (workflow=%s):\n%s",
+		args.workflow_name,
+		"\n".join(dev_buckets_version.keys()) if dev_buckets_version else "(none)"
+	)
+
+	for bucket, workflow_version in dev_buckets_version.items():
+		logging.info("Processing bucket %s with workflow version %s", bucket, workflow_version)
+
 		file_results = {}
+		dataset_id = bucket.replace("gs://asap-dev-", "")
+		dataset_id_underscore = dataset_id.replace("-", "_")
 		for env in namespaces:
-			bucket_name = f"asap-{env}-{team}-{args.source}-{dataset}"
+			bucket_name = f"asap-{env}-{dataset_id}"
 			bucket = client.get_bucket(bucket_name)
 
-			gs_bucket = f"gs://asap-{env}-{team}-{args.source}-{dataset}"
+			gs_bucket = f"gs://asap-{env}-{dataset_id}"
 			dirs = list_dirs(f"gs://{bucket_name}")
 			if args.workflow_name in dirs:
 				# Data integrity tests
@@ -109,7 +127,7 @@ def main(args):
 				previous_curated_outputs_exist = False
 				logging.info("Previous curated outputs do not exist")
 
-		bucket = client.get_bucket(f"asap-uat-{team}-{args.source}-{dataset}")
+		bucket = client.get_bucket(f"asap-uat-{dataset_id}")
 		not_empty_test_results = non_empty_check(bucket, args.workflow_name, GREEN_CHECKMARK, RED_X)
 		metadata_present_test_results = associated_metadata_check(file_results["uat"]["combined_manifest_df"], file_results["uat"]["blob_names"], GREEN_CHECKMARK, RED_X)
 		data_integrity_test_results = {**not_empty_test_results, **metadata_present_test_results}
@@ -125,9 +143,8 @@ def main(args):
 		generate_markdown_report(
 			formatted_time,
 			"uat",
-			team,
-			args.source,
-			dataset,
+			dataset_id,
+			dataset_id_underscore,
 			args.workflow_name,
 			file_results,
 			not_empty_test_results,
@@ -148,34 +165,34 @@ def main(args):
 		# --------------------------------------------------------------------------------------------------------
 
 		if all_tests_result_status == "True":
-			raw_bucket = f"gs://asap-raw-{team}-{args.source}-{dataset}"
-			staging_dev_bucket = f"gs://asap-dev-{team}-{args.source}-{dataset}"
-			staging_uat_bucket = f"gs://asap-uat-{team}-{args.source}-{dataset}"
-			production_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}"
+			raw_bucket = f"gs://asap-raw-{dataset_id}"
+			staging_dev_bucket = f"gs://asap-dev-{dataset_id}"
+			staging_uat_bucket = f"gs://asap-uat-{dataset_id}"
+			production_bucket = f"gs://asap-curated-{dataset_id}"
 
-			production_workflow_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}/{args.workflow_name}"
-			production_workflow_version_bucket = f"gs://asap-curated-{team}-{args.source}-{dataset}/{args.workflow_name}/archive/workflow_version/{args.workflow_version}"
+			production_workflow_bucket = f"gs://asap-curated-{dataset_id}/{args.workflow_name}"
+			production_workflow_version_bucket = f"gs://asap-curated-{dataset_id}/{args.workflow_name}/archive/workflow_version/{workflow_version}"
 			production_workflow_metadata_path = f"{production_workflow_version_bucket}/workflow_metadata/{formatted_time}"
 
-			dev_workflow_metadata_path = f"{staging_dev_bucket}/{args.workflow_name}/archive/workflow_version/{args.workflow_version}/workflow_metadata/{formatted_time}"
-			uat_workflow_metadata_path = f"{staging_uat_bucket}/{args.workflow_name}/archive/workflow_version/{args.workflow_version}/workflow_metadata/{formatted_time}"
-			file_results["uat"]["combined_manifest_df"].to_csv(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", index=False, sep="\t")
+			dev_workflow_metadata_path = f"{staging_dev_bucket}/{args.workflow_name}/archive/workflow_version/{workflow_version}/workflow_metadata/{formatted_time}"
+			uat_workflow_metadata_path = f"{staging_uat_bucket}/{args.workflow_name}/archive/workflow_version/{workflow_version}/workflow_metadata/{formatted_time}"
+			file_results["uat"]["combined_manifest_df"].to_csv(f"{dataset_id_underscore}_MANIFEST.tsv", index=False, sep="\t")
 
-			cohort = "cohort" in team
+			cohort = "cohort" in dataset_id
 
 			if dry_run:
-				logging.info(f"Would copy {team}_{args.source}_{dataset}_MANIFEST.tsv to {dev_workflow_metadata_path}/MANIFEST.tsv and {uat_workflow_metadata_path}/MANIFEST.tsv")
-				logging.info(f"Would copy {team}_{args.source}_{dataset}_data_promotion_report.md to {dev_workflow_metadata_path}/data_promotion_report.md and {uat_workflow_metadata_path}/data_promotion_report.md")
+				logging.info(f"Would copy {dataset_id_underscore}_MANIFEST.tsv to {dev_workflow_metadata_path}/MANIFEST.tsv and {uat_workflow_metadata_path}/MANIFEST.tsv")
+				logging.info(f"Would copy {dataset_id_underscore}_data_promotion_report.md to {dev_workflow_metadata_path}/data_promotion_report.md and {uat_workflow_metadata_path}/data_promotion_report.md")
 				logging.info(f"Would remove internal-qc-data label from [{raw_bucket}]")
 				if not cohort:
 					logging.info(f"Would grant storage.objectViewer permission to asap-cloud-readers@verily-bvdp.com on [{raw_bucket}]")
 					logging.info(f"Would remove storage.admin permission and grant storage.objectViewer and storage.objectCreator permission to CRN Team's SA and GG on [{raw_bucket}]")
 			else:
-				logging.info(f"Uploading combined manifest and report for [{team}-{args.source}-{dataset}]")
-				gcopy(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", f"{dev_workflow_metadata_path}/MANIFEST.tsv")
-				gcopy(f"{team}_{args.source}_{dataset}_MANIFEST.tsv", f"{uat_workflow_metadata_path}/MANIFEST.tsv")
-				gcopy(f"{team}_{args.source}_{dataset}_data_promotion_report.md", f"{dev_workflow_metadata_path}/data_promotion_report.md")
-				gcopy(f"{team}_{args.source}_{dataset}_data_promotion_report.md", f"{uat_workflow_metadata_path}/data_promotion_report.md")
+				logging.info(f"Uploading combined manifest and report for [{dataset_id}]")
+				gcopy(f"{dataset_id_underscore}_MANIFEST.tsv", f"{dev_workflow_metadata_path}/MANIFEST.tsv")
+				gcopy(f"{dataset_id_underscore}_MANIFEST.tsv", f"{uat_workflow_metadata_path}/MANIFEST.tsv")
+				gcopy(f"{dataset_id_underscore}_data_promotion_report.md", f"{dev_workflow_metadata_path}/data_promotion_report.md")
+				gcopy(f"{dataset_id_underscore}_data_promotion_report.md", f"{uat_workflow_metadata_path}/data_promotion_report.md")
 				logging.info(f"Removing internal-qc-data label from [{raw_bucket}]")
 				remove_internal_qc_label(raw_bucket)
 				if not cohort:
@@ -185,7 +202,7 @@ def main(args):
 					change_gg_storage_admin_to_read_write(raw_bucket)
 					change_sa_storage_admin_to_read_write(raw_bucket)
 
-			logging.info(f"Promoting [{team}-{args.source}-{dataset}] data to production")
+			logging.info(f"Promoting [{dataset_id}] data to production")
 			logging.info(f"\tStaging bucket:\t\t[{staging_uat_bucket}]")
 			logging.info(f"\tProduction bucket:\t[{production_bucket}]")
 			gsync_del(f"{staging_uat_bucket}/{args.workflow_name}", f"{production_bucket}/{args.workflow_name}", args.workflow_name, dry_run)
@@ -196,7 +213,7 @@ def main(args):
 				with open(tmp_file, "w") as f:
 					pass
 				gmove(tmp_file, f"{production_workflow_version_bucket}/")
-			logging.info(f"Saving workflow version [{args.workflow_version}] of [{team}-{args.source}-{dataset}] production data in archive folder")
+			logging.info(f"Saving workflow version [{workflow_version}] of [{dataset_id}] production data in archive folder")
 			logging.info(f"\tProduction bucket path:\t\t[{production_workflow_bucket}]")
 			logging.info(f"\tProduction archive/workflow_version bucket path:\t[{production_workflow_version_bucket}]")
 			# Dry and real run will only work if staging data gets promoted to production in previous step
@@ -208,7 +225,7 @@ def main(args):
 				# Promote combined manifest and data promotion report from staging to production
 				gcopy(uat_workflow_metadata_path, production_workflow_metadata_path, recursive=True)
 		else:
-			logging.error(f"Data cannot be promoted for [{team}-{args.source}-{dataset}]; exiting")
+			logging.error(f"Data cannot be promoted for [{dataset_id}]; exiting")
 			sys.exit(1)
 
 		logging.info("Script complete")
@@ -220,14 +237,6 @@ if __name__ == "__main__":
 	)
 
 	parser.add_argument(
-		"-t",
-		"--teams",
-		type=str,
-		nargs='+',
-		required=True,
-		help="Space-delimited team(s) to promote data for."
-	)
-	parser.add_argument(
 		"-l",
 		"--list",
 		action="store_true",
@@ -235,23 +244,9 @@ if __name__ == "__main__":
 		help="List available teams."
 	)
 	parser.add_argument(
-		"-s",
-		"--source",
-		type=str,
-		required=True,
-		help="Source name in bucket name."
-	)
-	parser.add_argument(
-		"-d",
-		"--datasets",
-		type=str,
-		nargs='+',
-		required=True,
-		help="Space-delimited dataset name(s) in team bucket name, must follow the same order as {team}."
-	)
-	parser.add_argument(
 		"-w",
 		"--workflow-name",
+		choices=['pmdbs_sc_rnaseq', 'pmdbs_bulk_rnaseq', 'spatial_visium', 'spatial_geomx', 'mouse_sc_rnaseq'],
 		type=str,
 		required=True,
 		help="Workflow name used as a directory in bucket."
@@ -263,17 +258,7 @@ if __name__ == "__main__":
 		required=False,
 		help="Promote data (default is dry run)."
 	)
-	parser.add_argument(
-		"-r",
-		"--workflow-version",
-		type=str,
-		required=True,
-		help="Workflow/pipeline version to store current curated outputs in raw workflow_execution bucket (e.g. v1.0.0)."
-	)
 
 	args = parser.parse_args()
-
-	if len(args.teams) != len(args.datasets):
-		parser.error("The number of teams and datasets must be the same.")
 
 	main(args)
