@@ -39,12 +39,6 @@ FILE_METADATA_FILES_TO_SYNC = [
     "artifacts.csv",
     "raw_files.csv",
     "curated_files.csv",
-    "v1.0.0", # cohort datasets have versioned subdirs
-    "v2.0.0",
-    "v3.0.0",
-    "v3.0.1",
-    "v3.0.2",
-    "v4.0.0",
 ]
 
 
@@ -76,20 +70,13 @@ def main(args):
         for file_name in FILE_METADATA_FILES_TO_SYNC:
             file_path = file_metadata_dir / file_name
             if file_path.exists():
-                logging.info(f"Transferring file: {file_name}")
-                # Gsync for dirs, gcopy for files
-                if file_path.is_dir():
-                    gsync(source_path=file_path, 
-                          destination_path=f"{file_metadata_bucket}/{file_name}", 
-                          dry_run=dry_run)
+                if dry_run:
+                    logging.info(f"Would copy {file_path} to {file_metadata_bucket}/{file_name}")
                 else:
-                    if dry_run:
-                        logging.info(f"Would copy {file_path} to {file_metadata_bucket}/{file_name}")
-                    else:
-                        gcopy(source_path=file_path, 
-                              destination_path=f"{file_metadata_bucket}/{file_name}",
-                              recursive=False)
- 
+                    logging.info(f"Transferring file: {file_name}")
+                    gcopy(source_path=str(file_path), 
+                          destination_path=f"{file_metadata_bucket}/{file_name}",
+                          recursive=False)
             else:
                 logging.warning(f"File not found, skipping: {file_name}")
     else:
