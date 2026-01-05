@@ -18,7 +18,6 @@ from common import (
 	gsync_del,
 	remove_internal_qc_label,
 	change_gg_storage_admin_to_read_write,
-	change_sa_storage_admin_to_read_write,
 	add_verily_read_access,
 )
 
@@ -112,7 +111,6 @@ def main(args):
 				add_verily_read_access(raw_bucket)
 				# Remove Storage Admin access from CRN Teams and grant Storage Object Creator and Viewer to released raw buckets
 				change_gg_storage_admin_to_read_write(raw_bucket)
-				change_sa_storage_admin_to_read_write(raw_bucket)
 
 			# Remove old metadata that's in PROD metadata/release/
 			if "metadata" in dirs:
