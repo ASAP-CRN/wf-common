@@ -20,7 +20,6 @@ from common import (
 	gsync,
 	remove_internal_qc_label,
 	change_gg_storage_admin_to_read_write,
-	change_sa_storage_admin_to_read_write,
 	add_verily_read_access,
 )
 from markdown_generator import generate_markdown_report
@@ -200,7 +199,6 @@ def main(args):
 					add_verily_read_access(raw_bucket)
 					logging.info(f"Removing Storage Admin access and granting Storage Object Creator and Viewer to CRN Teams for [{raw_bucket}]")
 					change_gg_storage_admin_to_read_write(raw_bucket)
-					change_sa_storage_admin_to_read_write(raw_bucket)
 
 			logging.info(f"Promoting [{dataset_id}] data to production")
 			logging.info(f"\tStaging bucket:\t\t[{staging_uat_bucket}]")
