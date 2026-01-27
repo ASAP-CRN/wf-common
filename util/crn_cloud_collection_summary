@@ -57,21 +57,37 @@ while IFS= read -r slug; do
 
     echo "Detected [$slug] for team [$team_name]..."
 
-    echo "Getting GCP raw bucket name"
-    gcp_raw_uri=$(dnastack collections query -c "$slug" \
-        "SELECT gcp_uri FROM \"collections\".\"$underscored_slug\".\"${team_name}_data\" LIMIT 1" \
+    echo "Check if DATA table exists..."
+    collection_tables=$(dnastack collections query -c "$slug" \
+        "SELECT table_name FROM collections.information_schema.tables 
+        WHERE table_schema = '$underscored_slug'" \
         -o csv)
-    gcp_raw_bucket=$(echo "$gcp_raw_uri" | cut -d'/' -f1-3 | tail -n +2)
-    # Exception - some datasets do not have gs uri's in their DATA.csv
-    if [[ "$gcp_raw_bucket" != gs://* ]]; then
-        echo "[WARNING] [$slug] DATA.csv does not have gcp_uri"
-        echo "Trying to grab bucket name from slug..."
-        gcp_raw_bucket=$(echo "$slug" | sed 's;prod-;gs://asap-raw-team-;g')
+    if ! echo "$collection_tables" | grep -q "data"; then
+        echo "DATA table does not exist, guessing raw bucket..."
+        gcp_raw_bucket=$(echo "$slug" | sed 's;prod-;gs://asap-raw-;g')
         if gcloud storage buckets describe "$gcp_raw_bucket" >/dev/null 2>&1; then
             echo "Bucket exists; continuing"
         else
-            echo "Bucket does NOT exist; skipping"
+            echo "[WARNING] Bucket does NOT exist: ["$gcp_raw_bucket"]; skipping"
             continue
+        fi
+    else
+        echo "DATA table exists, getting GCP raw bucket name"
+        gcp_raw_uri=$(dnastack collections query -c "$slug" \
+            "SELECT gcp_uri FROM \"collections\".\"$underscored_slug\".\"${team_name}_data\" LIMIT 1" \
+            -o csv)
+        gcp_raw_bucket=$(echo "$gcp_raw_uri" | cut -d'/' -f1-3 | tail -n +2)
+        # Exception - some datasets do not have gs uri's in their DATA.csv
+        if [[ "$gcp_raw_bucket" != gs://* ]]; then
+            echo "[$slug] DATA.csv does not have gcp_uri"
+            echo "Trying to grab bucket name from slug..."
+            gcp_raw_bucket=$(echo "$slug" | sed 's;prod-;gs://asap-raw-;g')
+            if gcloud storage buckets describe "$gcp_raw_bucket" >/dev/null 2>&1; then
+                echo "Bucket exists; continuing"
+            else
+                echo "[WARNING] Bucket does NOT exist: ["$gcp_raw_bucket"]; skipping"
+                continue
+            fi
         fi
     fi
 
