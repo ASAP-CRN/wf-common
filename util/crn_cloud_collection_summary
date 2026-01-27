@@ -33,8 +33,10 @@ done
 
 dnastack use cloud.parkinsonsroadmap.org
 INDIVIDUAL_DATASETS=$(dnastack collections list | jq -r '.[] | select(.tags[]?.label == "Individual Dataset") | .slugName')
+COHORT_DATASETS=$(dnastack collections list | jq -r '.[] | select(.tags[]?.label == "Harmonized Collection") | .slugName')
 
 echo "Got "$(echo "$INDIVIDUAL_DATASETS" | wc -l | tr -d '[:space:]')" individual datasets from CRN Cloud"
+echo "Got "$(echo "$COHORT_DATASETS" | wc -l | tr -d '[:space:]')" harmonized collections from CRN Cloud"
 
 date_str=$(date +"%Y-%m-%d")
 output_file="crn_cloud_collection_summary.$date_str.tsv"
