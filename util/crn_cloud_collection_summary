@@ -42,10 +42,8 @@ date_str=$(date +"%Y-%m-%d")
 output_file="crn_cloud_collection_summary.$date_str.tsv"
 echo -e "gcp_raw_bucket\tgcp_raw_bucket_size\tgcp_curated_bucket\tgcp_curated_bucket_size\tsample_count\tsubject_count\tteam_name\tbrain_sample_count\tbrain_region_count" > "$output_file"
 
-# Arrays to track unique values
-declare -A unique_teams
-total_brain_samples=0
-declare -A unique_brain_regions
+unique_teams=""
+unique_brain_regions=""
 
 while IFS= read -r slug; do
     underscored_slug="${slug//-/_}"
@@ -65,7 +63,9 @@ while IFS= read -r slug; do
     echo "Detected [$slug] for team [$team_name]..."
     
     # Track unique teams
-    unique_teams["$team_name"]=1
+    if ! echo "$unique_teams" | grep -qw "$team_name"; then
+        unique_teams="$unique_teams $team_name"
+    fi
 
     echo "Check if DATA table exists..."
     collection_tables=$(dnastack collections query -c "$slug" \
@@ -134,10 +134,14 @@ while IFS= read -r slug; do
             "SELECT DISTINCT brain_region FROM \"collections\".\"$underscored_slug\".\"${team_name}_pmdbs\" WHERE brain_region IS NOT NULL" \
             -o csv \
             | tail -n +2)
+        
+        # Count unique brain regions for this collection
         region_count=0
         while IFS= read -r region; do
             if [[ -n "$region" ]]; then
-                unique_brain_regions["$region"]=1
+                if ! echo "$unique_brain_regions" | grep -qF "$region"; then
+                    unique_brain_regions="$unique_brain_regions|$region"
+                fi
                 ((region_count++))
             fi
         done <<< "$brain_regions"
@@ -295,17 +299,36 @@ if ! "${SAMPLES_SUBJECTS_ONLY}"; then
     }' "$output_file"
 fi
 
+# Calculate total brain samples from output file
+total_brain_samples=$(awk -F'\t' '
+NR==1 {
+    for(i=1;i<=NF;i++){
+        if($i=="brain_sample_count") brain_col=i
+    }
+    next
+}
+NR>1 {
+    if (brain_col > 0 && $brain_col != "NA" && $brain_col ~ /^[0-9]+$/) {
+        total += $brain_col
+    }
+}
+END {
+    print total+0
+}' "$output_file")
+
 echo ""
 echo "========================================"
 echo "=== ADDITIONAL STATISTICS ==="
-echo "Total unique teams contributing: ${#unique_teams[@]}"
-echo "Teams: ${!unique_teams[@]}"
+team_count=$(echo "$unique_teams" | wc -w | tr -d '[:space:]')
+echo "Total unique teams contributing: $team_count"
+echo "Teams:$unique_teams"
 echo ""
 echo "Total brain samples (across all PMDBS tables): $total_brain_samples"
-echo "Total unique brain regions (across all PMDBS tables): ${#unique_brain_regions[@]}"
-if [ ${#unique_brain_regions[@]} -gt 0 ]; then
+region_count=$(echo "$unique_brain_regions" | tr '|' '\n' | grep -v '^$' | wc -l | tr -d '[:space:]')
+echo "Total unique brain regions (across all PMDBS tables): $region_count"
+if [ -n "$unique_brain_regions" ]; then
     echo "Brain regions found:"
-    for region in "${!unique_brain_regions[@]}"; do
+    echo "$unique_brain_regions" | tr '|' '\n' | grep -v '^$' | while read -r region; do
         echo "  - $region"
     done
 fi
