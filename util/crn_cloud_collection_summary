@@ -33,12 +33,17 @@ done
 
 dnastack use cloud.parkinsonsroadmap.org
 INDIVIDUAL_DATASETS=$(dnastack collections list | jq -r '.[] | select(.tags[]?.label == "Individual Dataset") | .slugName')
+COHORT_DATASETS=$(dnastack collections list | jq -r '.[] | select(.tags[]?.label == "Harmonized Collection") | .slugName')
 
 echo "Got "$(echo "$INDIVIDUAL_DATASETS" | wc -l | tr -d '[:space:]')" individual datasets from CRN Cloud"
+echo "Got "$(echo "$COHORT_DATASETS" | wc -l | tr -d '[:space:]')" harmonized collections from CRN Cloud"
 
 date_str=$(date +"%Y-%m-%d")
 output_file="crn_cloud_collection_summary.$date_str.tsv"
-echo -e "gcp_raw_bucket\tgcp_raw_bucket_size\tgcp_curated_bucket\tgcp_curated_bucket_size\tsample_count\tsubject_count" > "$output_file"
+echo -e "gcp_raw_bucket\tgcp_raw_bucket_size\tgcp_curated_bucket\tgcp_curated_bucket_size\tsample_count\tsubject_count\tteam_name\tbrain_sample_count\tbrain_region_count" > "$output_file"
+
+unique_teams=""
+unique_brain_regions=""
 
 while IFS= read -r slug; do
     underscored_slug="${slug//-/_}"
@@ -56,22 +61,43 @@ while IFS= read -r slug; do
     fi
 
     echo "Detected [$slug] for team [$team_name]..."
+    
+    # Track unique teams
+    if ! echo "$unique_teams" | grep -qw "$team_name"; then
+        unique_teams="$unique_teams $team_name"
+    fi
 
-    echo "Getting GCP raw bucket name"
-    gcp_raw_uri=$(dnastack collections query -c "$slug" \
-        "SELECT gcp_uri FROM \"collections\".\"$underscored_slug\".\"${team_name}_data\" LIMIT 1" \
+    echo "Check if DATA table exists..."
+    collection_tables=$(dnastack collections query -c "$slug" \
+        "SELECT table_name FROM collections.information_schema.tables 
+        WHERE table_schema = '$underscored_slug'" \
         -o csv)
-    gcp_raw_bucket=$(echo "$gcp_raw_uri" | cut -d'/' -f1-3 | tail -n +2)
-    # Exception - some datasets do not have gs uri's in their DATA.csv
-    if [[ "$gcp_raw_bucket" != gs://* ]]; then
-        echo "[WARNING] [$slug] DATA.csv does not have gcp_uri"
-        echo "Trying to grab bucket name from slug..."
-        gcp_raw_bucket=$(echo "$slug" | sed 's;prod-;gs://asap-raw-team-;g')
+    if ! echo "$collection_tables" | grep -q "data"; then
+        echo "DATA table does not exist, guessing raw bucket..."
+        gcp_raw_bucket=$(echo "$slug" | sed 's;prod-;gs://asap-raw-;g')
         if gcloud storage buckets describe "$gcp_raw_bucket" >/dev/null 2>&1; then
             echo "Bucket exists; continuing"
         else
-            echo "Bucket does NOT exist; skipping"
+            echo "[WARNING] Bucket does NOT exist: ["$gcp_raw_bucket"]; skipping"
             continue
+        fi
+    else
+        echo "DATA table exists, getting GCP raw bucket name"
+        gcp_raw_uri=$(dnastack collections query -c "$slug" \
+            "SELECT gcp_uri FROM \"collections\".\"$underscored_slug\".\"${team_name}_data\" LIMIT 1" \
+            -o csv)
+        gcp_raw_bucket=$(echo "$gcp_raw_uri" | cut -d'/' -f1-3 | tail -n +2)
+        # Exception - some datasets do not have gs uri's in their DATA.csv
+        if [[ "$gcp_raw_bucket" != gs://* ]]; then
+            echo "[$slug] DATA.csv does not have gcp_uri"
+            echo "Trying to grab bucket name from slug..."
+            gcp_raw_bucket=$(echo "$slug" | sed 's;prod-;gs://asap-raw-;g')
+            if gcloud storage buckets describe "$gcp_raw_bucket" >/dev/null 2>&1; then
+                echo "Bucket exists; continuing"
+            else
+                echo "[WARNING] Bucket does NOT exist: ["$gcp_raw_bucket"]; skipping"
+                continue
+            fi
         fi
     fi
 
@@ -82,13 +108,56 @@ while IFS= read -r slug; do
     sample_count=$(dnastack collections query -c "$slug" \
         "SELECT COUNT(DISTINCT asap_sample_id) AS sample_count FROM \"collections\".\"$underscored_slug\".\"${team_name}_sample\"" \
         -o csv \
-        | tail -n +2)
+        | tail -n +2 | tr -d '[:space:]')
 
     echo "Getting # of subjects"
     subject_count=$(dnastack collections query -c "$slug" \
         "SELECT COUNT(DISTINCT subject_id) AS subject_count FROM \"collections\".\"$underscored_slug\".\"${team_name}_sample\"" \
         -o csv \
-        | tail -n +2)
+        | tail -n +2 | tr -d '[:space:]')
+
+    # Check for PMDBS table and get brain-specific stats
+    brain_sample_count="NA"
+    brain_region_count="NA"
+
+    echo "Checking for PMDBS table..."
+    if echo "$collection_tables" | grep -qi "pmdbs"; then
+        echo "PMDBS table found, getting brain sample count..."
+        brain_sample_count=$(dnastack collections query -c "$slug" \
+            "SELECT COUNT(DISTINCT asap_sample_id) AS brain_sample_count FROM \"collections\".\"$underscored_slug\".\"${team_name}_pmdbs\"" \
+            -o csv \
+            | tail -n +2 | tr -d '[:space:]')
+        echo "PMDBS brain sample count: $brain_sample_count"
+        
+        echo "Getting unique brain regions..."
+        brain_regions=$(dnastack collections query -c "$slug" \
+            "SELECT DISTINCT brain_region FROM \"collections\".\"$underscored_slug\".\"${team_name}_pmdbs\" WHERE brain_region IS NOT NULL" \
+            -o csv \
+            | tail -n +2)
+        region_count=0
+        while IFS= read -r region; do
+            if [[ -n "$region" ]]; then
+                if ! echo "$unique_brain_regions" | grep -qF "$region"; then
+                    unique_brain_regions="$unique_brain_regions|$region"
+                fi
+                ((region_count++))
+            fi
+        done <<< "$brain_regions"
+        brain_region_count=$region_count
+        echo "Brain region count for this collection: [$brain_region_count]"
+    else
+        echo "No PMDBS table found, checking SAMPLE table for brain tissue..."
+        brain_tissue_count=$(dnastack collections query -c "$slug" \
+            "SELECT COUNT(DISTINCT asap_sample_id) FROM \"collections\".\"$underscored_slug\".\"${team_name}_sample\" WHERE LOWER(tissue) LIKE '%brain%'" \
+            -o csv \
+            | tail -n +2 | tr -d '[:space:]')
+        if [[ "$brain_tissue_count" =~ ^[0-9]+$ ]] && [[ "$brain_tissue_count" -gt 0 ]]; then
+            brain_sample_count=$brain_tissue_count
+            echo "Found [$brain_sample_count] brain samples from SAMPLE.tissue column"
+        else
+            echo "No brain samples found in SAMPLE table"
+        fi
+    fi
 
     if "${SAMPLES_SUBJECTS_ONLY}"; then
         gcp_raw_bucket_size="NA"
@@ -101,7 +170,7 @@ while IFS= read -r slug; do
         gcp_prod_bucket_size=$(gcloud storage du -s "$gcp_prod_bucket" | grep -oE '^[0-9]+')
     fi
 
-    echo -e "${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${gcp_prod_bucket}\t${gcp_prod_bucket_size}\t${sample_count}\t${subject_count}" >> "$output_file"
+    echo -e "${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${gcp_prod_bucket}\t${gcp_prod_bucket_size}\t${sample_count}\t${subject_count}\t${team_name}\t${brain_sample_count}\t${brain_region_count}" >> "$output_file"
 done <<< "$INDIVIDUAL_DATASETS"
 
 # Clean up
@@ -233,4 +302,57 @@ if ! "${SAMPLES_SUBJECTS_ONLY}"; then
     }' "$output_file"
 fi
 
+# Calculate brain sample totals by origin from output file
+echo ""
+echo "========================================"
+awk -F'\t' '
+NR==1 {
+    for(i=1;i<=NF;i++) {
+        if($i=="brain_sample_count") brain_col=i
+        if($i=="gcp_raw_bucket") bucket_col=i
+    }
+    next
+}
+NR>1 && $brain_col!="NA" && $brain_col~/^[0-9]+$/ {
+    brain_count = $brain_col
+    bucket = $bucket_col
+    total_brain += brain_count
+    
+    # Data origin grouping logic (same as sample/subject breakdown)
+    if (bucket ~ /human/ || bucket ~ /pmdbs/) {
+        origin["human"] += brain_count
+    } else if (bucket ~ /mouse/) {
+        origin["mouse"] += brain_count
+    } else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/) {
+        origin["cell"] += brain_count
+    } else {
+        origin["other"] += brain_count
+    }
+}
+END {
+    print "=== BRAIN SAMPLE ORIGIN BREAKDOWN ==="
+    printf "human:        %d\n", origin["human"]
+    printf "mouse:        %d\n", origin["mouse"]
+    printf "cell:         %d\n", origin["cell"]
+    printf "other:        %d\n", origin["other"]
+    printf "Total brain samples: %d\n", total_brain
+}' "$output_file"
+
+echo ""
+echo "========================================"
+echo "=== ADDITIONAL STATISTICS ==="
+team_count=$(echo "$unique_teams" | wc -w | tr -d '[:space:]')
+echo "Total unique teams contributing: $team_count"
+echo "Teams:$unique_teams"
+echo ""
+region_count=$(echo "$unique_brain_regions" | tr '|' '\n' | grep -v '^$' | wc -l | tr -d '[:space:]')
+echo "Total unique brain regions (PMDBS only): $region_count"
+if [ -n "$unique_brain_regions" ]; then
+    echo "Brain regions found:"
+    echo "$unique_brain_regions" | tr '|' '\n' | grep -v '^$' | while read -r region; do
+        echo "  - $region"
+    done
+fi
+
+echo ""
 echo "Saved results to [$(pwd)/$output_file]"
