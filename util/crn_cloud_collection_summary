@@ -108,34 +108,32 @@ while IFS= read -r slug; do
     sample_count=$(dnastack collections query -c "$slug" \
         "SELECT COUNT(DISTINCT asap_sample_id) AS sample_count FROM \"collections\".\"$underscored_slug\".\"${team_name}_sample\"" \
         -o csv \
-        | tail -n +2)
+        | tail -n +2 | tr -d '[:space:]')
 
     echo "Getting # of subjects"
     subject_count=$(dnastack collections query -c "$slug" \
         "SELECT COUNT(DISTINCT subject_id) AS subject_count FROM \"collections\".\"$underscored_slug\".\"${team_name}_sample\"" \
         -o csv \
-        | tail -n +2)
+        | tail -n +2 | tr -d '[:space:]')
 
     # Check for PMDBS table and get brain-specific stats
     brain_sample_count="NA"
     brain_region_count="NA"
-    
+
     echo "Checking for PMDBS table..."
     if echo "$collection_tables" | grep -qi "pmdbs"; then
         echo "PMDBS table found, getting brain sample count..."
         brain_sample_count=$(dnastack collections query -c "$slug" \
             "SELECT COUNT(DISTINCT asap_sample_id) AS brain_sample_count FROM \"collections\".\"$underscored_slug\".\"${team_name}_pmdbs\"" \
             -o csv \
-            | tail -n +2)
-        echo "Brain sample count: $brain_sample_count"
+            | tail -n +2 | tr -d '[:space:]')
+        echo "PMDBS brain sample count: $brain_sample_count"
         
         echo "Getting unique brain regions..."
         brain_regions=$(dnastack collections query -c "$slug" \
             "SELECT DISTINCT brain_region FROM \"collections\".\"$underscored_slug\".\"${team_name}_pmdbs\" WHERE brain_region IS NOT NULL" \
             -o csv \
             | tail -n +2)
-        
-        # Count unique brain regions for this collection
         region_count=0
         while IFS= read -r region; do
             if [[ -n "$region" ]]; then
@@ -146,14 +144,19 @@ while IFS= read -r slug; do
             fi
         done <<< "$brain_regions"
         brain_region_count=$region_count
-        echo "Brain region count for this collection: $brain_region_count"
-        
-        # Add to total brain samples
-        if [[ "$brain_sample_count" != "NA" ]] && [[ "$brain_sample_count" =~ ^[0-9]+$ ]]; then
-            ((total_brain_samples += brain_sample_count))
-        fi
+        echo "Brain region count for this collection: [$brain_region_count]"
     else
-        echo "No PMDBS table found for this collection"
+        echo "No PMDBS table found, checking SAMPLE table for brain tissue..."
+        brain_tissue_count=$(dnastack collections query -c "$slug" \
+            "SELECT COUNT(DISTINCT asap_sample_id) FROM \"collections\".\"$underscored_slug\".\"${team_name}_sample\" WHERE LOWER(tissue) LIKE '%brain%'" \
+            -o csv \
+            | tail -n +2 | tr -d '[:space:]')
+        if [[ "$brain_tissue_count" =~ ^[0-9]+$ ]] && [[ "$brain_tissue_count" -gt 0 ]]; then
+            brain_sample_count=$brain_tissue_count
+            echo "Found [$brain_sample_count] brain samples from SAMPLE.tissue column"
+        else
+            echo "No brain samples found in SAMPLE table"
+        fi
     fi
 
     if "${SAMPLES_SUBJECTS_ONLY}"; then
@@ -299,22 +302,41 @@ if ! "${SAMPLES_SUBJECTS_ONLY}"; then
     }' "$output_file"
 fi
 
-# Calculate total brain samples from output file
-total_brain_samples=$(awk -F'\t' '
+# Calculate brain sample totals by origin from output file
+echo ""
+echo "========================================"
+awk -F'\t' '
 NR==1 {
-    for(i=1;i<=NF;i++){
+    for(i=1;i<=NF;i++) {
         if($i=="brain_sample_count") brain_col=i
+        if($i=="gcp_raw_bucket") bucket_col=i
     }
     next
 }
-NR>1 {
-    if (brain_col > 0 && $brain_col != "NA" && $brain_col ~ /^[0-9]+$/) {
-        total += $brain_col
+NR>1 && $brain_col!="NA" && $brain_col~/^[0-9]+$/ {
+    brain_count = $brain_col
+    bucket = $bucket_col
+    total_brain += brain_count
+    
+    # Data origin grouping logic (same as sample/subject breakdown)
+    if (bucket ~ /human/ || bucket ~ /pmdbs/) {
+        origin["human"] += brain_count
+    } else if (bucket ~ /mouse/) {
+        origin["mouse"] += brain_count
+    } else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/) {
+        origin["cell"] += brain_count
+    } else {
+        origin["other"] += brain_count
     }
 }
 END {
-    print total+0
-}' "$output_file")
+    print "=== BRAIN SAMPLE ORIGIN BREAKDOWN ==="
+    printf "human:        %d\n", origin["human"]
+    printf "mouse:        %d\n", origin["mouse"]
+    printf "cell:         %d\n", origin["cell"]
+    printf "other:        %d\n", origin["other"]
+    printf "Total brain samples: %d\n", total_brain
+}' "$output_file"
 
 echo ""
 echo "========================================"
@@ -323,9 +345,8 @@ team_count=$(echo "$unique_teams" | wc -w | tr -d '[:space:]')
 echo "Total unique teams contributing: $team_count"
 echo "Teams:$unique_teams"
 echo ""
-echo "Total brain samples (across all PMDBS tables): $total_brain_samples"
 region_count=$(echo "$unique_brain_regions" | tr '|' '\n' | grep -v '^$' | wc -l | tr -d '[:space:]')
-echo "Total unique brain regions (across all PMDBS tables): $region_count"
+echo "Total unique brain regions (PMDBS only): $region_count"
 if [ -n "$unique_brain_regions" ]; then
     echo "Brain regions found:"
     echo "$unique_brain_regions" | tr '|' '\n' | grep -v '^$' | while read -r region; do
