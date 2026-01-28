@@ -8,7 +8,7 @@
 # 1.   You have cloned asap-crn-cloud-dataset-metadata and its root is at the
 # ---- same level as wf-common
 # 2.   The raw bucket exists and has metadata in the metadata/ subdirectory
-# 3.   The local dataset directory exists (created by initialization script)
+# 3.   The local dataset directory exists (ideally created by initialization script)
 
 import argparse
 import logging
@@ -22,7 +22,7 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
  
-repo_root = Path(__file__).resolve().parents[1] # back to 1
+repo_root = Path(__file__).resolve().parents[1]
 metadata_root = repo_root.parent / "asap-crn-cloud-dataset-metadata"
 
 
@@ -50,7 +50,7 @@ def main(args):
     dataset_name_long = f"{team_name}-{dataset_name}"
     
     dataset_dir = metadata_root / "datasets" / dataset_name_long
-    og_metadata_dir = dataset_dir / "metadata" / "og"
+    og_metadata_dir = dataset_dir / "metadata" / "original"
     
     bucket_name = f"gs://asap-raw-team-{team_name}-{dataset_name}"
     metadata_in_bucket = f"{bucket_name}/metadata"
@@ -60,7 +60,7 @@ def main(args):
     check_bucket_exists(bucket_name)
     check_metadata_files_present(bucket_name)
     
-    # Create metadata/og directory if it doesn't exist
+    # Create metadata/original/ directory if it doesn't exist
     og_metadata_dir.mkdir(parents=True, exist_ok=True)
     
     # Download metadata from bucket to local og directory
@@ -75,7 +75,7 @@ def main(args):
 if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(
-        description="Download metadata from raw bucket to local metadata/og directory"
+        description="Download metadata from raw bucket to local metadata/original/ directory"
     )
     
     parser.add_argument(
