@@ -15,8 +15,10 @@
 # NOTE on assumptions made:
 # 1.   You have cloned asap-crn-cloud-dataset-metadata and its root is at the
 # ---- same level as wf-common
-# 2.   The metadata/ and file_metadata/ directories of the target dataset exist
-# ---- locally in asap-crn-cloud-dataset-metadata and contain the QC'd metadata
+# 2.   The metadata/ directory of the target dataset exists locally anc contains
+# ---- the finalized QC'd metadata structure (original/, cde/, and release/ dirs)
+# 3.   The file_metadata/ directory exists locally and is populated with the files
+# ---- artifacts.csv, raw_files.csv, and curated_files.csv
 
 import argparse
 import logging
@@ -29,9 +31,8 @@ logging.basicConfig(
 	format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-# NOTE: Assumes that you have cloned asap-crn-cloud-dataset-metadata. Going
-# ----  forward we may split, but for now this contains both code to do dataset 
-# ----  QC as well as storing the resulting output, to be sync'd to a raw bucket
+# NOTE: Assumes that you have cloned asap-crn-cloud-dataset-metadata, which
+# contains the dataset directories locally and the code to QC metadata.
 repo_root = Path(__file__).resolve().parents[1]
 metadata_root = repo_root.parent / "asap-crn-cloud-dataset-metadata"
 
@@ -40,6 +41,17 @@ FILE_METADATA_FILES_TO_SYNC = [
     "raw_files.csv",
     "curated_files.csv",
 ]
+
+
+def check_orig_metadata_exists(orig_dir: Path) -> bool:
+    """Check that original metadata directory exists locally"""
+    orig_dir = Path(orig_dir)
+    if not orig_dir.exists():
+        return False
+    
+    # Check for any CSV files (exact tables may not be consistent at this stage)
+    csv_files = list(orig_dir.glob("*.csv"))
+    return len(csv_files) > 0
 
 
 def main(args):
@@ -52,6 +64,7 @@ def main(args):
     
     dataset_dir = metadata_root / "datasets" / dataset_name_long
     metadata_dir = dataset_dir / "metadata"
+    orig_dir = metadata_dir / "original"
     file_metadata_dir = dataset_dir / "file_metadata"
     
     # No team- prefix for cohorts
@@ -65,6 +78,22 @@ def main(args):
     
     check_bucket_exists(bucket_name)
 
+    
+    # Transers entire metadata/ directory
+    if metadata_dir.exists():
+        logging.info(f"Transferring local metadata directory to [{metadata_bucket}]")
+        
+        # Early exit if original metadata is missing: implies incomplete QC
+        if not check_orig_metadata_exists(orig_dir):
+            raise ValueError(f"Original metadata directory is missing or empty: {orig_dir}")
+        
+        gsync(source_path=str(metadata_dir), 
+              destination_path=metadata_bucket, 
+              dry_run=dry_run)
+    else:
+        raise ValueError(f"Local metadata directory not found: {metadata_dir}")
+
+    # Transfer file_metadata/ files
     if file_metadata_dir.exists():
         logging.info(f"Transferring selected local file_metadata directory to [{file_metadata_bucket}]")
         for file_name in FILE_METADATA_FILES_TO_SYNC:
@@ -82,12 +111,7 @@ def main(args):
     else:
         raise ValueError(f"Local file metadata directory not found: {file_metadata_dir}")
     
-    # metadata/ expected to have further subdirs: this syncs recursively
-    if metadata_dir.exists():
-        logging.info(f"Transferring local metadata directory to [{metadata_bucket}]")
-        gsync(source_path=metadata_dir, destination_path=metadata_bucket, dry_run=dry_run)
-    else:
-        raise ValueError(f"Local metadata directory not found: {metadata_dir}")
+    
     
 
 if __name__ == "__main__":
