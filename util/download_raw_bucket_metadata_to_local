@@ -13,8 +13,13 @@
 import argparse
 import logging
 from pathlib import Path
-from common import gsync, check_bucket_exists, strip_team_name
-from validate_raw_bucket_structure import check_metadata_files_present
+from common import gsync, strip_team_name
+from bucket_validation_utils import (
+    check_local_metadata_repo_exists,
+    check_dataset_dir_exists,
+    validate_raw_bucket_structure,
+    check_metadata_files_in_bucket
+)
 
 
 logging.basicConfig(
@@ -26,21 +31,6 @@ repo_root = Path(__file__).resolve().parents[1]
 metadata_root = repo_root.parent / "asap-crn-cloud-dataset-metadata"
 
 
-def check_local_metadata_repo_exists(metadata_root: Path) -> None:
-    """Ensure that the local asap-crn-cloud-dataset-metadata repo exists"""
-    if not metadata_root.exists():
-        raise ValueError(
-            f"Local asap-crn-cloud-dataset-metadata repo not found at: {metadata_root}. "
-            f"This repo is expected to be at the same level as wf-common."
-        )
-
-
-def check_dataset_dir_exists(dataset_dir: Path) -> None:
-    """Ensure that the local dataset directory exists"""
-    if not dataset_dir.exists():
-        raise ValueError(f"Local dataset directory not found at: {dataset_dir}")
-    
-
 def main(args):
 
     dry_run = not args.promote
@@ -50,24 +40,25 @@ def main(args):
     dataset_name_long = f"{team_name}-{dataset_name}"
     
     dataset_dir = metadata_root / "datasets" / dataset_name_long
-    og_metadata_dir = dataset_dir / "metadata" / "original"
+    original_dir = dataset_dir / "metadata" / "original"
     
     bucket_name = f"gs://asap-raw-team-{team_name}-{dataset_name}"
     metadata_in_bucket = f"{bucket_name}/metadata"
     
+    # Validation checks
     check_local_metadata_repo_exists(metadata_root)
     check_dataset_dir_exists(dataset_dir)
-    check_bucket_exists(bucket_name)
-    check_metadata_files_present(bucket_name)
+    validate_raw_bucket_structure(bucket_name)
+    check_metadata_files_in_bucket(bucket_name)
     
     # Create metadata/original/ directory if it doesn't exist
-    og_metadata_dir.mkdir(parents=True, exist_ok=True)
+    original_dir.mkdir(parents=True, exist_ok=True)
     
     # Download metadata from bucket to local og directory
-    logging.info(f"Downloading metadata from [{metadata_in_bucket}] to {og_metadata_dir}")
+    logging.info(f"Downloading metadata from [{metadata_in_bucket}] to {original_dir}")
     gsync(
         source_path=metadata_in_bucket, 
-        destination_path=og_metadata_dir, 
+        destination_path=original_dir, 
         dry_run=dry_run
     )
     
@@ -82,13 +73,13 @@ if __name__ == "__main__":
         "-t",
         "--team_name",
         required=True,
-        help="The team name of the dataset"
+        help="The team name of the dataset (e.g., jakobsson)"
     )
     parser.add_argument(
         "-ds",
         "--dataset_name",
         required=True,
-        help="The name of the dataset"
+        help="The name of the dataset (e.g., pmdbs-sn-rnaseq)"
     )
     parser.add_argument(
         "-p",
