@@ -74,7 +74,7 @@ def main(args):
     
     # Validate local metadata structure before transfer
     is_cohort = (team_name == "cohort")
-    validate_local_metadata_structure(dataset_dir, is_cohort=is_cohort, release_version=release_version)
+    validate_local_metadata_structure(metadata_dir, is_cohort=is_cohort, release_version=release_version)
 
     # Transers entire metadata/ directory
     if metadata_dir.exists():
@@ -92,7 +92,7 @@ def main(args):
 
     # Transfer file_metadata/ files
     if file_metadata_dir.exists():
-        logging.info(f"Transferring selected local file_metadata directory to [{file_metadata_bucket}]")
+        logging.info(f"Transferring selected local file_metadata/ files to [{file_metadata_bucket}]")
         for file_name in FILE_METADATA_FILES_TO_SYNC:
             file_path = file_metadata_dir / file_name
             if file_path.exists():
@@ -130,7 +130,7 @@ if __name__ == "__main__":
         help="The name of the dataset"
     )
     parser.add_argument(
-        "rv",
+        "-rv",
         "--release_version",
         required=True,
         help="The release version of the dataset (e.g., v4.0.1)"
