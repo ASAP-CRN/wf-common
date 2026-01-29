@@ -9,7 +9,7 @@ import logging
 from common import strip_team_name
 from bucket_validation_utils import (
     validate_raw_bucket_structure, 
-    check_metadata_files_in_bucket
+    check_original_metadata_files_in_bucket
 )
 
 logging.basicConfig(
@@ -29,11 +29,14 @@ def main(args):
     # Ensure the bucket directory structure is valid
     validate_raw_bucket_structure(bucket_name)
     
-    # Ensure the required metadata files are present
-    check_metadata_files_in_bucket(bucket_name)
+    # Check metadata files in bucket. Warns if CORE tables missing, errors only if no files found.
+    files_valid = check_original_metadata_files_in_bucket(bucket_name)
     
-    logging.info(f"Raw bucket validation is successful: {bucket_name}")
-    
+    if files_valid:
+        logging.info(f"Raw bucket validation successful: {bucket_name}")
+    else:
+        logging.warning(f"Raw bucket validation completed with warnings")
+
 
 if __name__ == "__main__":
     

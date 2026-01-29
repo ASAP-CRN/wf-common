@@ -18,7 +18,7 @@ from bucket_validation_utils import (
     check_local_metadata_repo_exists,
     check_dataset_dir_exists,
     validate_raw_bucket_structure,
-    check_metadata_files_in_bucket
+    check_original_metadata_files_in_bucket
 )
 
 
@@ -49,7 +49,13 @@ def main(args):
     check_local_metadata_repo_exists(metadata_root)
     check_dataset_dir_exists(dataset_dir)
     validate_raw_bucket_structure(bucket_name)
-    check_metadata_files_in_bucket(bucket_name)
+    
+    # Check metadata files in bucket. Warns if CORE tables missing, errors only if no files found.
+    files_valid = check_original_metadata_files_in_bucket(bucket_name)
+    if not files_valid:
+        logging.warning(
+            f"Not all CORE metadata tables were found, but proceeding with download..."
+        )
     
     # Create metadata/original/ directory if it doesn't exist
     original_dir.mkdir(parents=True, exist_ok=True)
