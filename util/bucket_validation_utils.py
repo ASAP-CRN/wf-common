@@ -197,3 +197,72 @@ def check_original_metadata_exists_locally(metadata_dir: Path) -> bool:
     # Check for at least one CSV file
     csv_files = list(original_dir.glob("*.csv"))
     return len(csv_files) > 0
+
+
+def validate_local_metadata_structure(
+    dataset_dir: Path, 
+    release_version: str,
+    is_cohort: bool = False
+) -> dict:
+    """
+    Validate the local metadata/ directory structure for a dataset.
+    
+    Args:
+    dataset_dir: Path to the local dataset directory
+    target_release: Target release version string, e.g. "v4.0.1"
+    is_cohort: Whether the dataset is a cohort (default: False)
+    
+    Returns:
+    Dict of booleans indicating the presence of key metadata subdirs:
+    original/, cde/, release/, and release/{release_version}/
+    
+    Raises ValueError if any required directories are missing.
+    """
+    metadata_dir = Path(dataset_dir) / "metadata"
+    original_dir = metadata_dir / "original"
+    cde_dir = metadata_dir / "cde"
+    release_dir = metadata_dir / "release"
+    release_version_dir = release_dir / release_version
+    
+    if not metadata_dir.exists():
+        raise ValueError(f"metadata/ directory not found: {metadata_dir}")
+    
+    results = {
+        'original': original_dir.exists(),
+        'cde': None,
+        'release': release_dir.exists(),
+        'release_version': release_version_dir.exists()
+    }
+    
+    if not results['original']:
+        raise ValueError(f"metadata/original/ directory not found: {original_dir}")
+    
+    # CDE/ is not created for cohorts, only release/ metadata copies are made
+    if is_cohort:
+        logging.info("Skipping CDE directory check for cohort dataset")
+    else:
+        results['cde'] = cde_dir.exists()
+        if not results['cde']:
+            raise ValueError(f"metadata/cde/ directory not found: {cde_dir}")
+        else: 
+            # Absence of versioned dirs within cde/ implies incomplete QC
+            cde_versions = [dir for dir in cde_dir.iterdir() if dir.is_dir()]
+            if not cde_versions:
+                raise ValueError(f"No versioned directories found in metadata/cde/: {cde_dir}")
+    
+    # release/ may not exist if QC has started but not completed
+    if not results['release']:
+        raise ValueError(f"metadata/release/ directory not found: {release_dir}")
+    else:
+        # target release dir must exist within release/
+        if not results['release_version']:
+            raise ValueError(
+                f"release/ directory exists but target release dir not found: {release_version_dir}")
+            
+    logging.info(f"Local metadata structure validated for dataset at: {dataset_dir}")
+    return results
+
+            
+    
+        
+    
