@@ -3,9 +3,9 @@
 # Transfer locally saved QC'd metadata to the raw Google bucket
 # Usage: 
 #   Single dataset:
-#     python3 transfer_qc_metadata_to_raw_bucket -t jakobsson -ds pmdbs-bulk-rnaseq
+#     python3 transfer_qc_metadata_to_raw_bucket -t jakobsson -ds pmdbs-bulk-rnaseq -rv v4.0.1 -p
 #
-# Batch processing (datasets.csv field 1 is team, field 2 is dataset, no header):
+# Batch processing (datasets.csv field 1 is team, field 2 is dataset, field 3 is release version, no header):
 #     while IFS=, read -r team dataset; do
 #         python3 transfer_qc_metadata_to_raw_bucket -t "$team" -ds "$dataset" -p
 #     done < datasets.csv
@@ -15,15 +15,21 @@
 # NOTE on assumptions made:
 # 1.   You have cloned asap-crn-cloud-dataset-metadata and its root is at the
 # ---- same level as wf-common
-# 2.   The metadata/ directory of the target dataset exists locally anc contains
-# ---- the finalized QC'd metadata structure (original/, cde/, and release/ dirs)
+# 2.   The metadata/ directory of the target dataset exists locally and contains
+# ---- the finalized QC'd metadata structure (original/, cde/, and 
+# ---- release/{release_version} dirs)
 # 3.   The file_metadata/ directory exists locally and is populated with the files
 # ---- artifacts.csv, raw_files.csv, and curated_files.csv
 
 import argparse
 import logging
 from pathlib import Path
-from common import gsync, check_bucket_exists, strip_team_name, gcopy
+from common import gsync, strip_team_name, gcopy
+from bucket_validation_utils import (
+    check_bucket_exists,
+    check_original_metadata_exists_locally,
+    validate_local_metadata_structure
+)
 
 
 logging.basicConfig(
@@ -31,27 +37,15 @@ logging.basicConfig(
 	format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-# NOTE: Assumes that you have cloned asap-crn-cloud-dataset-metadata, which
-# contains the dataset directories locally and the code to QC metadata.
 repo_root = Path(__file__).resolve().parents[1]
 metadata_root = repo_root.parent / "asap-crn-cloud-dataset-metadata"
 
+# Selecte files in file_metadata/ generated during QC to be synced to raw bucket
 FILE_METADATA_FILES_TO_SYNC = [
     "artifacts.csv",
     "raw_files.csv",
     "curated_files.csv",
 ]
-
-
-def check_orig_metadata_exists(orig_dir: Path) -> bool:
-    """Check that original metadata directory exists locally"""
-    orig_dir = Path(orig_dir)
-    if not orig_dir.exists():
-        return False
-    
-    # Check for any CSV files (exact tables may not be consistent at this stage)
-    csv_files = list(orig_dir.glob("*.csv"))
-    return len(csv_files) > 0
 
 
 def main(args):
@@ -61,13 +55,13 @@ def main(args):
     team_name = strip_team_name(args.team_name)
     dataset_name = args.dataset_name
     dataset_name_long = f"{team_name}-{dataset_name}"
+    release_version = args.release_version
     
     dataset_dir = metadata_root / "datasets" / dataset_name_long
     metadata_dir = dataset_dir / "metadata"
-    orig_dir = metadata_dir / "original"
     file_metadata_dir = dataset_dir / "file_metadata"
     
-    # No team- prefix for cohorts
+    # No "team-" prefix for cohorts
     if team_name == "cohort":
         bucket_name = f"gs://asap-raw-{team_name}-{dataset_name}"
     else:
@@ -77,15 +71,18 @@ def main(args):
     metadata_bucket = f"{bucket_name}/metadata"
     
     check_bucket_exists(bucket_name)
-
     
+    # Validate local metadata structure before transfer
+    is_cohort = (team_name == "cohort")
+    validate_local_metadata_structure(dataset_dir, is_cohort=is_cohort, release_version=release_version)
+
     # Transers entire metadata/ directory
     if metadata_dir.exists():
         logging.info(f"Transferring local metadata directory to [{metadata_bucket}]")
         
         # Early exit if original metadata is missing: implies incomplete QC
-        if not check_orig_metadata_exists(orig_dir):
-            raise ValueError(f"Original metadata directory is missing or empty: {orig_dir}")
+        if not check_original_metadata_exists_locally(metadata_dir):
+            raise ValueError(f"original/ directory is missing in local metadata dir: {metadata_dir}")
         
         gsync(source_path=str(metadata_dir), 
               destination_path=metadata_bucket, 
@@ -131,6 +128,12 @@ if __name__ == "__main__":
         "--dataset_name",
         required=True,
         help="The name of the dataset"
+    )
+    parser.add_argument(
+        "rv",
+        "--release_version",
+        required=True,
+        help="The release version of the dataset (e.g., v4.0.1)"
     )
     parser.add_argument(
         "-p",
