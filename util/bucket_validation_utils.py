@@ -53,7 +53,6 @@ def check_bucket_exists(bucket_url: str) -> None:
         raise ValueError(f"Bucket not found: {bucket_url}, see: {e}")
     
 
-
 def list_and_format_bucket_dirs(bucket_name: str) -> list[str]:
     """List within the given bucket and remove pathing from names"""
     output = list_dirs(bucket_name)
@@ -63,7 +62,6 @@ def list_and_format_bucket_dirs(bucket_name: str) -> list[str]:
         if line.strip().endswith("/")
     ]
     return dirs
-
 
 
 # TODO: strictness of value error vs logging error
@@ -109,7 +107,6 @@ def check_metadata_files_in_bucket(bucket_name: str) -> None:
         raise ValueError(f"Missing required metadata files: {missing_files}")
 
     
-
 def get_bucket_structure(bucket_name: str) -> tuple[dict, dict, dict]:
     """"
     Check which required, recommended, and optional directories are present in a bucket.
@@ -124,7 +121,6 @@ def get_bucket_structure(bucket_name: str) -> tuple[dict, dict, dict]:
     optional_results = {dir_name: dir_name in bucket_dirs for dir_name in OPTIONAL_BUCKET_DIRS}
 
     return required_results, recommended_results, optional_results
-
 
 
 def get_missing_directories(results: dict) -> list[str]:
@@ -171,3 +167,33 @@ def validate_raw_bucket_structure(bucket_name: str) -> None:
     # check_metadata_files_present(bucket_name)
 
 
+# ---- Local dataset validation functions
+
+
+def check_local_metadata_repo_exists(metadata_root: Path) -> None:
+    """Ensure that the local asap-crn-cloud-dataset-metadata repo exists"""
+    if not metadata_root.exists():
+        raise ValueError(
+            f"Local asap-crn-cloud-dataset-metadata repo not found at: {metadata_root}. "
+            f"This repo is expected to be at the same level as wf-common."
+        )
+
+
+def check_dataset_dir_exists(dataset_dir: Path) -> None:
+    """Ensure that the local dataset directory exists"""
+    if not dataset_dir.exists():
+        raise ValueError(f"Local dataset directory not found at: {dataset_dir}")
+    
+    
+def check_original_metadata_exists_locally(metadata_dir: Path) -> bool:
+    """
+    Check that metadata/original/ exists locally with CSV files.
+    """
+    original_dir = Path(metadata_dir) / "original"
+    
+    if not original_dir.exists():
+        return False
+    
+    # Check for at least one CSV file
+    csv_files = list(original_dir.glob("*.csv"))
+    return len(csv_files) > 0
