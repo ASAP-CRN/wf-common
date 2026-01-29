@@ -18,18 +18,19 @@ logging.basicConfig(
 
 REQUIRED_BUCKET_DIRS = ["metadata/"]
 RECOMMENDED_BUCKET_DIRS = ["artifacts/"]
-OPTIONAL_BUCKET_DIRS = ["fastqs/", "scripts/", "raw/"]
+OPTIONAL_BUCKET_DIRS = ["fastqs/", "scripts/", "raw/", "workflow_execution/", "spatial/"]
 
-# NOTE: It is possible that a contribution may not initially have all of these!
-# ----- This also assume CDE 4.X+, earlier CDE may have alternate tables such
-# ----- as MOUSE or CELL instead of SUBJECT.
-MINIMAL_METADATA_FILES = ["STUDY.csv", 
-                          "SUBJECT.csv", 
-                          "CONDITION.csv",
-                          "SAMPLE.csv", 
-                          "DATA.csv", 
-                          "PROTOCOL.csv",
-                          "ASSAY.csv"]
+# NOTE: CORE files are expected in all datasets from CDE 4.X onwards.
+# ----- ADDITIONAL files may or may not be present depending on the context,
+# ----- or represent tables from earlier CDE versions.
+CORE_METADATA_FILES = ["ASSAY.csv",
+                       "CONDITION.csv",
+                       "DATA.csv",
+                       "PROTOCOL.csv",
+                       "SAMPLE.csv",
+                       "STUDY.csv", 
+                       "SUBJECT.csv"
+                       ]
 
 ADDITIONAL_METADATA_FILES = ["PMDBS.csv",
                              "CLINPATH.csv",
@@ -38,73 +39,121 @@ ADDITIONAL_METADATA_FILES = ["PMDBS.csv",
                              "PROTEOMICS.csv",
                              "ASSAY_RNAseq.csv",
                              "SPATIAL.csv",
-                             "SDRF.csv"]
+                             "SDRF.csv"
+                            ]
 
 
 # ---- Bucket validation functions
-# TODO: format names as own functions
+
 
 def check_bucket_exists(bucket_url: str) -> None:
-    """Terminate early if the target bucket does not exist"""
+    """
+    Verify that the bucket exists and is accessible.
+    
+    Args:
+    bucket_url: of the form gs://asap-raw-team-jakobsson-pmdbs-rnaseq
+    
+    Raises ValueError if the bucket does not exist or cannot be accessed
+    """
     command = ["gcloud", "storage", "buckets", "describe", bucket_url]
     try:
         subprocess.run(command, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as e:
-        raise ValueError(f"Bucket not found: {bucket_url}, see: {e}")
+        raise ValueError(f"Bucket not accessible: {bucket_url}, see: {e}")
     
 
-def list_and_format_bucket_dirs(bucket_name: str) -> list[str]:
-    """List within the given bucket and remove pathing from names"""
-    output = list_dirs(bucket_name)
-    dirs = [
-        line.strip().replace(f"{bucket_name}/", "")
-        for line in output.strip().split("\n")
-        if line.strip().endswith("/")
+def parse_gcloud_list_output(raw_output: str,
+                             prefix_to_strip: str,
+                             filter_type: str = "dirs") -> list[str]:
+    """
+    Strip the bucket name and pathing prefix and extract just directories or files.
+    
+    Args:
+    raw_output: Raw output string from gcloud storage list command
+    prefix_to_strip: The bucket path prefix to remove from each line
+    filter_type: "dirs" to return only directories (lines ending with /) or "files"
+    """
+
+    if filter_type == "dirs":
+        condition = lambda line: line.strip().endswith("/")
+    elif filter_type == "files":
+        condition = lambda line: line.strip() and not line.strip().endswith("/")
+    else:
+        raise ValueError(f"Invalid filter_type: {filter_type}. Must be 'dirs' or 'files'.")
+    
+    items = [
+        line.strip().replace(prefix_to_strip, "")
+        for line in raw_output.strip().split("\n")
+        if condition(line)
     ]
+    return items
+
+
+def list_and_format_bucket_dirs(bucket_name: str) -> list[str]:
+    """List directories within the given bucket and remove pathing from names"""
+    output = list_dirs(bucket_name)
+    dirs = parse_gcloud_list_output(
+        raw_output=output,
+        prefix_to_strip=f"{bucket_name}/",
+        filter_type="dirs"
+    )
     return dirs
 
 
-# TODO: strictness of value error vs logging error
-# TODO: try catch around list_dirs... baked into function?
-# TODO: revisit extra/additional file logging!
-def check_metadata_files_in_bucket(bucket_name: str) -> None:
+def list_and_format_bucket_files(path: str) -> list[str]:
+    """List files within the given bucket path and remove path prefix from names"""
+    output = list_dirs(path)
+    prefix = path.rstrip('/') + '/' # Ensure only one trailing slash
+    files = parse_gcloud_list_output(
+        raw_output=output,
+        prefix_to_strip=prefix,
+        filter_type="files"
+    )
+    return files
+
+
+def check_original_metadata_files_in_bucket(bucket_name: str) -> bool:
     """
-    Check that the minimal metadata files are present in the bucket's metadata/ dir
+    Check that the minimal metadata files are present in the bucket. Checks both
+    metadata/ (first submission structure) and metadata/original/ (post-QC structure).
+    
+    Returns True if all core files are found, False otherwise.
     """
     metadata_dir = f"{bucket_name}/metadata/"
+    original_dir = f"{metadata_dir}original/"
     
-    # Getting all files in metadata/
-    try:
-        output = list_dirs(metadata_dir)
-    except subprocess.CalledProcessError as e:
-        raise ValueError(
-            f"metadata/ directory not found in bucket: {bucket_name}. "
-            f"Expected path: {metadata_dir}"
-        )
+    for check_dir in [metadata_dir, original_dir]:
+        try:
+            files = list_and_format_bucket_files(check_dir)
+            csv_files = [f for f in files if f.endswith(".csv")]
 
-    files_in_metadata = [
-        line.strip().replace(metadata_dir, "")
-        for line in output.strip().split("\n")
-        if not line.strip().endswith("/")
-    ]
+            if csv_files:
+                logging.info(f"Checking metadata files in bucket directory: {check_dir}")
+                
+                missing = [f for f in CORE_METADATA_FILES if f not in csv_files]
+                additional = [f for f in ADDITIONAL_METADATA_FILES if f in csv_files]
+                extra = [f for f in csv_files if f not in CORE_METADATA_FILES + ADDITIONAL_METADATA_FILES]
+                
+                if missing:
+                    logging.warning(f"Missing required metadata files: {', '.join(missing)}")
+                else:
+                    logging.info(f"All required metadata files found")
+                    
+                if additional:
+                    logging.info(f"Additional metadata files found: {', '.join(additional)}")
+                    
+                if extra:
+                    logging.info(f"Extra metadata files found: {', '.join(extra)}")
+                
+                # Return True if no core files are missing    
+                return len(missing) == 0
     
-    # Check for required files
-    missing_files = []
-    for file_name in MINIMAL_METADATA_FILES:
-        if file_name not in files_in_metadata:
-            logging.error(f"Missing required metadata file: {file_name}")
-            missing_files.append(file_name)
-        else:
-            logging.info(f"Found required metadata file: {file_name}")
-    
-    # Log any extra files found
-    additional_files = set(files_in_metadata) - set(MINIMAL_METADATA_FILES)
-    if additional_files:
-        for file_name in additional_files:
-            logging.info(f"Found additional metadata file: {file_name}")
-    
-    if missing_files:
-        raise ValueError(f"Missing required metadata files: {missing_files}")
+        except subprocess.CalledProcessError:
+            continue # Try metadata/original/, implies QC started already
+        
+    logging.error(f"No metadata files found in {metadata_dir} or {original_dir}")
+    return False
+
 
     
 def get_bucket_structure(bucket_name: str) -> tuple[dict, dict, dict]:
@@ -128,18 +177,14 @@ def get_missing_directories(results: dict) -> list[str]:
     return [dir_name for dir_name, exists in results.items() if not exists]
 
 
-# TODO: revisit strictness of raise error and adding this as a flag
-# TODO: exclusion of metadata files?
-# TODO: extra dirs?
 def validate_raw_bucket_structure(bucket_name: str) -> None:
     """
-    Validate raw bucket directory structure and required metadata files.
+    Validate raw bucket directory structure.
     
     Args:
     bucket_name: of the form gs://asap-raw-team-jakobsson-pmdbs-rnaseq
     
-    Raise a ValueError if the bucket does not exist, required directories are
-    missing, or required metadata files are missing. 
+    Raise ValueError if the bucket does not exist or required directories are missing
     """
     check_bucket_exists(bucket_name)
     
@@ -151,7 +196,7 @@ def validate_raw_bucket_structure(bucket_name: str) -> None:
     
     # Logging results
     if missing_required:
-        logging.error(
+        raise ValueError(
             f"MISSING required directories in {bucket_name}: {', '.join(missing_required)}"
         )
     else:
@@ -162,9 +207,6 @@ def validate_raw_bucket_structure(bucket_name: str) -> None:
     
     if present_optional:
         logging.info(f"Optional directories found: {', '.join(present_optional)}")
-            
-    # Check that minimal metadata files are present
-    # check_metadata_files_present(bucket_name)
 
 
 # ---- Local dataset validation functions
@@ -187,7 +229,7 @@ def check_dataset_dir_exists(dataset_dir: Path) -> None:
     
 def check_original_metadata_exists_locally(metadata_dir: Path) -> bool:
     """
-    Check that metadata/original/ exists locally with CSV files.
+    Check that metadata/original/ exists locally and contains CSV files.
     """
     original_dir = Path(metadata_dir) / "original"
     
@@ -200,7 +242,7 @@ def check_original_metadata_exists_locally(metadata_dir: Path) -> bool:
 
 
 def validate_local_metadata_structure(
-    dataset_dir: Path, 
+    metadata_dir: Path, 
     release_version: str,
     is_cohort: bool = False
 ) -> dict:
@@ -218,7 +260,7 @@ def validate_local_metadata_structure(
     
     Raises ValueError if any required directories are missing.
     """
-    metadata_dir = Path(dataset_dir) / "metadata"
+    metadata_dir = Path(metadata_dir)
     original_dir = metadata_dir / "original"
     cde_dir = metadata_dir / "cde"
     release_dir = metadata_dir / "release"
@@ -259,10 +301,5 @@ def validate_local_metadata_structure(
             raise ValueError(
                 f"release/ directory exists but target release dir not found: {release_version_dir}")
             
-    logging.info(f"Local metadata structure validated for dataset at: {dataset_dir}")
+    logging.info(f"Local metadata structure validated for dataset at: {metadata_dir}")
     return results
-
-            
-    
-        
-    
