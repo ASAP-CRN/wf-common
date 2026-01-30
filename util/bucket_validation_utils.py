@@ -18,10 +18,15 @@ logging.basicConfig(
 
 REQUIRED_BUCKET_DIRS = ["metadata/"]
 RECOMMENDED_BUCKET_DIRS = ["artifacts/"]
-OPTIONAL_BUCKET_DIRS = ["fastqs/", "scripts/", "raw/", "workflow_execution/", "spatial/"]
+OPTIONAL_BUCKET_DIRS = ["fastqs/", 
+                        "scripts/", 
+                        "raw/", 
+                        "spatial/",
+                        "workflow_execution/" # created by DNAstack, included for reporting
+                        ]
 
 # NOTE: CORE files are expected in all datasets from CDE 4.X onwards.
-# ----- ADDITIONAL files may or may not be present depending on the context,
+# ----- SUPPLEMENTARY files may or may not be present depending on the context,
 # ----- or represent tables from earlier CDE versions.
 CORE_METADATA_FILES = ["ASSAY.csv",
                        "CONDITION.csv",
@@ -32,15 +37,15 @@ CORE_METADATA_FILES = ["ASSAY.csv",
                        "SUBJECT.csv"
                        ]
 
-ADDITIONAL_METADATA_FILES = ["PMDBS.csv",
-                             "CLINPATH.csv",
-                             "MOUSE.csv",
-                             "CELL.csv",
-                             "PROTEOMICS.csv",
-                             "ASSAY_RNAseq.csv",
-                             "SPATIAL.csv",
-                             "SDRF.csv"
-                            ]
+SUPP_METADATA_FILES = ["PMDBS.csv",
+                       "CLINPATH.csv",
+                       "MOUSE.csv",
+                       "CELL.csv",
+                       "PROTEOMICS.csv",
+                       "ASSAY_RNAseq.csv",
+                       "SPATIAL.csv",
+                       "SDRF.csv"
+                       ]
 
 
 # ---- Bucket validation functions
@@ -89,12 +94,13 @@ def parse_gcloud_list_output(raw_output: str,
     return items
 
 
-def list_and_format_bucket_dirs(bucket_name: str) -> list[str]:
+def list_and_format_bucket_dirs(path: str) -> list[str]:
     """List directories within the given bucket and remove pathing from names"""
-    output = list_dirs(bucket_name)
+    output = list_dirs(path)
+    prefix = path.rstrip('/') + '/' # Ensure only one trailing slash
     dirs = parse_gcloud_list_output(
         raw_output=output,
-        prefix_to_strip=f"{bucket_name}/",
+        prefix_to_strip=prefix,
         filter_type="dirs"
     )
     return dirs
@@ -130,23 +136,23 @@ def check_original_metadata_files_in_bucket(bucket_name: str) -> bool:
             if csv_files:
                 logging.info(f"Checking metadata files in bucket directory: {check_dir}")
                 
-                missing = [f for f in CORE_METADATA_FILES if f not in csv_files]
-                additional = [f for f in ADDITIONAL_METADATA_FILES if f in csv_files]
-                extra = [f for f in csv_files if f not in CORE_METADATA_FILES + ADDITIONAL_METADATA_FILES]
+                missing_core_metadata = [f for f in CORE_METADATA_FILES if f not in csv_files]
+                supp_metadata = [f for f in SUPP_METADATA_FILES if f in csv_files]
+                extra_files = [f for f in csv_files if f not in CORE_METADATA_FILES + SUPP_METADATA_FILES]
                 
-                if missing:
-                    logging.warning(f"Missing required metadata files: {', '.join(missing)}")
+                if missing_core_metadata:
+                    logging.warning(f"Missing required metadata files: {', '.join(missing_core_metadata)}")
                 else:
                     logging.info(f"All required metadata files found")
                     
-                if additional:
-                    logging.info(f"Additional metadata files found: {', '.join(additional)}")
+                if supp_metadata:
+                    logging.info(f"Supplementary metadata files found: {', '.join(supp_metadata)}")
                     
-                if extra:
-                    logging.info(f"Extra metadata files found: {', '.join(extra)}")
+                if extra_files:
+                    logging.info(f"Unexpected extra metadata files found: {', '.join(extra_files)}")
                 
                 # Return True if no core files are missing    
-                return len(missing) == 0
+                return len(missing_core_metadata) == 0
     
         except subprocess.CalledProcessError:
             continue # Try metadata/original/, implies QC started already
@@ -207,6 +213,37 @@ def validate_raw_bucket_structure(bucket_name: str) -> None:
     
     if present_optional:
         logging.info(f"Optional directories found: {', '.join(present_optional)}")
+
+
+def detect_raw_bucket_structure(bucket_name: str) -> str:
+    """
+    Detect whether the raw bucket uses first submission or post-QC structure.
+    
+    Args:
+    bucket_name: of the form gs://asap-raw-team-jakobsson-pmdbs-rnaseq
+    
+    Returns:
+    "intial" - loose CSV files at metadata/ level, implies intial submission
+    "complete" - full directory structure (metadata/original, cde/, release/, latest/)
+    """
+    metadata_dir = f"{bucket_name}/metadata/"
+    
+    try:
+        dirs = list_and_format_bucket_dirs(metadata_dir)
+        
+        # Check for post-QC subdirs
+        has_original = "original/" in dirs
+        has_release = "release/" in dirs
+        
+        if has_original and has_release:
+            logging.info(f"Detected post-QC bucket structure for: {bucket_name}")
+            return "complete"
+        else:
+            logging.info(f"Detected first submission bucket structure for: {bucket_name}")
+            return "initial"
+        
+    except subprocess.CalledProcessError:
+        raise ValueError(f"Could not list metadata directory: {metadata_dir}")
 
 
 # ---- Local dataset validation functions
