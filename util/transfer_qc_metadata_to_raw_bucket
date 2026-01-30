@@ -40,7 +40,7 @@ logging.basicConfig(
 repo_root = Path(__file__).resolve().parents[1]
 metadata_root = repo_root.parent / "asap-crn-cloud-dataset-metadata"
 
-# Selecte files in file_metadata/ generated during QC to be synced to raw bucket
+# Selected files in file_metadata/ generated during QC to be synced to raw bucket
 FILE_METADATA_FILES_TO_SYNC = [
     "artifacts.csv",
     "raw_files.csv",
@@ -60,6 +60,7 @@ def main(args):
     dataset_dir = metadata_root / "datasets" / dataset_name_long
     metadata_dir = dataset_dir / "metadata"
     file_metadata_dir = dataset_dir / "file_metadata"
+    doi_dir = dataset_dir / "DOI"
     
     # No "team-" prefix for cohorts
     if team_name == "cohort":
@@ -67,8 +68,9 @@ def main(args):
     else:
         bucket_name = f"gs://asap-raw-team-{team_name}-{dataset_name}"
     
-    file_metadata_bucket = f"{bucket_name}/file_metadata"
     metadata_bucket = f"{bucket_name}/metadata"
+    file_metadata_bucket = f"{bucket_name}/file_metadata"
+    doi_bucket = f"{bucket_name}/DOI"
     
     check_bucket_exists(bucket_name)
     
@@ -76,7 +78,7 @@ def main(args):
     is_cohort = (team_name == "cohort")
     validate_local_metadata_structure(metadata_dir, is_cohort=is_cohort, release_version=release_version)
 
-    # Transers entire metadata/ directory
+    # Transfers entire metadata/ directory
     if metadata_dir.exists():
         logging.info(f"Transferring local metadata directory to [{metadata_bucket}]")
         
@@ -108,6 +110,15 @@ def main(args):
     else:
         raise ValueError(f"Local file metadata directory not found: {file_metadata_dir}")
     
+    # Transfers DOI/
+    if doi_dir.exists():
+        logging.info(f"Transferring local DOI/ directory to [{doi_bucket}]")
+        
+        gsync(source_path=str(doi_dir), 
+              destination_path=doi_bucket, 
+              dry_run=dry_run)
+    else:
+        logging.warning(f"Local DOI directory not found, skipping transfer: {doi_dir}")
     
     
 
