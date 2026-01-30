@@ -8,13 +8,20 @@
 # 1.   You have cloned asap-crn-cloud-dataset-metadata and its root is at the
 # ---- same level as wf-common
 # 2.   The raw bucket exists and has metadata in the metadata/ subdirectory
-# 3.   The local dataset directory exists (created by initialization script)
+# 3.   The local dataset directory exists (ideally created by initialization script)
 
 import argparse
 import logging
+import subprocess
 from pathlib import Path
-from common import gsync, check_bucket_exists, strip_team_name
-from validate_raw_bucket_structure import check_metadata_files_present
+from common import gsync, strip_team_name, list_dirs
+from bucket_validation_utils import (
+    check_local_metadata_repo_exists,
+    check_dataset_dir_exists,
+    validate_raw_bucket_structure,
+    check_original_metadata_files_in_bucket,
+    detect_raw_bucket_structure
+)
 
 
 logging.basicConfig(
@@ -22,24 +29,9 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
  
-repo_root = Path(__file__).resolve().parents[1] # back to 1
+repo_root = Path(__file__).resolve().parents[1]
 metadata_root = repo_root.parent / "asap-crn-cloud-dataset-metadata"
 
-
-def check_local_metadata_repo_exists(metadata_root: Path) -> None:
-    """Ensure that the local asap-crn-cloud-dataset-metadata repo exists"""
-    if not metadata_root.exists():
-        raise ValueError(
-            f"Local asap-crn-cloud-dataset-metadata repo not found at: {metadata_root}. "
-            f"This repo is expected to be at the same level as wf-common."
-        )
-
-
-def check_dataset_dir_exists(dataset_dir: Path) -> None:
-    """Ensure that the local dataset directory exists"""
-    if not dataset_dir.exists():
-        raise ValueError(f"Local dataset directory not found at: {dataset_dir}")
-    
 
 def main(args):
 
@@ -50,45 +42,101 @@ def main(args):
     dataset_name_long = f"{team_name}-{dataset_name}"
     
     dataset_dir = metadata_root / "datasets" / dataset_name_long
-    og_metadata_dir = dataset_dir / "metadata" / "og"
+    metadata_dir = dataset_dir / "metadata"
+    original_dir = metadata_dir / "original"
+    file_metadata_dir = dataset_dir / "file_metadata"
+    doi_dir = dataset_dir / "DOI"
     
     bucket_name = f"gs://asap-raw-team-{team_name}-{dataset_name}"
-    metadata_in_bucket = f"{bucket_name}/metadata"
+    metadata_bucket = f"{bucket_name}/metadata"
+    file_metadata_bucket = f"{bucket_name}/file_metadata"
+    doi_bucket = f"{bucket_name}/DOI"
     
+    # Validation checks
     check_local_metadata_repo_exists(metadata_root)
     check_dataset_dir_exists(dataset_dir)
-    check_bucket_exists(bucket_name)
-    check_metadata_files_present(bucket_name)
+    validate_raw_bucket_structure(bucket_name)
     
-    # Create metadata/og directory if it doesn't exist
-    og_metadata_dir.mkdir(parents=True, exist_ok=True)
+    # Detect bucket structure: initial submission vs post-QC
+    structure_type = detect_raw_bucket_structure(bucket_name)
     
-    # Download metadata from bucket to local og directory
-    logging.info(f"Downloading metadata from [{metadata_in_bucket}] to {og_metadata_dir}")
-    gsync(
-        source_path=metadata_in_bucket, 
-        destination_path=og_metadata_dir, 
-        dry_run=dry_run
-    )
+    # Initial submission: download from metadata/ directly to metadata/original/
+    if structure_type == "initial":
+        
+        # Warns if CORE tables missing, errors only if no files found.
+        files_valid = check_original_metadata_files_in_bucket(bucket_name)
+        if not files_valid:
+            logging.warning(
+                f"Not all CORE metadata tables were found (see above), but proceeding with download..."
+                )
+
+        original_dir.mkdir(parents=True, exist_ok=True)
     
+        logging.info(f"Downloading metadata from [{metadata_bucket}] to {original_dir}")
+        
+        gsync(
+            source_path=metadata_bucket, 
+            destination_path=original_dir, 
+            dry_run=dry_run
+        )
+    
+    # Post QC-structure: will sync the entire metadata/ tree    
+    elif structure_type == "complete":
+        logging.info(f"Downloading metadata from [{metadata_bucket}] to [{metadata_dir}]")
+        
+        metadata_dir.mkdir(parents=True, exist_ok=True)
+        
+        gsync(
+            source_path=metadata_bucket, 
+            destination_path=metadata_dir, 
+            dry_run=dry_run
+        )
+        
+    # Optional: also sync the file_metadata/ and DOI/ directories if they exist
+    try:
+        list_dirs(file_metadata_bucket) # Check if directory exists
+        file_metadata_dir.mkdir(parents=True, exist_ok=True)
+        logging.info(f"Downloading file_metadata/ from [{file_metadata_bucket}] to {file_metadata_dir}")
+       
+        gsync(
+            source_path=file_metadata_bucket, 
+            destination_path=file_metadata_dir, 
+            dry_run=dry_run
+        )
+    except subprocess.CalledProcessError:
+        pass # Directory does not exist, skip w/o log as not expected for initial submission
+    
+    try:
+        list_dirs(doi_bucket)
+        doi_dir.mkdir(parents=True, exist_ok=True)
+        logging.info(f"Downloading DOI/ from [{doi_bucket}] to {doi_dir}")
+       
+        gsync(
+            source_path=doi_bucket, 
+            destination_path=doi_dir, 
+            dry_run=dry_run
+        )
+    except subprocess.CalledProcessError:
+        pass
+
 
 if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(
-        description="Download metadata from raw bucket to local metadata/og directory"
+        description="Download metadata from raw bucket to local metadata/original/ directory"
     )
     
     parser.add_argument(
         "-t",
         "--team_name",
         required=True,
-        help="The team name of the dataset"
+        help="The team name of the dataset (e.g., jakobsson)"
     )
     parser.add_argument(
         "-ds",
         "--dataset_name",
         required=True,
-        help="The name of the dataset"
+        help="The name of the dataset (e.g., pmdbs-sn-rnaseq)"
     )
     parser.add_argument(
         "-p",

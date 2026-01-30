@@ -205,14 +205,6 @@ ALL_TEAMS = [
 ]
 
 
-def check_bucket_exists(bucket_url: str) -> None:
-    """Terminate early if the target bucket does not exist"""
-    command = ["gcloud", "storage", "buckets", "describe", bucket_url]
-    try:
-        subprocess.run(command, check=True, capture_output=True, text=True)
-    except subprocess.CalledProcessError as e:
-        raise ValueError(f"Bucket not found: {bucket_url}, see: {e}")
-
 
 def list_teams():
 	logging.info("Available teams:")
