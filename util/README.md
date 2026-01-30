@@ -121,6 +121,8 @@ Metadata tables are grouped into two categories:
 
 ### Core Metadata Tables
 
+The CDE metadata schema can be found here: [CDE Google Sheet](https://docs.google.com/spreadsheets/d/1c0z5KvRELdT2AtQAH2Dus8kwAyyLrR0CROhKOjpU4Vc/edit?gid=43504703#gid=43504703)
+
 Expected for every submission (CDE 4.0+):
 
 - `ASSAY.csv`
