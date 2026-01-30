@@ -20,12 +20,141 @@
 | :- | :- | :- |
 | [`transfer_raw_data`](./archive/transfer_raw_data) | Transfer data in generic raw buckets to dataset-specific raw buckets (e.g., `gs://asap-raw-data-team-lee` vs. `gs://asap-dev-team-lee-pmdbs-sn-rnaseq`. | Originally, "generic" raw buckets were created because we only had one data type (i.e., sc RNAseq). Later on, we started implementing new data types (e.g., bulk RNAseq, spatial transcriptomics, etc.) and restructured the bucket naming and organization. Therefore, this script is used to move raw data from the generic raw buckets to data-specific raw buckets. It is not applicable to new datasets where we collaborate with the CRN Teams to determine the dataset name. |
 
-# Scripts used when contributors first upload data to the raw bucket
+# Contributor Data Workflow
 
-1. `validate_raw_bucket_structure.py` (this only checks the raw bucket)
-2. `download_raw_bucket_metadata_to_local` (this checks the raw bucket and transfers to local)
-3. QC is performed locally and is organized in the [asap-crn-cloud-dataset-metadata](https://github.com/ASAP-CRN/asap-crn-cloud-dataset-metadata) GitHub Repo (WIP: instructions for initiating a new dataset)
-4. `transfer_qc_metadata_to_raw_bucket` (this checks the local metadata directory and transfers to the raw bucket)
+This section describes the workflow for processing contributor submissions, from initial upload through QC and back to the raw bucket.
+
+## Workflow Steps
+
+### 1. Validate Bucket Structure
+
+**Script:** [`validate_raw_bucket_structure.py`](./validate_raw_bucket_structure.py)
+
+Validates that the raw bucket has the required directory structure and metadata files after contributor upload.
+
+```bash
+python3 validate_raw_bucket_structure.py -t jakobsson -ds pmdbs-sn-rnaseq
+```
+
+### 2. Download Metadata Locally
+
+**Script:** [`download_raw_bucket_metadata_to_local`](./download_raw_bucket_metadata_to_local)
+
+Downloads metadata from the raw bucket to your local workspace for QC. Handles both initial submissions (loose CSV files) and post-QC structures (organized directories).
+
+```bash
+./download_raw_bucket_metadata_to_local -t jakobsson -ds pmdbs-sn-rnaseq -p
+```
+
+**What it does:**
+
+- **Initial submission:** Downloads `metadata/*.csv` → local `metadata/original/`
+- **Re-sync:** Downloads entire `metadata/` tree (original/, cde/, release/)
+- **Optional:** Also downloads `file_metadata/` and `DOI/` if present in bucket
+
+### 3. Perform QC Locally
+
+Quality control is performed locally in the [asap-crn-cloud-dataset-metadata](https://github.com/ASAP-CRN/asap-crn-cloud-dataset-metadata) repository.
+
+**QC outputs:**
+
+```
+metadata/
+├── original/     # Contributor submission
+├── cde/          # CDE-versioned copies
+├── release/      # Release-versioned metadata (e.g., v4.0.0/)
+└── latest/       # Copy of the latest release version
+```
+
+### 4. Transfer QC'd Metadata Back to Bucket
+
+**Script:** [`transfer_qc_metadata_to_raw_bucket`](./transfer_qc_metadata_to_raw_bucket)
+
+Syncs the local metadata directory (including all QC'd subdirectories) back to the raw bucket.
+
+```bash
+./transfer_qc_metadata_to_raw_bucket -t jakobsson -ds pmdbs-sn-rnaseq -rv v4.0.0 -p
+```
+
+**What it transfers:**
+
+- Entire `metadata/` directory tree
+- `file_metadata/` (if present)
+- `DOI/` (if present)
+
+**Note:** Use `-p` flag to execute (defaults to dry-run for safety).
+
+---
+
+## Important Notes
+
+- **Dry-run by default:** Most scripts require `-p` (promote) flag to actually execute transfers
+- **Structure migration:** First transfer after QC from local to the raw bucket establishes the new directory structure (`original/`, `cde/`, `release/`, `latest/`) in the bucket
+- **Re-running scripts:** Safe to re-run download/transfer scripts - the rysnc command will replace changed files and add new source files to destination, but will not remove files that exist in destination but not source
+- **Missing files:** Scripts warn about missing CORE metadata tables but allow incomplete submissions (for flexibility during initial upload)
+
+# Expected structure and files of a contribution
+
+Contributors are expected to deposit their data and metadata in a structured manner in the given dataset's raw bucket. The bucket structure is organized into **required**, **recommended**, and **optional** directories. Note that a contribution consists of the metadata and deposited data, however the form of this data (processed outputs or raw data) will vary by assay. Thus, a submission should at minumum have `metadata/` and a data directory such as `raw/` or `fastqs/`, and preferably include the author's own processed data in `artifacts/`.
+
+## Directory Structure
+
+### Required Directories
+
+- **`metadata/`** - Contains 'core' and 'supplemental' metadata tables (see [Metadata Files](#metadata-files) below)
+
+### Recommended Directories
+
+- **`artifacts/`** - Processed outputs of data pipelines
+
+### Optional Directories
+
+- **`fastqs/`** - FASTQ files for relevant sequencing assays
+- **`spatial/`** - Outputs of spatial transcriptomic assays
+- **`scripts/`** - Analysis and processing code used by the contributors
+- **`raw/`** - Catch-all for raw/unprocessed data for non-sequencing-based assays
+- **`workflow_execution/`** - Created by DNAstack during pipeline execution
+
+## Metadata Files
+
+Metadata tables are grouped into two categories:
+
+### Core Metadata Tables
+
+Expected for every submission (CDE 4.0+):
+
+- `ASSAY.csv`
+- `CONDITION.csv`
+- `DATA.csv`
+- `PROTOCOL.csv`
+- `SAMPLE.csv`
+- `STUDY.csv`
+- `SUBJECT.csv`
+
+### Additional Metadata Tables
+
+Context-specific information or tables from releases prior to CDE 4.0 (which consolidated some tables, e.g., `MOUSE` + `CELL` → `SUBJECT`):
+
+- `PMDBS.csv`
+- `CLINPATH.csv`
+- `MOUSE.csv`
+- `CELL.csv`
+- `PROTEOMICS.csv`
+- `ASSAY_RNAseq.csv`
+- `SPATIAL.csv`
+- `SDRF.csv`
+
+## Post-Submission Structure
+
+After receiving a contribution, the `metadata/` directory is reorganized and versioned during QC. See [asap-crn-cloud-dataset-metadata](https://github.com/ASAP-CRN/asap-crn-cloud-dataset-metadata) for details on the QC process and final structure:
+
+```
+metadata/
+├── original/     # Original contributor submission
+├── cde/          # CDE-versioned copies
+├── release/      # Release-versioned metadata
+└── latest/       # Copy of the latest release version
+```
 
 # Scripts used to copy data for different Data Release scenarios
 
