@@ -223,7 +223,7 @@ def detect_raw_bucket_structure(bucket_name: str) -> str:
     bucket_name: of the form gs://asap-raw-team-jakobsson-pmdbs-rnaseq
     
     Returns:
-    "intial" - loose CSV files at metadata/ level, implies intial submission
+    "initial" - loose CSV files at metadata/ level, implies intial submission
     "complete" - full directory structure (metadata/original, cde/, release/, latest/)
     """
     metadata_dir = f"{bucket_name}/metadata/"

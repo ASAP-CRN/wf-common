@@ -49,7 +49,7 @@ Downloads metadata from the raw bucket to your local workspace for QC. Handles b
 **What it does:**
 
 - **Initial submission:** Downloads `metadata/*.csv` → local `metadata/original/`
-- **Re-sync:** Downloads entire `metadata/` tree (original/, cde/, release/)
+- **Re-sync:** Downloads entire `metadata/` tree plus `file_metadata/` and `DOI/` if present
 - **Optional:** Also downloads `file_metadata/` and `DOI/` if present in bucket
 
 ### 3. Perform QC Locally
