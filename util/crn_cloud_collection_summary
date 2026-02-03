@@ -40,7 +40,7 @@ echo "Got "$(echo "$COHORT_DATASETS" | wc -l | tr -d '[:space:]')" harmonized co
 
 date_str=$(date +"%Y-%m-%d")
 output_file="crn_cloud_collection_summary.$date_str.tsv"
-echo -e "gcp_raw_bucket\tgcp_raw_bucket_size\tgcp_curated_bucket\tgcp_curated_bucket_size\tsample_count\tsubject_count\tteam_name\tbrain_sample_count\tbrain_region_count" > "$output_file"
+echo -e "gcp_raw_bucket\tgcp_raw_bucket_size\tgcp_curated_bucket\tgcp_curated_bucket_size\tsample_count\tsubject_count\tteam_name\tbrain_sample_count\tbrain_region_count\tbrain_donor_count" > "$output_file"
 
 unique_teams=""
 unique_brain_regions=""
@@ -116,7 +116,7 @@ while IFS= read -r slug; do
         -o csv \
         | tail -n +2 | tr -d '[:space:]')
 
-    # Check for PMDBS table and get brain-specific stats
+    # Check for PMDBS table, CLINPATH table, and get brain-specific stats
     brain_sample_count="NA"
     brain_region_count="NA"
 
@@ -159,6 +159,20 @@ while IFS= read -r slug; do
         fi
     fi
 
+    brain_donor_count="NA"
+
+    echo "Checking for CLINPATH table..."
+    if echo "$collection_tables" | grep -qi "clinpath"; then
+        echo "CLINPATH table found, getting brain donor count..."
+        brain_donor_count=$(dnastack collections query -c "$slug" \
+            "SELECT COUNT(DISTINCT subject_id) AS brain_donor_count FROM \"collections\".\"$underscored_slug\".\"${team_name}_clinpath\"" \
+            -o csv \
+            | tail -n +2 | tr -d '[:space:]')
+        echo "Brain donor count: $brain_donor_count"
+    else
+        echo "No CLINPATH table found for this collection"
+    fi
+
     if "${SAMPLES_SUBJECTS_ONLY}"; then
         gcp_raw_bucket_size="NA"
         gcp_prod_bucket_size="NA"
@@ -170,7 +184,7 @@ while IFS= read -r slug; do
         gcp_prod_bucket_size=$(gcloud storage du -s "$gcp_prod_bucket" | grep -oE '^[0-9]+')
     fi
 
-    echo -e "${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${gcp_prod_bucket}\t${gcp_prod_bucket_size}\t${sample_count}\t${subject_count}\t${team_name}\t${brain_sample_count}\t${brain_region_count}" >> "$output_file"
+    echo -e "${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${gcp_prod_bucket}\t${gcp_prod_bucket_size}\t${sample_count}\t${subject_count}\t${team_name}\t${brain_sample_count}\t${brain_region_count}\t${brain_donor_count}" >> "$output_file"
 done <<< "$INDIVIDUAL_DATASETS"
 
 # Clean up
@@ -302,31 +316,39 @@ if ! "${SAMPLES_SUBJECTS_ONLY}"; then
     }' "$output_file"
 fi
 
-# Calculate brain sample totals by origin from output file
+# Calculate brain sample totals by origin and brain donors from output file
 echo ""
 echo "========================================"
 awk -F'\t' '
 NR==1 {
     for(i=1;i<=NF;i++) {
         if($i=="brain_sample_count") brain_col=i
+        if($i=="brain_donor_count") donor_col=i
         if($i=="gcp_raw_bucket") bucket_col=i
     }
     next
 }
-NR>1 && $brain_col!="NA" && $brain_col~/^[0-9]+$/ {
-    brain_count = $brain_col
-    bucket = $bucket_col
-    total_brain += brain_count
+NR>1 {
+    if ($brain_col!="NA" && $brain_col~/^[0-9]+$/) {
+        brain_count = $brain_col
+        bucket = $bucket_col
+        total_brain += brain_count
+        
+        # Data origin grouping logic (same as sample/subject breakdown)
+        if (bucket ~ /human/ || bucket ~ /pmdbs/) {
+            origin["human"] += brain_count
+        } else if (bucket ~ /mouse/) {
+            origin["mouse"] += brain_count
+        } else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/) {
+            origin["cell"] += brain_count
+        } else {
+            origin["other"] += brain_count
+        }
+    }
     
-    # Data origin grouping logic (same as sample/subject breakdown)
-    if (bucket ~ /human/ || bucket ~ /pmdbs/) {
-        origin["human"] += brain_count
-    } else if (bucket ~ /mouse/) {
-        origin["mouse"] += brain_count
-    } else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/) {
-        origin["cell"] += brain_count
-    } else {
-        origin["other"] += brain_count
+    # Count brain donors
+    if (donor_col > 0 && $donor_col!="NA" && $donor_col~/^[0-9]+$/) {
+        total_donors += $donor_col
     }
 }
 END {
@@ -336,8 +358,9 @@ END {
     printf "cell:         %d\n", origin["cell"]
     printf "other:        %d\n", origin["other"]
     printf "Total brain samples: %d\n", total_brain
+    print ""
+    printf "Total brain donors (CLINPATH): %d\n", total_donors
 }' "$output_file"
-
 echo ""
 echo "========================================"
 echo "=== ADDITIONAL STATISTICS ==="
@@ -353,6 +376,5 @@ if [ -n "$unique_brain_regions" ]; then
         echo "  - $region"
     done
 fi
-
 echo ""
 echo "Saved results to [$(pwd)/$output_file]"
