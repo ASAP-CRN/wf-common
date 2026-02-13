@@ -35,6 +35,12 @@ embargoed_platforming_raw_buckets = [
 ]
 
 unembargoed_platforming_raw_buckets = [
+	"gs://asap-raw-team-lee-mouse-liver-bulk-rnaseq-g2019s",
+	"gs://asap-raw-team-lee-mouse-bulk-rnaseq-striatum-g2019s-hf-diet",
+	"gs://asap-raw-team-schapira-fecal-metagenome-human-baseline",
+	"gs://asap-raw-team-lee-mouse-sn-rnaseq-midbrain-g2019s-hf-diet",
+	"gs://asap-raw-team-liddle-human-colon-spatial-cosmx-rna-1000p",
+	"gs://asap-raw-team-liddle-human-colon-spatial-cosmx-protein-64p"
 ]
 
 
