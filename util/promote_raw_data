@@ -91,7 +91,7 @@ def main(args):
 				logging.info(f"Raw bucket does not have artifacts directory [{raw_bucket}]; skipping")
 
 			# Spatial
-			if "spatial" in dirs:
+			if "cosmx" not in raw_bucket and "spatial" in dirs:
 				logging.info(f"Promoting spatial in raw to [{curated_bucket}] while excluding cellranger_counts and bam_files folders")
 				gsync_artifacts(f"{raw_bucket}/spatial", f"{curated_bucket}/spatial", dry_run)
 			else:
@@ -156,7 +156,7 @@ def main(args):
 				logging.info(f"Raw bucket does not have artifacts directory [{raw_bucket}]; skipping")
 
 			# Spatial
-			if "spatial" in dirs:
+			if "cosmx" not in raw_bucket and "spatial" in dirs:
 				logging.info(f"Promoting spatial in raw to [{dev_bucket}] while excluding cellranger_counts and bam_files folders")
 				gsync(f"{raw_bucket}/spatial", f"{dev_bucket}/spatial", dry_run)
 				if dev_bucket in unembargoed_team_dev_buckets:
