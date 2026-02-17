@@ -19,6 +19,7 @@ completed_platforming_raw_buckets = [
 	# Mouse Single Nucleus/Cell RNAseq
 	"gs://asap-raw-team-schlossmacher-mouse-sn-rnaseq-osn-aav-transd",
 	"gs://asap-raw-team-alessi-mouse-sn-rnaseq-dorsal-striatum-g2019s",
+	"gs://asap-raw-team-lee-mouse-sn-rnaseq-midbrain-g2019s-hf-diet",
 	# Human PMDBS Single Nucleus/Cell RNAseq (other)
 	"gs://asap-raw-team-scherzer-pmdbs-genetics",
 	# Invitro Bulk RNAseq
@@ -26,6 +27,14 @@ completed_platforming_raw_buckets = [
 	"gs://asap-raw-team-jakobsson-invitro-bulk-rnaseq-microglia",
 	# Invitro Proteomics
 	"gs://asap-raw-team-alessi-invitro-ms-p-hek293-gtip",
+	# Mouse Bulk RNAseq (non-brain)
+	"gs://asap-raw-team-lee-mouse-liver-bulk-rnaseq-g2019s",
+	"gs://asap-raw-team-lee-mouse-bulk-rnaseq-striatum-g2019s-hf-diet",
+	# Fecal Metagenome
+	"gs://asap-raw-team-schapira-fecal-metagenome-human-baseline",
+	# Human Colon Spatial CosMx
+	"gs://asap-raw-team-liddle-human-colon-spatial-cosmx-rna-1000p",
+	"gs://asap-raw-team-liddle-human-colon-spatial-cosmx-protein-64p"
 ]
 
 
@@ -52,7 +61,7 @@ def remove_internal_qc_label(bucket_name):
 
 
 def get_team_name(bucket_name):
-	match = re.search(r"team-(.*?)-(mouse|pmdbs|invitro)", bucket_name)
+	match = re.search(r"team-(.*?)-(mouse|pmdbs|invitro|fecal|human)", bucket_name)
 	team = match.group(1)
 	return team
 
