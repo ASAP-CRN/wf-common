@@ -58,7 +58,7 @@ def remove_internal_qc_label(bucket_name):
 
 
 def get_team_name(bucket_name):
-	match = re.search(r"team-(.*?)-(mouse|pmdbs|invitro)", bucket_name)
+	match = re.search(r"team-(.*?)-(mouse|pmdbs|invitro|fecal|human)", bucket_name)
 	team = match.group(1)
 	return team
 
