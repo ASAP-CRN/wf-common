@@ -18,7 +18,7 @@ completed_platforming_raw_buckets = [
 	"gs://asap-raw-team-scherzer-pmdbs-sn-rnaseq-mtg-hybsel",
 	# Mouse Single Nucleus/Cell RNAseq
 	"gs://asap-raw-team-schlossmacher-mouse-sn-rnaseq-osn-aav-transd",
-	"gs://asap-raw-team-alessi-mouse-sn-rnaseq-dorsal-striatum-g2019s",\
+	"gs://asap-raw-team-alessi-mouse-sn-rnaseq-dorsal-striatum-g2019s",
 	"gs://asap-raw-team-lee-mouse-sn-rnaseq-midbrain-g2019s-hf-diet",
 	# Human PMDBS Single Nucleus/Cell RNAseq (other)
 	"gs://asap-raw-team-scherzer-pmdbs-genetics",
