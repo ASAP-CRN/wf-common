@@ -13,6 +13,7 @@
 | [`markdown_generator.py`](./markdown_generator.py) | Functions that generate a Markdown report. | This script is used in the [`promote_staging_data`](./promote_staging_data) script to generate a Markdown report that contains data integrity results when trying to promote data from staging (i.e., DEV/UAT) to production buckets (i.e., CURATED). | NA |
 | [`crn_cloud_collection_summary`](./crn_cloud_collection_summary) | Track the ASAP raw/curated buckets, size, sample breakdown, and subject breakdown in the CRN Cloud. | This script retrieves the raw and curated buckets, dataset sizes, sample and subject breakdown, and associated data types and origins using the dnastack CLI for querying in Explorer/CRN Cloud. It produces an output file in pwd named `crn_cloud_collection_summary.${date}.tsv` with columns: `gcp_raw_bucket`, `gcp_raw_bucket_size`, `gcp_curated_bucket`, `gcp_curated_bucket_size`, `sample_count`, `subject_count`, `team_name`, `brain_sample_count`, `brain_region_count`. | `./crn_cloud_collection_summary` |
 | [`internal_qc_dataset_collection_summary`, `brain_donor_count`](./internal_qc_dataset_collection_summary) | Track datasets in internal QC by getting their ASAP raw buckets, size, sample, and subject breakdown in GCP. | This script retrieves the raw buckets, dataset sizes, sample and subject breakdown, and associated data types, origins, and teams. It produces an output file in pwd named `internal_qc_dataset_collection_summary.${date}.tsv` with columns: `gcp_raw_bucket`, `gcp_raw_bucket_size`, `sample_count`, `subject_count`. | `./internal_qc_dataset_collection_summary` |
+| [`transfer_release_resources_to_raw_bucket.py`](./transfer_release_resources_to_raw_bucket.py) | Sync local release-resources config/, release_stats/ and publisher_cards/ to dataset ASAP raw buckets. | After producing Publisher card text and summary figures, this script syncs locally stored files (presumably living at asap-crn-cloud-dataset-metadata/) into each dataset gs:// raw bucket. If any later changes are made to the release-resources, this script will need to be re-run to ensure that the raw bucket contains the most up to date copies. | `./transfer_release_resources_to_raw_bucket.py -i /path/to/release_<release_version>.json -p`|
 
 ## Deprecated util scripts
 
@@ -83,6 +84,47 @@ Syncs the local metadata directory (including all QC'd subdirectories) back to t
 - `DOI/` (if present)
 
 **Note:** Use `-p` flag to execute (defaults to dry-run for safety).
+
+### 5. Build release-resources
+
+Build Publisher collection cards text and figures using:
+**Script:** `make_release.py` in the [asap-crn-cloud-dataset-metadata](https://github.com/ASAP-CRN/asap-crn-cloud-dataset-metadata) repository.
+
+```bash
+/path/to/make_release -i /path/to/release_<release_version>.json -p
+```
+
+**release-resources outputs:**
+```
+release-resources/
+└─ {release_version}/
+    ├─ cde/
+    ├─ release_stats/
+    │  └─ {dataset_name}/
+    └─ publisher_cards/
+       └─ {dataset_name}/
+           ├─ figures/
+           └─ text/
+```
+
+### 6. Transfer release-resources to Dataset Raw Buckets
+
+**Script:** [`transfer_release_resources_to_raw_bucket.py`](./transfer_release_resources_to_raw_bucket.py)
+
+Syncs the local release-resources directory (including all QC'd subdirectories) back to the raw bucket.
+
+```bash
+./transfer_release_resources_to_raw_bucket.py -i /path/to/config/release_<release_version>.json -p
+```
+
+**What it transfers:**
+
+- Entire `config/release_<release_version>.json`
+- `publisher_cards/` html files
+- `release_stats/` final svg files
+
+**Note:** Use `-p` flag to execute (defaults to dry-run for safety).
+
 
 ---
 

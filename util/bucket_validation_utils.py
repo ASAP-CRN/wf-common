@@ -277,7 +277,6 @@ def check_original_metadata_exists_locally(metadata_dir: Path) -> bool:
     csv_files = list(original_dir.glob("*.csv"))
     return len(csv_files) > 0
 
-
 def validate_local_metadata_structure(
     metadata_dir: Path, 
     release_version: str,
@@ -340,3 +339,50 @@ def validate_local_metadata_structure(
             
     logging.info(f"Local metadata structure validated for dataset at: {metadata_dir}")
     return results
+
+def validate_local_release_resources_structure(
+    release_resources_dir: Path, 
+    files_per_subdir: dict,
+) -> dict:
+    """
+    Validate the local release-resources/ directory structure for a dataset.
+    
+    Args:
+    release_resources_dir: Path to the local release-resources directory
+    files_per_subdir: Dict specifying expected files per subdir, with format:
+                      {
+                          "subdir_name": [list, of, expected, files]
+                      }
+    
+    Returns:
+    Dict of booleans indicating the presence of key release-resources files, e.g.:
+    - config/release_{release_version}_config.json
+    - publisher_cards/text/{dataset_name}_CARD.html
+    - publisher_cards/figures/combined/{dataset_name}-ALL.svg
+    - release_stats/{dataset_name}/release_stats.json
+    
+    Raises ValueError if any required directories or files are missing.
+
+    Note: the release-resources/ repo has structure <release_version>/all_datasets/; whereas the
+          gs:// buckets are the other way around: <dataset_name>/<release_version>/release-resources/, 
+          so the validation logic is slightly different between local and bucket.
+          TODO: We may change this in a future release.
+    """
+
+    release_resources_dir = Path(release_resources_dir)
+    if not release_resources_dir.exists():
+        print(f"{release_resources_dir}")
+        raise ValueError(f"Directory not found: {release_resources_dir}")
+
+    validated_files = {}
+    for subdir, expected_files in files_per_subdir.items():
+        subdir_path = release_resources_dir / subdir
+        for expected_file in expected_files:
+            expected_local_file_path = subdir_path / expected_file
+            if expected_local_file_path.exists():
+                validated_files[expected_local_file_path] = True
+            else:
+                raise ValueError(f"Expected file not found in release-resources: {expected_local_file_path}")
+
+    logging.info(f"Local release-resources structure validated for dataset at: {release_resources_dir}")
+    return validated_files

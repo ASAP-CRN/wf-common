@@ -345,9 +345,13 @@ def gcopy(source_path, destination_path, recursive=False):
 	if recursive:
 		command.insert(3, "--recursive")
 	result = subprocess.run(command, check=True, capture_output=True, text=True)
-	logging.info(result.stdout)
-	logging.error(result.stderr)
 
+	# These if's are because gcloud returns important info in stderr (e.g. "Copying /path/to/file1 to gs://bucket/file1...") 
+	# even if the command is successful. Since ERROR may be misleading, it's better to logging.info both stdout and stderr
+	if result.stdout:
+		logging.info(result.stdout)
+	if result.stderr:
+		logging.info(result.stderr)
 
 def gmove(source_path, destination_path):
 	command = [
@@ -358,8 +362,10 @@ def gmove(source_path, destination_path):
 		destination_path
 	]
 	result = subprocess.run(command, check=True, capture_output=True, text=True)
-	logging.info(result.stdout)
-	logging.error(result.stderr)
+	if result.stdout:
+		logging.info(result.stdout)
+	if result.stderr:
+		logging.info(result.stderr)
 
 
 def gremove(destination_path):
@@ -374,8 +380,10 @@ def gremove(destination_path):
 	except subprocess.CalledProcessError:
 		logging.info(f"No files found at {destination_path}; skipping deletion.")
 		return
-	logging.info(result.stdout)
-	logging.error(result.stderr)
+	if result.stdout:
+		logging.info(result.stdout)
+	if result.stderr:
+		logging.info(result.stderr)
 
 
 def gsync(source_path, destination_path, dry_run):
@@ -390,8 +398,10 @@ def gsync(source_path, destination_path, dry_run):
 	if dry_run:
 		command.insert(4, "--dry-run")
 	result = subprocess.run(command, check=True, capture_output=True, text=True)
-	logging.info(result.stdout)
-	logging.error(result.stderr)
+	if result.stdout:
+		logging.info(result.stdout)
+	if result.stderr:
+		logging.info(result.stderr)
 
 
 def gsync_del(source_path, destination_path, dry_run):
@@ -407,8 +417,10 @@ def gsync_del(source_path, destination_path, dry_run):
 	if dry_run:
 		command.insert(4, "--dry-run")
 	result = subprocess.run(command, check=True, capture_output=True, text=True)
-	logging.info(result.stdout)
-	logging.error(result.stderr)
+	if result.stdout:
+		logging.info(result.stdout)
+	if result.stderr:
+		logging.info(result.stderr)
 
 
 def add_verily_read_access(bucket_name):
@@ -424,5 +436,7 @@ def add_verily_read_access(bucket_name):
 		"dnastack-asap-parkinsons"
 	]
 	result = subprocess.run(command, check=True, capture_output=True, text=True)
-	logging.info(result.stdout)
-	logging.error(result.stderr)
+	if result.stdout:
+		logging.info(result.stdout)
+	if result.stderr:
+		logging.info(result.stderr)
