@@ -12,6 +12,8 @@ cat << EOF
   - Sample and subject breakdown is ongoing as more data modalities are being added
   - Samples included in the same data modality does NOT mean all samples went through curation
 
+  Output: crn_cloud_collection_summary.<date_str>.tsv
+
   Usage: $0 [OPTIONS]
 
   OPTIONS
@@ -40,7 +42,7 @@ echo "Got "$(echo "$COHORT_DATASETS" | wc -l | tr -d '[:space:]')" harmonized co
 
 date_str=$(date +"%Y-%m-%d")
 output_file="crn_cloud_collection_summary.$date_str.tsv"
-echo -e "gcp_raw_bucket\tgcp_raw_bucket_size\tgcp_curated_bucket\tgcp_curated_bucket_size\tsample_count\tsubject_count\tteam_name\tbrain_sample_count\tbrain_region_count\tbrain_donor_count" > "$output_file"
+echo -e "publisher_slug\tgcp_raw_bucket\tgcp_raw_bucket_size\tgcp_curated_bucket\tgcp_curated_bucket_size\tsample_count\tsubject_count\tteam_name\tbrain_sample_count\tbrain_region_count\tbrain_donor_count" > "$output_file"
 
 unique_teams=""
 unique_brain_regions=""
@@ -184,7 +186,7 @@ while IFS= read -r slug; do
         gcp_prod_bucket_size=$(gcloud storage du -s "$gcp_prod_bucket" | grep -oE '^[0-9]+')
     fi
 
-    echo -e "${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${gcp_prod_bucket}\t${gcp_prod_bucket_size}\t${sample_count}\t${subject_count}\t${team_name}\t${brain_sample_count}\t${brain_region_count}\t${brain_donor_count}" >> "$output_file"
+    echo -e "${slug}\t${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${gcp_prod_bucket}\t${gcp_prod_bucket_size}\t${sample_count}\t${subject_count}\t${team_name}\t${brain_sample_count}\t${brain_region_count}\t${brain_donor_count}" >> "$output_file"
 done <<< "$INDIVIDUAL_DATASETS"
 
 # Clean up
