@@ -25,6 +25,8 @@
 
 This section describes the workflow for processing contributor submissions, from initial upload through QC and back to the raw bucket.
 
+See documentation in the [asap-crn-cloud-dataset-metadata](https://github.com/ASAP-CRN/asap-crn-cloud-dataset-metadata/blob/main/README.md) repo for more granular information on the steps pertaining to releasing a contributed dataset.
+
 ## Workflow Steps
 
 ### 1. Validate Bucket Structure
@@ -95,6 +97,7 @@ Build Publisher collection cards text and figures using:
 ```
 
 **release-resources outputs:**
+
 ```
 release-resources/
 └─ {release_version}/
@@ -124,7 +127,6 @@ Syncs the local release-resources directory (including all QC'd subdirectories) 
 - `release_stats/` final svg files
 
 **Note:** Use `-p` flag to execute (defaults to dry-run for safety).
-
 
 ---
 
