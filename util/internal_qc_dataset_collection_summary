@@ -192,10 +192,10 @@ calculate_breakdown() {
         if (bucket ~ /human/ || bucket ~ /pmdbs/) {
             origin_category = "human"
             origin["human"] += count
-        } else if (bucket ~ /mouse/) {
+        } else if (bucket ~ /mouse/ || bucket ~ /sulzer-fecal-metagenome-fp-spf/) {
             origin_category = "mouse"
             origin["mouse"] += count
-        } else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/) {
+        } else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/ || bucket ~ /mefs/) {
             origin_category = "cell"
             origin["cell"] += count
         } else {

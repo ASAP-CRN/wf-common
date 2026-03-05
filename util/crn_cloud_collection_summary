@@ -253,9 +253,9 @@ calculate_breakdown() {
         # Data origin grouping logic
         if (bucket ~ /human/ || bucket ~ /pmdbs/) {
             origin["human"] += count
-        } else if (bucket ~ /mouse/) {
+        } else if (bucket ~ /mouse/ || bucket ~ /sulzer-fecal-metagenome-fp-spf/) {
             origin["mouse"] += count
-        } else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/) {
+        } else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/ || bucket ~ /mefs/) {
             origin["cell"] += count
         } else {
             origin["other"] += count
@@ -358,9 +358,9 @@ NR>1 {
         # Data origin grouping logic (same as sample/subject breakdown)
         if (bucket ~ /human/ || bucket ~ /pmdbs/) {
             origin["human"] += brain_count
-        } else if (bucket ~ /mouse/) {
+        } else if (bucket ~ /mouse/ || bucket ~ /sulzer-fecal-metagenome-fp-spf/) {
             origin["mouse"] += brain_count
-        } else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/) {
+        } else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/ || bucket ~ /mefs/) {
             origin["cell"] += brain_count
         } else {
             origin["other"] += brain_count
