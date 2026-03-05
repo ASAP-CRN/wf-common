@@ -11,22 +11,26 @@ cat << EOF
   - Storage size used for this project is much larger since unreleased data is stored in there as well and cross-team cohort data
   - Sample and subject breakdown is ongoing as more data modalities are being added
   - Sample and subject count can change as our Data Curators collaborate with CRN Teams to define this
+    
+  Output: internal_qc_dataset_collection_summary.<date_str>.tsv
 
   Usage: $0 [OPTIONS]
 
   OPTIONS
     -h  Display this message and exit
     -s  Grab no. of samples and subjects only
+    -l  Only grab info for a list of datasets, usually those included in the upcoming Release
 
 EOF
 }
 
 SAMPLES_SUBJECTS_ONLY=false
 
-while getopts ":hs" OPTION; do
+while getopts ":hsl:" OPTION; do
   case ${OPTION} in
     h) usage; exit 1;;
     s) SAMPLES_SUBJECTS_ONLY=true;;
+    l) DATASETS=$OPTARG;;
   esac
 done
 
@@ -61,9 +65,14 @@ get_unique_column_count() {
 }
 
 
-all_raw_buckets=$(gcloud storage buckets list \
-    --format="value(name)" \
-    --filter="name:asap-raw-team*")
+if [[ -n "${DATASETS:-}" ]]; then
+    echo "Only grabbing info on datasets listed in $DATASETS"
+    all_raw_buckets=$(cat "${DATASETS}" | sed 's;^;asap-raw-;g')
+else
+    all_raw_buckets=$(gcloud storage buckets list \
+        --format="value(name)" \
+        --filter="name:asap-raw-team*")
+fi
 
 RAW_BUCKETS=""
 while IFS= read -r bucket; do
