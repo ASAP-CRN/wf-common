@@ -51,8 +51,13 @@ echo "Got "$(echo "$INDIVIDUAL_DATASETS" | wc -l | tr -d '[:space:]')" individua
 echo "Got "$(echo "$COHORT_DATASETS" | wc -l | tr -d '[:space:]')" harmonized collections from CRN Cloud"
 
 date_str=$(date +"%Y-%m-%d")
-output_file="crn_cloud_collection_summary.$date_str.tsv"
-echo -e "publisher_slug\tgcp_raw_bucket\tgcp_raw_bucket_size\tgcp_curated_bucket\tgcp_curated_bucket_size\tsample_count\tsubject_count\tteam_name\tbrain_sample_count\tbrain_region_count\tbrain_donor_count" > "$output_file"
+if [[ -n "${PREVIOUS_CRN_SUMMARY_TSV:-}" ]]; then
+    output_file="$PREVIOUS_CRN_SUMMARY_TSV"
+    echo "Appending to existing file: $output_file"
+else
+    output_file="crn_cloud_collection_summary.$date_str.tsv"
+    echo -e "publisher_slug\tgcp_raw_bucket\tgcp_raw_bucket_size\tgcp_curated_bucket\tgcp_curated_bucket_size\tsample_count\tsubject_count\tteam_name\tbrain_sample_count\tbrain_region_count\tbrain_donor_count" > "$output_file"
+fi
 
 unique_teams=""
 unique_brain_regions=""
@@ -196,7 +201,11 @@ while IFS= read -r slug; do
         gcp_prod_bucket_size=$(gcloud storage du -s "$gcp_prod_bucket" | grep -oE '^[0-9]+')
     fi
 
-    echo -e "${slug}\t${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${gcp_prod_bucket}\t${gcp_prod_bucket_size}\t${sample_count}\t${subject_count}\t${team_name}\t${brain_sample_count}\t${brain_region_count}\t${brain_donor_count}" >> "$output_file"
+    if [[ -n "${PREVIOUS_CRN_SUMMARY_TSV:-}" ]]; then
+        echo -e "\n${slug}\t${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${gcp_prod_bucket}\t${gcp_prod_bucket_size}\t${sample_count}\t${subject_count}\t${team_name}\t${brain_sample_count}\t${brain_region_count}\t${brain_donor_count}" >> "$output_file"
+    else
+        echo -e "${slug}\t${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${gcp_prod_bucket}\t${gcp_prod_bucket_size}\t${sample_count}\t${subject_count}\t${team_name}\t${brain_sample_count}\t${brain_region_count}\t${brain_donor_count}" >> "$output_file"
+    fi
 done <<< "$INDIVIDUAL_DATASETS"
 
 # Clean up
