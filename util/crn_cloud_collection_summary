@@ -241,7 +241,7 @@ calculate_breakdown() {
             grp["ms_p"] += count
         } else if (bucket ~ /parsebio/) {
             grp["parsebio"] += count
-        } else if (bucket ~ /multimodal/) {
+        } else if (bucket ~ /multimodal/ || bucket ~ /multiome/ || bucket ~ /multiomics/) {
             grp["multimodal"] += count
         } else if (bucket ~ /metagenome/) {
             grp["metagenomics"] += count
@@ -255,7 +255,7 @@ calculate_breakdown() {
             origin["human"] += count
         } else if (bucket ~ /mouse/ || bucket ~ /sulzer-fecal-metagenome-fp-spf/) {
             origin["mouse"] += count
-        } else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/ || bucket ~ /mefs/) {
+        } else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/ || bucket ~ /mef/) {
             origin["cell"] += count
         } else {
             origin["other"] += count
@@ -360,7 +360,7 @@ NR>1 {
             origin["human"] += brain_count
         } else if (bucket ~ /mouse/ || bucket ~ /sulzer-fecal-metagenome-fp-spf/) {
             origin["mouse"] += brain_count
-        } else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/ || bucket ~ /mefs/) {
+        } else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/ || bucket ~ /mef/) {
             origin["cell"] += brain_count
         } else {
             origin["other"] += brain_count

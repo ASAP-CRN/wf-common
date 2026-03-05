@@ -176,7 +176,7 @@ calculate_breakdown() {
         } else if (bucket ~ /parsebio/) {
             data_type_category = "parsebio"
             grp["parsebio"] += count
-        } else if (bucket ~ /multimodal/) {
+        } else if (bucket ~ /multimodal/ || bucket ~ /multiome/ || bucket ~ /multiomics/) {
             data_type_category = "multimodal"
             grp["multimodal"] += count
         } else if (bucket ~ /metagenome/) {
@@ -195,7 +195,7 @@ calculate_breakdown() {
         } else if (bucket ~ /mouse/ || bucket ~ /sulzer-fecal-metagenome-fp-spf/) {
             origin_category = "mouse"
             origin["mouse"] += count
-        } else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/ || bucket ~ /mefs/) {
+        } else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/ || bucket ~ /mef/) {
             origin_category = "cell"
             origin["cell"] += count
         } else {
