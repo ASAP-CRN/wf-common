@@ -5,7 +5,7 @@
 #   Single dataset:
 #     python3 transfer_qc_metadata_to_raw_bucket -d team-jakobsson-pmdbs-bulk-rnaseq -v v4.0.1 -p
 #
-# Batch processing (datasets.csv field 1 is team, field 2 is dataset, field 3 is release version, no header):
+# Batch processing (datasets.csv field 1 is is dataset id, field 2 is release version, no header):
 #     while IFS=, read -r team dataset; do
 #         python3 transfer_qc_metadata_to_raw_bucket -d "$dataset_id" -p
 #     done < datasets.csv
