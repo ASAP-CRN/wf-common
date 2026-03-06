@@ -211,9 +211,37 @@ metadata/
 | Major | <ul><li>[`transfer_qc_metadata_to_raw_bucket`](./transfer_qc_metadata_to_raw_bucket)</li><li>[`promote_raw_data`](./promote_raw_data)</li><li>[`promote_staging_data`](./promote_staging_data)</li></ul> |
 
 **Scripts used in different Data Release Scenarios diagram:**
+
 ![Scripts used in different Data Release Scenarios diagram](./data_promotion_diagram.svg "Data promotion diagram")
 
 Note: Previous Minor Releases did not contain pipeline/curated outputs (SOW 2); however, moving forward there will be outputs (SOW 3 - onwards) [06/12/2025]. Minor Releases apply to both diagrams, as some datasets may include either pipeline/curated outputs depending on the data modality. If a dataset was previously released in an Urgent or Minor Release and is later scheduled for a Major Release, the curated buckets will be overwritten with the most recent version of the data.
+
+---
+
+## Output bucket structure
+```
+asap-{dev,uat,curated}-{cohort,team-xxyy}-{source}-{modality_flavour}-{context}
+├── <raw_data>
+├── artifacts
+├── file_metadata
+├── metadata
+│   └── release
+│       └── ${release_version}
+│           ├── *.csv
+│           └── cde_version          # plain text file, no extension
+└── ${workflow_name}
+    └── release
+        └── ${release_version}
+            ├── <curated_outputs>
+            │   ├── ...
+            │   └── MANIFEST.tsv
+            ├── workflow_version     # plain text file, no extension
+            └── workflow_metadata
+                └── ${timestamp}
+                    ├── MANIFEST.tsv # combined
+                    └── data_promotion_report.md
+```
+
 
 # CRN Cloud Statistics
 

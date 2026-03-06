@@ -41,9 +41,9 @@ logging.basicConfig(
 
 tmp_file = "tmp.txt"
 
-# This will also upload the past data promotion reports and combined MANIFEST.tsv's in archive workflow_metadata folder
+# This will also upload the past data promotion reports and combined MANIFEST.tsv's in workflow_name/release/release_version/workflow_metadata folder
 def gsync_del(source_path, destination_path, workflow_name, dry_run):
-	exclude_regex = rf"(archive|{workflow_name})(/.*)?$"
+	exclude_regex = rf"(release|{workflow_name})(/.*)?$"
 	command = [
 		"gcloud",
 		"storage",
@@ -170,11 +170,11 @@ def main(args):
 			production_bucket = f"gs://asap-curated-{dataset_id}"
 
 			production_workflow_bucket = f"gs://asap-curated-{dataset_id}/{args.workflow_name}"
-			production_workflow_version_bucket = f"gs://asap-curated-{dataset_id}/{args.workflow_name}/archive/workflow_version/{workflow_version}"
-			production_workflow_metadata_path = f"{production_workflow_version_bucket}/workflow_metadata/{formatted_time}"
+			production_workflow_release_version_bucket = f"gs://asap-curated-{dataset_id}/{args.workflow_name}/release/{release_version}"
+			production_workflow_metadata_path = f"{production_workflow_release_version_bucket}/workflow_metadata/{formatted_time}"
 
-			dev_workflow_metadata_path = f"{staging_dev_bucket}/{args.workflow_name}/archive/workflow_version/{workflow_version}/workflow_metadata/{formatted_time}"
-			uat_workflow_metadata_path = f"{staging_uat_bucket}/{args.workflow_name}/archive/workflow_version/{workflow_version}/workflow_metadata/{formatted_time}"
+			dev_workflow_metadata_path = f"{staging_dev_bucket}/{args.workflow_name}/release/{release_version}/workflow_metadata/{formatted_time}"
+			uat_workflow_metadata_path = f"{staging_uat_bucket}/{args.workflow_name}/release/{release_version}/workflow_metadata/{formatted_time}"
 			file_results["uat"]["combined_manifest_df"].to_csv(f"{dataset_id_underscore}_MANIFEST.tsv", index=False, sep="\t")
 
 			cohort = "cohort" in dataset_id
@@ -210,12 +210,12 @@ def main(args):
 			if not previous_curated_outputs_exist:
 				with open(tmp_file, "w") as f:
 					pass
-				gmove(tmp_file, f"{production_workflow_version_bucket}/")
-			logging.info(f"Saving workflow version [{workflow_version}] of [{dataset_id}] production data in archive folder")
+				gmove(tmp_file, f"{production_workflow_release_version_bucket}/")
+			logging.info(f"Saving workflow version [{workflow_version}] of [{dataset_id}] production data in release folder")
 			logging.info(f"\tProduction bucket path:\t\t[{production_workflow_bucket}]")
-			logging.info(f"\tProduction archive/workflow_version bucket path:\t[{production_workflow_version_bucket}]")
+			logging.info(f"\tProduction release/<release_version> bucket path:\t[{production_workflow_release_version_bucket}]")
 			# Dry and real run will only work if staging data gets promoted to production in previous step
-			gsync_del(production_workflow_bucket, production_workflow_version_bucket, args.workflow_name, dry_run)
+			gsync_del(production_workflow_bucket, production_workflow_release_version_bucket, args.workflow_name, dry_run)
 
 			if dry_run:
 				logging.info(f"Would copy {uat_workflow_metadata_path} to {production_workflow_metadata_path}")
