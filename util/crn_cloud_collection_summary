@@ -12,21 +12,25 @@ cat << EOF
   - Sample and subject breakdown is ongoing as more data modalities are being added
   - Samples included in the same data modality does NOT mean all samples went through curation
 
+  Output: crn_cloud_collection_summary.<date_str>.tsv
+
   Usage: $0 [OPTIONS]
 
   OPTIONS
     -h  Display this message and exit
     -s  Grab no. of samples and subjects only
+    -i  A previously generated CRN Cloud Collection Summary TSV file to append to and skip during processing (Note: Use only if certain that earlier datasets have not been updated)
 
 EOF
 }
 
 SAMPLES_SUBJECTS_ONLY=false
 
-while getopts ":hs" OPTION; do
+while getopts ":hsi:" OPTION; do
   case ${OPTION} in
     h) usage; exit 1;;
     s) SAMPLES_SUBJECTS_ONLY=true;;
+    i) PREVIOUS_CRN_SUMMARY_TSV=$OPTARG;;
   esac
 done
 
@@ -35,12 +39,25 @@ dnastack use cloud.parkinsonsroadmap.org
 INDIVIDUAL_DATASETS=$(dnastack collections list | jq -r '.[] | select(.tags[]?.label == "Individual Dataset") | .slugName')
 COHORT_DATASETS=$(dnastack collections list | jq -r '.[] | select(.tags[]?.label == "Harmonized Collection") | .slugName')
 
+if [[ -n "${PREVIOUS_CRN_SUMMARY_TSV:-}" ]]; then
+    echo "Skipping slugs already present in $PREVIOUS_CRN_SUMMARY_TSV"
+    SLUG_COL=$(head -1 "$PREVIOUS_CRN_SUMMARY_TSV" | tr '\t' '\n' | grep -n "publisher_slug" | cut -d: -f1)
+    PREVIOUS_SLUGS=$(tail -n +2 "$PREVIOUS_CRN_SUMMARY_TSV" | cut -f"$SLUG_COL")
+    INDIVIDUAL_DATASETS=$(comm -23 <(sort <<< "$INDIVIDUAL_DATASETS") <(sort <<< "$PREVIOUS_SLUGS"))
+    COHORT_DATASETS=$(comm -23 <(sort <<< "$COHORT_DATASETS") <(sort <<< "$PREVIOUS_SLUGS"))
+fi
+
 echo "Got "$(echo "$INDIVIDUAL_DATASETS" | wc -l | tr -d '[:space:]')" individual datasets from CRN Cloud"
 echo "Got "$(echo "$COHORT_DATASETS" | wc -l | tr -d '[:space:]')" harmonized collections from CRN Cloud"
 
 date_str=$(date +"%Y-%m-%d")
-output_file="crn_cloud_collection_summary.$date_str.tsv"
-echo -e "gcp_raw_bucket\tgcp_raw_bucket_size\tgcp_curated_bucket\tgcp_curated_bucket_size\tsample_count\tsubject_count\tteam_name\tbrain_sample_count\tbrain_region_count\tbrain_donor_count" > "$output_file"
+if [[ -n "${PREVIOUS_CRN_SUMMARY_TSV:-}" ]]; then
+    output_file="$PREVIOUS_CRN_SUMMARY_TSV"
+    echo "Appending to existing file: $output_file"
+else
+    output_file="crn_cloud_collection_summary.$date_str.tsv"
+    echo -e "publisher_slug\tgcp_raw_bucket\tgcp_raw_bucket_size\tgcp_curated_bucket\tgcp_curated_bucket_size\tsample_count\tsubject_count\tteam_name\tbrain_sample_count\tbrain_region_count\tbrain_donor_count" > "$output_file"
+fi
 
 unique_teams=""
 unique_brain_regions=""
@@ -184,7 +201,11 @@ while IFS= read -r slug; do
         gcp_prod_bucket_size=$(gcloud storage du -s "$gcp_prod_bucket" | grep -oE '^[0-9]+')
     fi
 
-    echo -e "${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${gcp_prod_bucket}\t${gcp_prod_bucket_size}\t${sample_count}\t${subject_count}\t${team_name}\t${brain_sample_count}\t${brain_region_count}\t${brain_donor_count}" >> "$output_file"
+    if [[ -n "${PREVIOUS_CRN_SUMMARY_TSV:-}" ]]; then
+        echo -e "\n${slug}\t${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${gcp_prod_bucket}\t${gcp_prod_bucket_size}\t${sample_count}\t${subject_count}\t${team_name}\t${brain_sample_count}\t${brain_region_count}\t${brain_donor_count}" >> "$output_file"
+    else
+        echo -e "${slug}\t${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${gcp_prod_bucket}\t${gcp_prod_bucket_size}\t${sample_count}\t${subject_count}\t${team_name}\t${brain_sample_count}\t${brain_region_count}\t${brain_donor_count}" >> "$output_file"
+    fi
 done <<< "$INDIVIDUAL_DATASETS"
 
 # Clean up
@@ -220,7 +241,7 @@ calculate_breakdown() {
             grp["ms_p"] += count
         } else if (bucket ~ /parsebio/) {
             grp["parsebio"] += count
-        } else if (bucket ~ /multimodal/) {
+        } else if (bucket ~ /multimodal/ || bucket ~ /multiome/ || bucket ~ /multiomics/) {
             grp["multimodal"] += count
         } else if (bucket ~ /metagenome/) {
             grp["metagenomics"] += count
@@ -232,9 +253,9 @@ calculate_breakdown() {
         # Data origin grouping logic
         if (bucket ~ /human/ || bucket ~ /pmdbs/) {
             origin["human"] += count
-        } else if (bucket ~ /mouse/) {
+        } else if (bucket ~ /mouse/ || bucket ~ /sulzer-fecal-metagenome-fp-spf/) {
             origin["mouse"] += count
-        } else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/) {
+        } else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/ || bucket ~ /mef/) {
             origin["cell"] += count
         } else {
             origin["other"] += count
@@ -337,9 +358,9 @@ NR>1 {
         # Data origin grouping logic (same as sample/subject breakdown)
         if (bucket ~ /human/ || bucket ~ /pmdbs/) {
             origin["human"] += brain_count
-        } else if (bucket ~ /mouse/) {
+        } else if (bucket ~ /mouse/ || bucket ~ /sulzer-fecal-metagenome-fp-spf/) {
             origin["mouse"] += brain_count
-        } else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/) {
+        } else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/ || bucket ~ /mef/) {
             origin["cell"] += brain_count
         } else {
             origin["other"] += brain_count
