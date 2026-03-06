@@ -77,7 +77,7 @@ def main(args):
 		"pmdbs_bulk_rnaseq": ("pmdbs-bulk-rnaseq",),
 		"spatial_visium": ("spatial-visium",),
 		"spatial_geomx": ("spatial-geomx",),
-		"mouse_sc_rnaseq": ("mouse-sn-rnaseq", "mouse-sc-rnaseq"),
+		"pmdbs_sc_atacseq": ("pmdbs-sn-atacseq", "pmdbs-sc-atacseq"),
 	}
 	patterns = WORKFLOW_FILTERS.get(args.workflow_name)
 	dev_buckets_version = {
@@ -244,7 +244,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"-w",
 		"--workflow-name",
-		choices=['pmdbs_sc_rnaseq', 'pmdbs_bulk_rnaseq', 'spatial_visium', 'spatial_geomx', 'mouse_sc_rnaseq'],
+		choices=['pmdbs_sc_rnaseq', 'pmdbs_bulk_rnaseq', 'spatial_visium', 'spatial_geomx', 'mouse_sc_rnaseq', 'pmdbs_sc_atacseq'],
 		type=str,
 		required=True,
 		help="Workflow name used as a directory in bucket."
