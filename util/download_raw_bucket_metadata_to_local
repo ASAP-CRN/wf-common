@@ -3,7 +3,7 @@
 # Download metadata submitted by contributors from the raw bucket to a local dataset
 # directory to prepare for QC.
 # Defaults to dry run unless -p flag is added!
-# Usage: python3 download_raw_bucket_metadata_to_local -t jakobsson -ds pmdbs-bulk-rnaseq
+# Usage: python3 download_raw_bucket_metadata_to_local -d team-jakobsson-pmdbs-bulk-rnaseq
 # NOTE on assumptions made:
 # 1.   You have cloned asap-crn-cloud-dataset-metadata and its root is at the
 # ---- same level as wf-common
@@ -14,7 +14,7 @@ import argparse
 import logging
 import subprocess
 from pathlib import Path
-from common import gsync, strip_team_name, list_dirs
+from common import gsync, strip_team_prefix, list_dirs
 from bucket_validation_utils import (
     check_local_metadata_repo_exists,
     check_dataset_dir_exists,
@@ -37,17 +37,16 @@ def main(args):
 
     dry_run = not args.promote
     
-    team_name = strip_team_name(args.team_name)
-    dataset_name = args.dataset_name
-    dataset_name_long = f"{team_name}-{dataset_name}"
+    dataset_id = args.dataset_id
+    dataset_name = strip_team_prefix(dataset_id)
     
-    dataset_dir = metadata_root / "datasets" / dataset_name_long
+    dataset_dir = metadata_root / "datasets" / dataset_name
     metadata_dir = dataset_dir / "metadata"
     original_dir = metadata_dir / "original"
     file_metadata_dir = dataset_dir / "file_metadata"
     doi_dir = dataset_dir / "DOI"
     
-    bucket_name = f"gs://asap-raw-team-{team_name}-{dataset_name}"
+    bucket_name = f"gs://asap-raw-{dataset_id}"
     metadata_bucket = f"{bucket_name}/metadata"
     file_metadata_bucket = f"{bucket_name}/file_metadata"
     doi_bucket = f"{bucket_name}/DOI"
@@ -127,16 +126,11 @@ if __name__ == "__main__":
     )
     
     parser.add_argument(
-        "-t",
-        "--team_name",
+        "-d",
+        "--dataset-id",
+        type=str,
         required=True,
-        help="The team name of the dataset (e.g., jakobsson)"
-    )
-    parser.add_argument(
-        "-ds",
-        "--dataset_name",
-        required=True,
-        help="The name of the dataset (e.g., pmdbs-sn-rnaseq)"
+        help="Dataset ID in bucket name (e.g., team-jakobsson-pmdbs-sn-rnaseq)."
     )
     parser.add_argument(
         "-p",
@@ -147,4 +141,10 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+
+    if not (args.dataset_id.startswith("team") or args.dataset_id.startswith("cohort")):
+        raise SystemExit(
+            f"--dataset-id must start with 'team' or 'cohort', got: '{args.dataset_id}'"
+        )
+
     main(args)

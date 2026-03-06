@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 
 # Transfer locally saved QC'd metadata to the raw Google bucket
-# Usage: 
+# Usage:
 #   Single dataset:
-#     python3 transfer_qc_metadata_to_raw_bucket -t jakobsson -ds pmdbs-bulk-rnaseq -rv v4.0.1 -p
+#     python3 transfer_qc_metadata_to_raw_bucket -d team-jakobsson-pmdbs-bulk-rnaseq -v v4.0.1 -p
 #
-# Batch processing (datasets.csv field 1 is team, field 2 is dataset, field 3 is release version, no header):
+# Batch processing (datasets.csv field 1 is is dataset id, field 2 is release version, no header):
 #     while IFS=, read -r team dataset; do
-#         python3 transfer_qc_metadata_to_raw_bucket -t "$team" -ds "$dataset" -p
+#         python3 transfer_qc_metadata_to_raw_bucket -d "$dataset_id" -p
 #     done < datasets.csv
 #
 # Defaults to dry run unless -p flag is added!
@@ -24,8 +24,9 @@
 import argparse
 import logging
 from pathlib import Path
-from common import gsync, strip_team_name, gcopy
+from common import gsync, strip_team_prefix, gcopy
 from bucket_validation_utils import (
+    FILE_METADATA_FILES,
     check_bucket_exists,
     check_original_metadata_exists_locally,
     validate_local_metadata_structure
@@ -40,33 +41,20 @@ logging.basicConfig(
 repo_root = Path(__file__).resolve().parents[1]
 metadata_root = repo_root.parent / "asap-crn-cloud-dataset-metadata"
 
-# Selected files in file_metadata/ generated during QC to be synced to raw bucket
-FILE_METADATA_FILES_TO_SYNC = [
-    "artifacts.csv",
-    "raw_files.csv",
-    "curated_files.csv",
-]
-
 
 def main(args):
 
     dry_run = not args.promote
     
-    team_name = strip_team_name(args.team_name)
-    dataset_name = args.dataset_name
-    dataset_name_long = f"{team_name}-{dataset_name}"
+    dataset_id = args.dataset_id
+    dataset_name = strip_team_prefix(dataset_id)
+    bucket_name = f"gs://asap-raw-{dataset_id}"
     release_version = args.release_version
     
-    dataset_dir = metadata_root / "datasets" / dataset_name_long
+    dataset_dir = metadata_root / "datasets" / dataset_name
     metadata_dir = dataset_dir / "metadata"
     file_metadata_dir = dataset_dir / "file_metadata"
     doi_dir = dataset_dir / "DOI"
-    
-    # No "team-" prefix for cohorts
-    if team_name == "cohort":
-        bucket_name = f"gs://asap-raw-{team_name}-{dataset_name}"
-    else:
-        bucket_name = f"gs://asap-raw-team-{team_name}-{dataset_name}"
     
     metadata_bucket = f"{bucket_name}/metadata"
     file_metadata_bucket = f"{bucket_name}/file_metadata"
@@ -75,7 +63,7 @@ def main(args):
     check_bucket_exists(bucket_name)
     
     # Validate local metadata structure before transfer
-    is_cohort = (team_name == "cohort")
+    is_cohort = dataset_name.startswith("cohort")
     validate_local_metadata_structure(metadata_dir, is_cohort=is_cohort, release_version=release_version)
 
     # Transfers entire metadata/ directory
@@ -86,25 +74,29 @@ def main(args):
         if not check_original_metadata_exists_locally(metadata_dir):
             raise ValueError(f"original/ directory is missing in local metadata dir: {metadata_dir}")
         
-        gsync(source_path=str(metadata_dir), 
-              destination_path=metadata_bucket, 
-              dry_run=dry_run)
+        gsync(
+            source_path=str(metadata_dir),
+            destination_path=metadata_bucket,
+            dry_run=dry_run
+        )
     else:
         raise ValueError(f"Local metadata directory not found: {metadata_dir}")
 
     # Transfer file_metadata/ files
     if file_metadata_dir.exists():
         logging.info(f"Transferring selected local file_metadata/ files to [{file_metadata_bucket}]")
-        for file_name in FILE_METADATA_FILES_TO_SYNC:
+        for file_name in FILE_METADATA_FILES:
             file_path = file_metadata_dir / file_name
             if file_path.exists():
                 if dry_run:
                     logging.info(f"Would copy {file_path} to {file_metadata_bucket}/{file_name}")
                 else:
                     logging.info(f"Transferring file: {file_name}")
-                    gcopy(source_path=str(file_path), 
-                          destination_path=f"{file_metadata_bucket}/{file_name}",
-                          recursive=False)
+                    gcopy(
+                        source_path=str(file_path), 
+                        destination_path=f"{file_metadata_bucket}/{file_name}",
+                        recursive=False
+                    )
             else:
                 logging.warning(f"File not found, skipping: {file_name}")
     else:
@@ -114,13 +106,14 @@ def main(args):
     if doi_dir.exists():
         logging.info(f"Transferring local DOI/ directory to [{doi_bucket}]")
         
-        gsync(source_path=str(doi_dir), 
-              destination_path=doi_bucket, 
-              dry_run=dry_run)
+        gsync(
+            source_path=str(doi_dir), 
+            destination_path=doi_bucket, 
+            dry_run=dry_run
+        )
     else:
         logging.warning(f"Local DOI directory not found, skipping transfer: {doi_dir}")
-    
-    
+ 
 
 if __name__ == "__main__":
     
@@ -129,22 +122,17 @@ if __name__ == "__main__":
 	)
     
     parser.add_argument(
-        "-t",
-        "--team_name",
+        "-d",
+        "--dataset-id",
+        type=str,
         required=True,
-        help="The team name of the dataset"
+        help="Dataset ID in bucket name (e.g., team-jakobsson-pmdbs-sn-rnaseq)."
     )
     parser.add_argument(
-        "-ds",
-        "--dataset_name",
-        required=True,
-        help="The name of the dataset"
-    )
-    parser.add_argument(
-        "-rv",
+        "-v",
         "--release_version",
         required=True,
-        help="The release version of the dataset (e.g., v4.0.1)"
+        help="The release version of the dataset (e.g., v4.0.1)."
     )
     parser.add_argument(
         "-p",
@@ -155,4 +143,10 @@ if __name__ == "__main__":
 	)
 
     args = parser.parse_args()
+
+    if not (args.dataset_id.startswith("team") or args.dataset_id.startswith("cohort")):
+        raise SystemExit(
+            f"--dataset-id must start with 'team' or 'cohort', got: '{args.dataset_id}'"
+        )
+
     main(args)

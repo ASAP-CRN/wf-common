@@ -18,34 +18,44 @@ logging.basicConfig(
 
 REQUIRED_BUCKET_DIRS = ["metadata/"]
 RECOMMENDED_BUCKET_DIRS = ["artifacts/"]
-OPTIONAL_BUCKET_DIRS = ["fastqs/", 
-                        "scripts/", 
-                        "raw/", 
-                        "spatial/",
-                        "workflow_execution/" # created by DNAstack, included for reporting
-                        ]
+OPTIONAL_BUCKET_DIRS = [
+    "fastqs/", 
+    "scripts/", 
+    "raw/", 
+    "spatial/",
+    "workflow_execution/" # created by DNAstack, included for reporting
+]
 
 # NOTE: CORE files are expected in all datasets from CDE 4.X onwards.
 # ----- SUPPLEMENTARY files may or may not be present depending on the context,
 # ----- or represent tables from earlier CDE versions.
-CORE_METADATA_FILES = ["ASSAY.csv",
-                       "CONDITION.csv",
-                       "DATA.csv",
-                       "PROTOCOL.csv",
-                       "SAMPLE.csv",
-                       "STUDY.csv", 
-                       "SUBJECT.csv"
-                       ]
+CORE_METADATA_FILES = [
+    "ASSAY.csv",
+    "CONDITION.csv",
+    "DATA.csv",
+    "PROTOCOL.csv",
+    "SAMPLE.csv",
+    "STUDY.csv", 
+    "SUBJECT.csv"
+]
 
-SUPP_METADATA_FILES = ["PMDBS.csv",
-                       "CLINPATH.csv",
-                       "MOUSE.csv",
-                       "CELL.csv",
-                       "PROTEOMICS.csv",
-                       "ASSAY_RNAseq.csv",
-                       "SPATIAL.csv",
-                       "SDRF.csv"
-                       ]
+SUPP_METADATA_FILES = [
+    "PMDBS.csv",
+    "CLINPATH.csv",
+    "MOUSE.csv",
+    "CELL.csv",
+    "PROTEOMICS.csv",
+    "ASSAY_RNAseq.csv",
+    "SPATIAL.csv",
+    "SDRF.csv"
+]
+
+# Selected files in file_metadata/ generated during QC to be synced to raw bucket
+FILE_METADATA_FILES = [
+    "artifacts.csv",
+    "raw_files.csv",
+    "curated_files.csv",
+]
 
 
 # ---- Bucket validation functions

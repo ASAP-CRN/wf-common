@@ -79,18 +79,18 @@ def main(args):
             fastq_I2s = literal_eval(row.fastq_I2s)
 
             source = row.source
-            team_dataset = row.dataset
+            dataset_name = row.dataset_name
             dataset_doi_url = row.dataset_DOI_url
 
             if args.workflow_name == "spatial_visium_analysis":
-                visium_brightfield_image = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/spatial/images/" + row.visium_cytassist
+                visium_brightfield_image = f"gs://asap-raw-{dataset_id}/spatial/images/" + row.visium_cytassist
                 visium_slide_serial_number = row.visium_slide_ref
                 visium_capture_area = row.visium_capture_area
 
             if args.workflow_name == "spatial_geomx_analysis":
                 geomx_slide_id = row.ASAP_geomx_slide_id
                 cleaned_geomx_annotation_file = ("cleaned_DNAstack_" + row.geomx_annotation_file.replace(" ", "_")).rsplit(".", 1)[0] + ".xlsx"
-                geomx_lab_annotation_xlsx = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/spatial/annotation_files/" + cleaned_geomx_annotation_file
+                geomx_lab_annotation_xlsx = f"gs://asap-raw-{dataset_id}/spatial/annotation_files/" + cleaned_geomx_annotation_file
 
             sample = {
                 "sample_id": sample_id,
@@ -117,7 +117,7 @@ def main(args):
 
             if team_id not in projects:
                 staging_data_buckets = [
-                    f"gs://asap-{staging_bucket_type}-{team_id}-{source}-{team_dataset}"
+                    f"gs://asap-{staging_bucket_type}-{dataset_id}"
                     for staging_bucket_type in staging_bucket_types
                 ]
 
@@ -127,7 +127,7 @@ def main(args):
                     "dataset_doi_url": dataset_doi_url,
                     "samples": [sample],
                     "run_project_cohort_analysis": run_project_cohort_analysis,
-                    "raw_data_bucket": f"gs://asap-raw-{team_id}-{source}-{team_dataset}",
+                    "raw_data_bucket": f"gs://asap-raw-{dataset_id}",
                     "staging_data_buckets": staging_data_buckets,
                 }
 
@@ -135,7 +135,7 @@ def main(args):
                     projects[team_id]["multimodal_sc_data"] = "Boolean"
 
                 if args.workflow_name == "pmdbs_bulk_rnaseq_analysis":
-                    projects[team_id]["project_sample_metadata_csv"] = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/metadata/release/SAMPLE.csv"
+                    projects[team_id]["project_sample_metadata_csv"] = f"gs://asap-raw-{dataset_id}/metadata/release/SAMPLE.csv"
 
                 if args.workflow_name == "spatial_geomx_analysis":
                     projects[team_id] = {
@@ -144,10 +144,10 @@ def main(args):
                         "dataset_doi_url": dataset_doi_url,
                         "slides": [slide],
                         "run_project_cohort_analysis": run_project_cohort_analysis,
-                        "raw_data_bucket": f"gs://asap-raw-{team_id}-{source}-{team_dataset}",
+                        "raw_data_bucket": f"gs://asap-raw-{dataset_id}",
                         "staging_data_buckets": staging_data_buckets,
                     }
-                    projects[team_id]["project_sample_metadata_csv"] = f"gs://asap-raw-{team_id}-{source}-{team_dataset}/metadata/release/SAMPLE.csv"
+                    projects[team_id]["project_sample_metadata_csv"] = f"gs://asap-raw-{dataset_id}/metadata/release/SAMPLE.csv"
                     projects[team_id]["geomx_config_ini"] = "File"
             else:
                 if args.workflow_name == "spatial_geomx_analysis":
@@ -185,12 +185,12 @@ def main(args):
 
         inputs_json[projects_key] = projects
 
-    cohort_raw_data_bucket = f"gs://asap-raw-cohort-{source}-{args.cohort_dataset}"
+    cohort_raw_data_bucket = f"gs://asap-raw-{args.cohort_dataset_id}"
     inputs_json[
         f"{args.workflow_name}.cohort_raw_data_bucket"
     ] = cohort_raw_data_bucket
     cohort_staging_data_buckets = [
-        f"gs://asap-{staging_bucket_type}-cohort-{source}-{args.cohort_dataset}"
+        f"gs://asap-{staging_bucket_type}-{args.cohort_dataset_id}"
         for staging_bucket_type in staging_bucket_types
     ]
     inputs_json[
@@ -199,12 +199,12 @@ def main(args):
 
     team_id_prefix, sample_list_df = generate_sample_list(projects)
 
-    inputs_output_filename = f"inputs.{staging_env}.{source}-{args.cohort_dataset}.{date}.json"
+    inputs_output_filename = f"inputs.{staging_env}.{args.cohort_dataset_id}.{date}.json"
     with open(inputs_output_filename, "w") as f:
         json.dump(inputs_json, f, indent=4)
     print(f"Wrote input JSON file: {inputs_output_filename}")
 
-    samples_output_filename = f"{team_id_prefix}.{source}-{args.cohort_dataset}.sample_list.{date}.tsv"
+    samples_output_filename = f"{team_id_prefix}.{args.cohort_dataset_id}.sample_list.{date}.tsv"
     sample_list_df.to_csv(f"{samples_output_filename}", sep="\t", index=False)
     print(f"Wrote sample list TSV file: {samples_output_filename}")
 
@@ -243,6 +243,7 @@ if __name__ == "__main__":
         type=str,
         choices=[
             "sc_rnaseq_analysis",
+            "sc_atacseq_analysis",
             "pmdbs_bulk_rnaseq_analysis",
             "spatial_visium_analysis",
             "spatial_geomx_analysis"
@@ -252,12 +253,17 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "-b",
-        "--cohort-dataset",
+        "--cohort-dataset-id",
         type=str,
         required=True,
-        help="Dataset name in cohort bucket name without source (e.g. sc-rnaseq).",
+        help="Dataset ID in cohort bucket name (e.g. cohort-pmdbs-sc-rnaseq).",
     )
 
     args = parser.parse_args()
+
+    if not args.cohort_dataset_id.startswith("cohort"):
+        raise SystemExit(
+            f"--cohort-dataset-id must start with 'cohort', got: '{args.cohort_dataset_id}'"
+        )
 
     main(args)

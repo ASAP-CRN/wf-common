@@ -66,13 +66,13 @@ def get_team_name(bucket_name):
 	return team
 
 
-def strip_team_name(team_name: str) -> str:
+def strip_team_prefix(entity_id: str) -> str:
     """Strip 'team' prefix if present: dataset directories do not have 'team' prefix"""
-    norm_team_name = team_name.strip().lower()
-    norm_team_name = re.sub(r'^team[-_ ]*', '', norm_team_name)
-    if not norm_team_name:
-        raise ValueError(f"Team name: [{team_name}] is empty after stripping 'team' prefix: [{norm_team_name}]")
-    return norm_team_name
+    norm_id = entity_id.strip().lower()
+    norm_id = re.sub(r'^team[-_ ]*', '', norm_id)
+    if not norm_id:
+        raise ValueError(f"ID: [{entity_id}] is empty after stripping 'team' prefix: [{norm_id}]")
+    return norm_id
 
 
 def run_command(command):
