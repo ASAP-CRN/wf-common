@@ -2,11 +2,11 @@
 
 # Ensure that the raw bucket file structure is valid after contributors have
 # uploaded their data.
-# Usage: python3 validate_raw_bucket_structure.py -t jakobsson -ds pmdbs-bulk-rnaseq
+# Usage: python3 validate_raw_bucket_structure.py -d team-jakobsson-pmdbs-bulk-rnaseq
 
 import argparse
 import logging
-from common import strip_team_name
+from common import strip_team_prefix
 from bucket_validation_utils import (
     validate_raw_bucket_structure, 
     check_original_metadata_files_in_bucket
@@ -19,10 +19,10 @@ logging.basicConfig(
 
 
 def main(args):
-    
-    team_name = strip_team_name(args.team_name)
-    dataset_name = args.dataset_name
-    bucket_name = f"gs://asap-raw-team-{team_name}-{dataset_name}"
+
+    dataset_id = args.dataset_id
+    dataset_name = strip_team_prefix(dataset_id)
+    bucket_name = f"gs://asap-raw-{dataset_id}"
     
     logging.info(f"Validating raw bucket structure for: {bucket_name}")
     
@@ -45,17 +45,13 @@ if __name__ == "__main__":
     )
     
     parser.add_argument(
-        "-t",
-        "--team_name",
+        "-d",
+        "--dataset-id",
+        type=str,
         required=True,
-        help="The team name of the dataset (e.g., jakobsson)"
-    )
-    parser.add_argument(
-        "-ds",
-        "--dataset_name",
-        required=True,
-        help="The name of the dataset (e.g., pmdbs-sn-rnaseq)"
+        help="Dataset ID in bucket name (e.g., team-jakobsson-pmdbs-sn-rnaseq)"
     )
     
     args = parser.parse_args()
+
     main(args)
