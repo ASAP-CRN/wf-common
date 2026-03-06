@@ -130,7 +130,7 @@ if __name__ == "__main__":
         "--dataset-id",
         type=str,
         required=True,
-        help="Dataset ID in bucket name (e.g., team-jakobsson-pmdbs-sn-rnaseq)"
+        help="Dataset ID in bucket name (e.g., team-jakobsson-pmdbs-sn-rnaseq)."
     )
     parser.add_argument(
         "-p",
@@ -141,5 +141,10 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+
+    if not (args.dataset_id.startswith("team") or args.dataset_id.startswith("cohort")):
+        raise SystemExit(
+            f"--dataset-id must start with 'team' or 'cohort', got: '{args.dataset_id}'"
+        )
 
     main(args)
