@@ -170,11 +170,11 @@ def main(args):
 			production_bucket = f"gs://asap-curated-{dataset_id}"
 
 			production_workflow_bucket = f"gs://asap-curated-{dataset_id}/{args.workflow_name}"
-			production_workflow_release_version_bucket = f"gs://asap-curated-{dataset_id}/{args.workflow_name}/release/{release_version}"
+			production_workflow_release_version_bucket = f"gs://asap-curated-{dataset_id}/{args.workflow_name}/release/{args.release_version}"
 			production_workflow_metadata_path = f"{production_workflow_release_version_bucket}/workflow_metadata/{formatted_time}"
 
-			dev_workflow_metadata_path = f"{staging_dev_bucket}/{args.workflow_name}/release/{release_version}/workflow_metadata/{formatted_time}"
-			uat_workflow_metadata_path = f"{staging_uat_bucket}/{args.workflow_name}/release/{release_version}/workflow_metadata/{formatted_time}"
+			dev_workflow_metadata_path = f"{staging_dev_bucket}/{args.workflow_name}/release/{args.release_version}/workflow_metadata/{formatted_time}"
+			uat_workflow_metadata_path = f"{staging_uat_bucket}/{args.workflow_name}/release/{args.release_version}/workflow_metadata/{formatted_time}"
 			file_results["uat"]["combined_manifest_df"].to_csv(f"{dataset_id_underscore}_MANIFEST.tsv", index=False, sep="\t")
 
 			cohort = "cohort" in dataset_id
@@ -250,6 +250,13 @@ if __name__ == "__main__":
 		help="Workflow name used as a directory in bucket."
 	)
 	parser.add_argument(
+		"-v",
+		"--release-version",
+		type=str,
+		required=True,
+		help="Release version."
+	)
+	parser.add_argument(
 		"-p",
 		"--promote",
 		action="store_true",
@@ -258,5 +265,11 @@ if __name__ == "__main__":
 	)
 
 	args = parser.parse_args()
+
+	pattern = r"^v\d+\.\d+\.\d+$"
+	if not re.match(pattern, args.release_version):
+		raise ValueError(
+			f"Release version: [{args.release_version}] is invalid. Expected format example: v4.0.0"
+		)
 
 	main(args)
