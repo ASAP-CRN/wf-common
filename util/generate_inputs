@@ -185,12 +185,12 @@ def main(args):
 
         inputs_json[projects_key] = projects
 
-    cohort_raw_data_bucket = f"gs://asap-raw-{args.cohort_dataset_name}"
+    cohort_raw_data_bucket = f"gs://asap-raw-{args.cohort_dataset_id}"
     inputs_json[
         f"{args.workflow_name}.cohort_raw_data_bucket"
     ] = cohort_raw_data_bucket
     cohort_staging_data_buckets = [
-        f"gs://asap-{staging_bucket_type}-{args.cohort_dataset_name}"
+        f"gs://asap-{staging_bucket_type}-{args.cohort_dataset_id}"
         for staging_bucket_type in staging_bucket_types
     ]
     inputs_json[
@@ -199,12 +199,12 @@ def main(args):
 
     team_id_prefix, sample_list_df = generate_sample_list(projects)
 
-    inputs_output_filename = f"inputs.{staging_env}.{args.cohort_dataset_name}.{date}.json"
+    inputs_output_filename = f"inputs.{staging_env}.{args.cohort_dataset_id}.{date}.json"
     with open(inputs_output_filename, "w") as f:
         json.dump(inputs_json, f, indent=4)
     print(f"Wrote input JSON file: {inputs_output_filename}")
 
-    samples_output_filename = f"{team_id_prefix}.{args.cohort_dataset_name}.sample_list.{date}.tsv"
+    samples_output_filename = f"{team_id_prefix}.{args.cohort_dataset_id}.sample_list.{date}.tsv"
     sample_list_df.to_csv(f"{samples_output_filename}", sep="\t", index=False)
     print(f"Wrote sample list TSV file: {samples_output_filename}")
 
@@ -253,17 +253,17 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "-b",
-        "--cohort-dataset-name",
+        "--cohort-dataset-id",
         type=str,
         required=True,
-        help="Dataset name in cohort bucket name (e.g. cohort-pmdbs-sc-rnaseq).",
+        help="Dataset ID in cohort bucket name (e.g. cohort-pmdbs-sc-rnaseq).",
     )
 
     args = parser.parse_args()
 
-    if not args.cohort_dataset_name.startswith("cohort"):
+    if not args.cohort_dataset_id.startswith("cohort"):
         raise SystemExit(
-            f"--cohort-dataset-name must start with 'cohort', got: '{args.cohort_dataset_name}'"
+            f"--cohort-dataset-id must start with 'cohort', got: '{args.cohort_dataset_id}'"
         )
 
     main(args)
