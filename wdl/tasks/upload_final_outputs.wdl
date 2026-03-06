@@ -6,6 +6,7 @@ task upload_final_outputs {
 
 		Array[String] staging_data_buckets
 		String staging_data_path
+		String workflow_version
 		String billing_project
 		String zones
 	}
@@ -44,6 +45,11 @@ task upload_final_outputs {
 
 			echo "${staging_data_bucket}/~{staging_data_path}/MANIFEST.tsv" \
 			>> manifest_locs.txt
+
+			echo ~{workflow_version} > workflow_version
+			gcloud storage cp --billing-project=~{billing_project} \
+				workflow_version \
+				"${staging_data_bucket}/~{staging_data_path}/"
 		done < ~{write_lines(staging_data_buckets)}
 	>>>
 
