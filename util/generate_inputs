@@ -221,7 +221,7 @@ if __name__ == "__main__":
         type=str,
         action="append",
         required=True,
-        help="Project TSV including information for samples present in the project; columns team_id, sample_id, batch, fastq_path. Can provide one per project, or include all samples in a single TSV.",
+        help="Project TSV including information for samples present in the project; columns team_id, sample_id, batch, fastq paths, etc. Can provide one per project, or include all samples in a single TSV.",
     )
     parser.add_argument(
         "-i",
