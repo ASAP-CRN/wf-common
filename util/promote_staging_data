@@ -2,6 +2,7 @@
 
 import argparse
 import sys
+import re
 import logging
 import subprocess
 from datetime import datetime, timezone
@@ -169,10 +170,12 @@ def main(args):
 			staging_uat_bucket = f"gs://asap-uat-{dataset_id}"
 			production_bucket = f"gs://asap-curated-{dataset_id}"
 
-			production_workflow_bucket = f"gs://asap-curated-{dataset_id}/{args.workflow_name}"
-			production_workflow_release_version_bucket = f"gs://asap-curated-{dataset_id}/{args.workflow_name}/release/{args.release_version}"
-			production_workflow_metadata_path = f"{production_workflow_release_version_bucket}/workflow_metadata/{formatted_time}"
+			production_workflow_path = f"gs://asap-curated-{dataset_id}/{args.workflow_name}"
+			production_release_version_path = f"gs://asap-curated-{dataset_id}/{args.workflow_name}/release/{args.release_version}"
+			production_workflow_metadata_path = f"{production_release_version_path}/workflow_metadata/{formatted_time}"
 
+			dev_workflow_release_version_path = f"{staging_dev_bucket}/{args.workflow_name}/release/{args.release_version}"
+			uat_workflow_release_version_path = f"{staging_uat_bucket}/{args.workflow_name}/release/{args.release_version}"
 			dev_workflow_metadata_path = f"{staging_dev_bucket}/{args.workflow_name}/release/{args.release_version}/workflow_metadata/{formatted_time}"
 			uat_workflow_metadata_path = f"{staging_uat_bucket}/{args.workflow_name}/release/{args.release_version}/workflow_metadata/{formatted_time}"
 			file_results["uat"]["combined_manifest_df"].to_csv(f"{dataset_id_underscore}_MANIFEST.tsv", index=False, sep="\t")
@@ -182,6 +185,7 @@ def main(args):
 			if dry_run:
 				logging.info(f"Would copy {dataset_id_underscore}_MANIFEST.tsv to {dev_workflow_metadata_path}/MANIFEST.tsv and {uat_workflow_metadata_path}/MANIFEST.tsv")
 				logging.info(f"Would copy {dataset_id_underscore}_data_promotion_report.md to {dev_workflow_metadata_path}/data_promotion_report.md and {uat_workflow_metadata_path}/data_promotion_report.md")
+				logging.info(f"Would copy workflow_version plain text file to {dev_workflow_release_version_path} and {uat_workflow_release_version_path}")
 				logging.info(f"Would remove internal-qc-data label from [{raw_bucket}]")
 				if not cohort:
 					logging.info(f"Would grant storage.objectViewer permission to asap-cloud-readers@verily-bvdp.com on [{raw_bucket}]")
@@ -192,6 +196,10 @@ def main(args):
 				gcopy(f"{dataset_id_underscore}_MANIFEST.tsv", f"{uat_workflow_metadata_path}/MANIFEST.tsv")
 				gcopy(f"{dataset_id_underscore}_data_promotion_report.md", f"{dev_workflow_metadata_path}/data_promotion_report.md")
 				gcopy(f"{dataset_id_underscore}_data_promotion_report.md", f"{uat_workflow_metadata_path}/data_promotion_report.md")
+				logging.info(f"Uploading workflow_version for [{dataset_id}]")
+				open("workflow_version", "w").write(workflow_version)
+				gcopy({workflow_version}, {dev_workflow_release_version_path})
+				gcopy({workflow_version}, {uat_workflow_release_version_path})
 				logging.info(f"Removing internal-qc-data label from [{raw_bucket}]")
 				remove_internal_qc_label(raw_bucket)
 				if not cohort:

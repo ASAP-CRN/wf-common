@@ -14,20 +14,20 @@ from google.cloud import storage
 ######################################################################
 # Urgent and Minor Release or platforming exercise during a Major Release
 completed_platforming_raw_buckets = [
-	# Human Single Nucleus RNAseq hybsel
+	# Human Single Nucleus RNA-seq hybsel
 	"gs://asap-raw-team-scherzer-pmdbs-sn-rnaseq-mtg-hybsel",
-	# Mouse Single Nucleus/Cell RNAseq
+	# Mouse Single Nucleus/Cell RNA-seq
 	"gs://asap-raw-team-schlossmacher-mouse-sn-rnaseq-osn-aav-transd",
 	"gs://asap-raw-team-alessi-mouse-sn-rnaseq-dorsal-striatum-g2019s",
 	"gs://asap-raw-team-lee-mouse-sn-rnaseq-midbrain-g2019s-hf-diet",
-	# Human PMDBS Single Nucleus/Cell RNAseq (other)
+	# Human PMDBS Single Nucleus/Cell RNA-seq (other)
 	"gs://asap-raw-team-scherzer-pmdbs-genetics",
-	# Invitro Bulk RNAseq
+	# Invitro Bulk RNA-seq
 	"gs://asap-raw-team-jakobsson-invitro-bulk-rnaseq-dopaminergic",
 	"gs://asap-raw-team-jakobsson-invitro-bulk-rnaseq-microglia",
 	# Invitro Proteomics
 	"gs://asap-raw-team-alessi-invitro-ms-p-hek293-gtip",
-	# Mouse Bulk RNAseq (non-brain)
+	# Mouse Bulk RNA-seq (non-brain)
 	"gs://asap-raw-team-lee-mouse-liver-bulk-rnaseq-g2019s",
 	"gs://asap-raw-team-lee-mouse-bulk-rnaseq-striatum-g2019s-hf-diet",
 	# Fecal Metagenome
@@ -148,7 +148,7 @@ def change_gg_storage_admin_to_read_write(bucket_name):
 ##########################################################################
 # Minor and Major Release that includes pipeline/curated outputs
 unembargoed_dev_buckets_and_workflow_version_outputs = {
-	# Human PMDBS Single Nucleus/Cell RNAseq
+	# Human PMDBS Single Nucleus/Cell RNA-seq
 	"gs://asap-dev-team-hafler-pmdbs-sn-rnaseq-pfc": "v3.0.0",
 	"gs://asap-dev-team-hardy-pmdbs-sn-rnaseq": "v3.0.0",
 	"gs://asap-dev-team-scherzer-pmdbs-sn-rnaseq-mtg": "v3.0.0",
@@ -156,11 +156,11 @@ unembargoed_dev_buckets_and_workflow_version_outputs = {
 	"gs://asap-dev-team-lee-pmdbs-sn-rnaseq": "v3.0.0",
 	"gs://asap-dev-team-sulzer-pmdbs-sn-rnaseq": "v3.1.0",
 	"gs://asap-dev-cohort-pmdbs-sc-rnaseq": "v3.1.0",
-	# Mouse Single Nucleus/Cell RNAseq
+	# Mouse Single Nucleus/Cell RNA-seq
 	"gs://asap-dev-team-biederer-mouse-sc-rnaseq": "v4.0.0",
 	"gs://asap-dev-team-cragg-mouse-sn-rnaseq-striatum": "v4.0.0",
 	"gs://asap-dev-cohort-mouse-sc-rnaseq": "v4.0.0",
-	# Human PMDBS Bulk RNAseq
+	# Human PMDBS Bulk RNA-seq
 	"gs://asap-dev-team-hardy-pmdbs-bulk-rnaseq": "v1.1.1",
 	"gs://asap-dev-team-lee-pmdbs-bulk-rnaseq-mfg": "v1.1.1",
 	"gs://asap-dev-team-wood-pmdbs-bulk-rnaseq": "v1.1.1",
@@ -172,6 +172,8 @@ unembargoed_dev_buckets_and_workflow_version_outputs = {
 	"gs://asap-dev-team-scherzer-pmdbs-spatial-visium-mtg": "v1.0.1",
 	# Mouse Spatial Transcriptomics 10x Visium
 	"gs://asap-dev-team-cragg-mouse-spatial-visium-striatum": "v1.0.0",
+	# Human PMDBS Single Nucleus/Cell ATAC-seq
+	"gs://asap-dev-team-voet-pmdbs-sn-atacseq-10x": "v1.0.0",
 }
 
 embargoed_dev_buckets = [
