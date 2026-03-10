@@ -196,13 +196,13 @@ def main(args):
 
         inputs_json[projects_key] = projects
 
-    dataset_id = args.cohort_dataset_id or team_id # placeholder
-    cohort_raw_data_bucket = f"gs://asap-raw-{dataset_id}"
+    cohort_dataset_id = args.cohort_dataset_id or dataset_id # placeholder
+    cohort_raw_data_bucket = f"gs://asap-raw-{cohort_dataset_id}"
     inputs_json[
         f"{args.workflow_name}.cohort_raw_data_bucket"
     ] = cohort_raw_data_bucket
     cohort_staging_data_buckets = [
-        f"gs://asap-{staging_bucket_type}-{dataset_id}"
+        f"gs://asap-{staging_bucket_type}-{cohort_dataset_id}"
         for staging_bucket_type in staging_bucket_types
     ]
     inputs_json[
@@ -211,12 +211,12 @@ def main(args):
 
     team_id_prefix, sample_list_df = generate_sample_list(projects)
 
-    inputs_output_filename = f"inputs.{staging_env}.{dataset_id}.{date}.json"
+    inputs_output_filename = f"inputs.{staging_env}.{cohort_dataset_id}.{date}.json"
     with open(inputs_output_filename, "w") as f:
         json.dump(inputs_json, f, indent=4)
     print(f"Wrote input JSON file: {inputs_output_filename}")
 
-    samples_output_filename = f"{team_id_prefix}.{dataset_id}.sample_list.{date}.tsv"
+    samples_output_filename = f"{team_id_prefix}.{cohort_dataset_id}.sample_list.{date}.tsv"
     sample_list_df.to_csv(f"{samples_output_filename}", sep="\t", index=False)
     print(f"Wrote sample list TSV file: {samples_output_filename}")
 
