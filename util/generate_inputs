@@ -147,7 +147,7 @@ def main(args):
                     projects[team_id]["multimodal_sc_data"] = "Boolean"
 
                 if args.workflow_name == "bulk_rnaseq_analysis":
-                    projects[team_id]["asap_project_sample_metadata_csv"] = f"gs://asap-raw-{dataset_id}/metadata/release/SAMPLE.csv"
+                    projects[team_id]["asap_project_sample_metadata_csv"] = f"gs://asap-raw-{dataset_id}/metadata/release/{args.release_version}/SAMPLE.csv"
 
                 if args.workflow_name == "spatial_geomx_analysis":
                     projects[team_id] = {
@@ -159,7 +159,7 @@ def main(args):
                         "raw_data_bucket": f"gs://asap-raw-{dataset_id}",
                         "staging_data_buckets": staging_data_buckets,
                     }
-                    projects[team_id]["asap_project_sample_metadata_csv"] = f"gs://asap-raw-{dataset_id}/metadata/release/SAMPLE.csv"
+                    projects[team_id]["asap_project_sample_metadata_csv"] = f"gs://asap-raw-{dataset_id}/metadata/release/{args.release_version}/SAMPLE.csv"
                     projects[team_id]["geomx_config_ini"] = "File"
             else:
                 if args.workflow_name == "spatial_geomx_analysis":
@@ -265,6 +265,13 @@ if __name__ == "__main__":
         help="WDL workflow name.",
     )
     parser.add_argument(
+        "-v",
+        "--release-version",
+        type=str,
+        required=True,
+        help="Release version."
+    )
+    parser.add_argument(
         "-b",
         "--cohort-dataset-id",
         type=str,
@@ -273,6 +280,12 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+
+    pattern = r"^v\d+\.\d+\.\d+$"
+    if not re.match(pattern, args.release_version):
+        raise ValueError(
+            f"Release version: [{args.release_version}] is invalid. Expected format example: v4.0.0"
+        )
 
     if args.cohort_dataset_id:
         if not args.cohort_dataset_id.startswith("cohort"):
