@@ -146,7 +146,7 @@ def main(args):
                 if args.workflow_name == "sc_rnaseq_analysis":
                     projects[team_id]["multimodal_sc_data"] = "Boolean"
 
-                if args.workflow_name == "pmdbs_bulk_rnaseq_analysis":
+                if args.workflow_name == "bulk_rnaseq_analysis":
                     projects[team_id]["asap_project_sample_metadata_csv"] = f"gs://asap-raw-{dataset_id}/metadata/release/SAMPLE.csv"
 
                 if args.workflow_name == "spatial_geomx_analysis":
@@ -257,7 +257,7 @@ if __name__ == "__main__":
         choices=[
             "sc_rnaseq_analysis",
             "sc_atacseq_analysis",
-            "pmdbs_bulk_rnaseq_analysis",
+            "bulk_rnaseq_analysis",
             "spatial_visium_analysis",
             "spatial_geomx_analysis"
         ],
