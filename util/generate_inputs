@@ -16,12 +16,12 @@ def generate_sample_list(projects):
     sample_list_table = []
 
     for project in projects:
-        team_id = project["team_id"]
-        dataset_doi_url = project["dataset_doi_url"]
+        team_id = project["asap_team_id"]
+        dataset_doi_url = project["asap_dataset_doi_url"]
         if args.workflow_name == "spatial_geomx_analysis":
             for slide in project["slides"]:
                 for sample in slide["samples"]:
-                    sample_id = sample["sample_id"]
+                    sample_id = sample["asap_sample_id"]
                     sample_list_table.append({
                         "team_id": team_id,
                         "sample_id": sample_id,
@@ -29,7 +29,7 @@ def generate_sample_list(projects):
                     })
         else:
             for sample in project["samples"]:
-                sample_id = sample["sample_id"]
+                sample_id = sample["asap_sample_id"]
                 sample_list_table.append({
                     "team_id": team_id,
                     "sample_id": sample_id,
@@ -70,8 +70,8 @@ def main(args):
             )
         for index, row in project_df.iterrows():
             team_id = row.team_id
-            dataset_id = row.ASAP_dataset_id
-            sample_id = row.ASAP_sample_id
+            asap_dataset_id = row.ASAP_dataset_id
+            asap_sample_id = row.ASAP_sample_id
             batch = str(row.batch)
             fastq_R1s = literal_eval(row.fastq_R1s)
             fastq_R2s = literal_eval(row.fastq_R2s)
@@ -79,8 +79,9 @@ def main(args):
             fastq_I2s = literal_eval(row.fastq_I2s)
 
             source = row.source
-            dataset_name = row.dataset_name
-            dataset_doi_url = row.dataset_DOI_url
+            dataset_id = row.dataset_id
+            modality_flavour = row.modality_flavour
+            asap_dataset_doi_url = row.dataset_DOI_url
 
             if args.workflow_name == "spatial_visium_analysis":
                 visium_brightfield_image = f"gs://asap-raw-{dataset_id}/spatial/images/" + row.visium_cytassist
@@ -95,7 +96,7 @@ def main(args):
             if args.workflow_name == "sc_atacseq_analysis":
                 fastq_R3s = literal_eval(row.fastq_R3s)
                 sample = {
-                    "sample_id": sample_id,
+                    "asap_sample_id": asap_sample_id,
                     "fastq_R1s": fastq_R1s,
                     "fastq_R2s": fastq_R2s,
                     "fastq_R3s": fastq_R3s,
@@ -104,7 +105,7 @@ def main(args):
                 }
             else:
                 sample = {
-                    "sample_id": sample_id,
+                    "asap_sample_id": asap_sample_id,
                     "fastq_R1s": fastq_R1s,
                     "fastq_R2s": fastq_R2s,
                     "fastq_I1s": fastq_I1s,
@@ -134,8 +135,8 @@ def main(args):
 
                 projects[team_id] = {
                     "asap_team_id": team_id,
-                    "asap_dataset_id": dataset_id,
-                    "asap_dataset_doi_url": dataset_doi_url,
+                    "asap_dataset_id": asap_dataset_id,
+                    "asap_dataset_doi_url": asap_dataset_doi_url,
                     "samples": [sample],
                     "run_project_cohort_analysis": run_project_cohort_analysis,
                     "raw_data_bucket": f"gs://asap-raw-{dataset_id}",
@@ -151,8 +152,8 @@ def main(args):
                 if args.workflow_name == "spatial_geomx_analysis":
                     projects[team_id] = {
                         "asap_team_id": team_id,
-                        "asap_dataset_id": dataset_id,
-                        "asap_dataset_doi_url": dataset_doi_url,
+                        "asap_dataset_id": asap_dataset_id,
+                        "asap_dataset_doi_url": asap_dataset_doi_url,
                         "slides": [slide],
                         "run_project_cohort_analysis": run_project_cohort_analysis,
                         "raw_data_bucket": f"gs://asap-raw-{dataset_id}",
