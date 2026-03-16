@@ -230,7 +230,7 @@ def list_gs_files(bucket, release_version, workflow_name):
 	sample_list_loc = []
 	pattern = re.compile(rf"{workflow_name}/release/{release_version}/") # This excludes most recent release version
 	for blob in blobs:
-		if not pattern.match(blob.name):
+		if pattern.match(blob.name):
 			blob_names.append(blob.name)
 			gs_files.append(f"gs://{bucket.name}/{blob.name}")
 			if blob.name.endswith("sample_list.tsv"):
@@ -243,7 +243,7 @@ def read_manifest_files(bucket, release_version, workflow_name):
 	manifest_dfs = []
 	pattern = re.compile(rf"{workflow_name}/release/{release_version}/")
 	for blob in blobs:
-		if blob.name.endswith("MANIFEST.tsv") and not pattern.match(blob.name):
+		if blob.name.endswith("MANIFEST.tsv") and pattern.match(blob.name):
 			content = blob.download_as_text()
 			manifest_df = pd.read_csv(StringIO(content), sep="\t")
 			manifest_dfs.append(manifest_df)
@@ -256,7 +256,7 @@ def md5_check(bucket, release_version, workflow_name):
 	hashes = {}
 	pattern = re.compile(rf"{workflow_name}/release/{release_version}/")
 	for blob in blobs:
-		if not pattern.match(blob.name):
+		if pattern.match(blob.name):
 			hashes[blob] = blob.md5_hash
 	return hashes
 
@@ -266,7 +266,7 @@ def non_empty_check(bucket, release_version, workflow_name, GREEN_CHECKMARK, RED
 	not_empty_tests = {}
 	pattern = re.compile(rf"{workflow_name}/release/{release_version}/")
 	for blob in blobs:
-		if not pattern.match(blob.name):
+		if pattern.match(blob.name):
 			if blob.size <= 10:
 				logging.error(f"Found a file less than or equal to 10 bytes: [{blob.name}]")
 				not_empty_tests[blob.name] = f"{RED_X}"
