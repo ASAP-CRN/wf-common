@@ -228,7 +228,7 @@ def list_gs_files(bucket, release_version, workflow_name):
 	blob_names = []
 	gs_files = []
 	sample_list_loc = []
-	pattern = re.compile(rf"{workflow_name}/release/{release_version}/") # This excludes most recent release version
+	pattern = re.compile(rf"{workflow_name}/release/{release_version}/") # This checks for the most recent release version
 	for blob in blobs:
 		if pattern.match(blob.name):
 			blob_names.append(blob.name)
