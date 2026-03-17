@@ -44,7 +44,7 @@ tmp_file = "tmp.txt"
 
 # This will also upload the past data promotion reports and combined MANIFEST.tsv's in workflow_name/release/release_version/workflow_metadata folder
 def gsync_del(source_path, destination_path, workflow_name, dry_run):
-	exclude_regex = rf"(release|{workflow_name})(/.*)?$"
+	exclude_regex = rf"({workflow_name})(/.*)?$"
 	command = [
 		"gcloud",
 		"storage",
@@ -215,17 +215,6 @@ def main(args):
 			logging.info(f"\tProduction bucket:\t[{production_bucket}]")
 			gsync_del(f"{staging_uat_bucket}/{args.workflow_name}", f"{production_bucket}/{args.workflow_name}", args.workflow_name, dry_run)
 			gsync_del(staging_uat_bucket, production_bucket, args.workflow_name, dry_run)
-
-			# Folder path must exist for rsync
-			if not previous_curated_outputs_exist:
-				with open(tmp_file, "w") as f:
-					pass
-				gmove(tmp_file, f"{production_release_version_path}/")
-			logging.info(f"Saving workflow version [{workflow_version}] of [{dataset_id}] production data in release folder")
-			logging.info(f"\tProduction bucket path:\t\t[{production_workflow_path}]")
-			logging.info(f"\tProduction release/<release_version> bucket path:\t[{production_release_version_path}]")
-			# Dry and real run will only work if staging data gets promoted to production in previous step
-			gsync_del(production_workflow_path, production_release_version_path, args.workflow_name, dry_run)
 
 			if dry_run:
 				logging.info(f"Would copy {uat_workflow_metadata_path} to {production_workflow_metadata_path}")
