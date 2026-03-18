@@ -6,7 +6,6 @@ task upload_final_outputs {
 
 		Array[String] staging_data_buckets
 		String staging_data_path
-		String workflow_version
 		String billing_project
 		String zones
 	}
