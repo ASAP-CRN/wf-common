@@ -212,6 +212,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"-v",
 		"--release-version",
+		type=str,
 		required=True,
 		help="Release version."
 	)

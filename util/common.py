@@ -14,20 +14,20 @@ from google.cloud import storage
 ######################################################################
 # Urgent and Minor Release or platforming exercise during a Major Release
 completed_platforming_raw_buckets = [
-	# Human Single Nucleus RNAseq hybsel
+	# Human Single Nucleus RNA-seq hybsel
 	"gs://asap-raw-team-scherzer-pmdbs-sn-rnaseq-mtg-hybsel",
-	# Mouse Single Nucleus/Cell RNAseq
+	# Mouse Single Nucleus/Cell RNA-seq
 	"gs://asap-raw-team-schlossmacher-mouse-sn-rnaseq-osn-aav-transd",
 	"gs://asap-raw-team-alessi-mouse-sn-rnaseq-dorsal-striatum-g2019s",
 	"gs://asap-raw-team-lee-mouse-sn-rnaseq-midbrain-g2019s-hf-diet",
-	# Human PMDBS Single Nucleus/Cell RNAseq (other)
+	# Human PMDBS Single Nucleus/Cell RNA-seq (other)
 	"gs://asap-raw-team-scherzer-pmdbs-genetics",
-	# Invitro Bulk RNAseq
+	# Invitro Bulk RNA-seq
 	"gs://asap-raw-team-jakobsson-invitro-bulk-rnaseq-dopaminergic",
 	"gs://asap-raw-team-jakobsson-invitro-bulk-rnaseq-microglia",
 	# Invitro Proteomics
 	"gs://asap-raw-team-alessi-invitro-ms-p-hek293-gtip",
-	# Mouse Bulk RNAseq (non-brain)
+	# Mouse Bulk RNA-seq (non-brain)
 	"gs://asap-raw-team-lee-mouse-liver-bulk-rnaseq-g2019s",
 	"gs://asap-raw-team-lee-mouse-bulk-rnaseq-striatum-g2019s-hf-diet",
 	# Fecal Metagenome
@@ -148,7 +148,7 @@ def change_gg_storage_admin_to_read_write(bucket_name):
 ##########################################################################
 # Minor and Major Release that includes pipeline/curated outputs
 unembargoed_dev_buckets_and_workflow_version_outputs = {
-	# Human PMDBS Single Nucleus/Cell RNAseq
+	# Human PMDBS Single Nucleus/Cell RNA-seq
 	"gs://asap-dev-team-hafler-pmdbs-sn-rnaseq-pfc": "v3.0.0",
 	"gs://asap-dev-team-hardy-pmdbs-sn-rnaseq": "v3.0.0",
 	"gs://asap-dev-team-scherzer-pmdbs-sn-rnaseq-mtg": "v3.0.0",
@@ -156,11 +156,13 @@ unembargoed_dev_buckets_and_workflow_version_outputs = {
 	"gs://asap-dev-team-lee-pmdbs-sn-rnaseq": "v3.0.0",
 	"gs://asap-dev-team-sulzer-pmdbs-sn-rnaseq": "v3.1.0",
 	"gs://asap-dev-cohort-pmdbs-sc-rnaseq": "v3.1.0",
-	# Mouse Single Nucleus/Cell RNAseq
+	# Mouse Single Nucleus/Cell RNA-seq
 	"gs://asap-dev-team-biederer-mouse-sc-rnaseq": "v4.0.0",
 	"gs://asap-dev-team-cragg-mouse-sn-rnaseq-striatum": "v4.0.0",
 	"gs://asap-dev-cohort-mouse-sc-rnaseq": "v4.0.0",
-	# Human PMDBS Bulk RNAseq
+	# Human PMDBS Single Nucleus/Cell ATAC-seq
+	"gs://asap-dev-team-voet-pmdbs-sn-atacseq-10x": "v1.0.0",
+	# Human PMDBS Bulk RNA-seq
 	"gs://asap-dev-team-hardy-pmdbs-bulk-rnaseq": "v1.1.1",
 	"gs://asap-dev-team-lee-pmdbs-bulk-rnaseq-mfg": "v1.1.1",
 	"gs://asap-dev-team-wood-pmdbs-bulk-rnaseq": "v1.1.1",
@@ -221,14 +223,14 @@ def list_teams():
 		logging.info(team)
 
 
-def list_gs_files(bucket, workflow_name):
+def list_gs_files(bucket, release_version, workflow_name):
 	blobs = bucket.list_blobs(prefix=workflow_name) # This skips the curated metadata and artifacts directories
 	blob_names = []
 	gs_files = []
 	sample_list_loc = []
-	pattern = re.compile(rf"{workflow_name}/archive/")
+	pattern = re.compile(rf"{workflow_name}/release/{release_version}/") # This checks for the most recent release version
 	for blob in blobs:
-		if not pattern.match(blob.name):
+		if pattern.match(blob.name):
 			blob_names.append(blob.name)
 			gs_files.append(f"gs://{bucket.name}/{blob.name}")
 			if blob.name.endswith("sample_list.tsv"):
@@ -236,12 +238,12 @@ def list_gs_files(bucket, workflow_name):
 	return blob_names, gs_files, sample_list_loc
 
 
-def read_manifest_files(bucket, workflow_name):
+def read_manifest_files(bucket, release_version, workflow_name):
 	blobs = bucket.list_blobs(prefix=workflow_name) # This has to be called again because 'Iterator has already started'
 	manifest_dfs = []
-	pattern = re.compile(rf"{workflow_name}/archive/")
+	pattern = re.compile(rf"{workflow_name}/release/{release_version}/")
 	for blob in blobs:
-		if blob.name.endswith("MANIFEST.tsv") and not pattern.match(blob.name):
+		if blob.name.endswith("MANIFEST.tsv") and pattern.match(blob.name):
 			content = blob.download_as_text()
 			manifest_df = pd.read_csv(StringIO(content), sep="\t")
 			manifest_dfs.append(manifest_df)
@@ -249,22 +251,22 @@ def read_manifest_files(bucket, workflow_name):
 	return combined_df
 
 
-def md5_check(bucket, workflow_name):
+def md5_check(bucket, release_version, workflow_name):
 	blobs = bucket.list_blobs(prefix=workflow_name)
 	hashes = {}
-	pattern = re.compile(rf"{workflow_name}/archive/")
+	pattern = re.compile(rf"{workflow_name}/release/{release_version}/")
 	for blob in blobs:
-		if not pattern.match(blob.name):
+		if pattern.match(blob.name):
 			hashes[blob] = blob.md5_hash
 	return hashes
 
 
-def non_empty_check(bucket, workflow_name, GREEN_CHECKMARK, RED_X):
+def non_empty_check(bucket, release_version, workflow_name, GREEN_CHECKMARK, RED_X):
 	blobs = bucket.list_blobs(prefix=workflow_name)
 	not_empty_tests = {}
-	pattern = re.compile(rf"{workflow_name}/archive/")
+	pattern = re.compile(rf"{workflow_name}/release/{release_version}/")
 	for blob in blobs:
-		if not pattern.match(blob.name):
+		if pattern.match(blob.name):
 			if blob.size <= 10:
 				logging.error(f"Found a file less than or equal to 10 bytes: [{blob.name}]")
 				not_empty_tests[blob.name] = f"{RED_X}"

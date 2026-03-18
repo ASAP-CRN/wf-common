@@ -2,6 +2,7 @@
 
 import argparse
 import sys
+import re
 import logging
 import subprocess
 from datetime import datetime, timezone
@@ -41,9 +42,9 @@ logging.basicConfig(
 
 tmp_file = "tmp.txt"
 
-# This will also upload the past data promotion reports and combined MANIFEST.tsv's in archive workflow_metadata folder
+# This will also upload the past data promotion reports and combined MANIFEST.tsv's in workflow_name/release/release_version/workflow_metadata folder
 def gsync_del(source_path, destination_path, workflow_name, dry_run):
-	exclude_regex = rf"(archive|{workflow_name})(/.*)?$"
+	exclude_regex = rf"({workflow_name})(/.*)?$"
 	command = [
 		"gcloud",
 		"storage",
@@ -74,10 +75,12 @@ def main(args):
 	# Subset buckets/datasets based on workflow_name provided
 	WORKFLOW_FILTERS = {
 		"pmdbs_sc_rnaseq": ("pmdbs-sn-rnaseq", "pmdbs-sc-rnaseq"),
+		"mouse_sc_rnaseq": ("mouse-sn-rnaseq", "mouse-sc-rnaseq"),
+		"pmdbs_sc_atacseq": ("pmdbs-sn-atacseq", "pmdbs-sc-atacseq"),
 		"pmdbs_bulk_rnaseq": ("pmdbs-bulk-rnaseq",),
+		"invitro_bulk_rnaseq": ("invitro-bulk-rnaseq",),
 		"spatial_visium": ("spatial-visium",),
 		"spatial_geomx": ("spatial-geomx",),
-		"mouse_sc_rnaseq": ("mouse-sn-rnaseq", "mouse-sc-rnaseq"),
 	}
 	patterns = WORKFLOW_FILTERS.get(args.workflow_name)
 	dev_buckets_version = {
@@ -106,12 +109,12 @@ def main(args):
 			if args.workflow_name in dirs:
 				# Data integrity tests
 				logging.info(f"Running data integrity tests on [{bucket_name}]")
-				blob_names, gs_files, sample_list_loc = list_gs_files(bucket, args.workflow_name)
+				blob_names, gs_files, sample_list_loc = list_gs_files(bucket, args.release_version, args.workflow_name)
 				if len(sample_list_loc) > 0:
 					previous_curated_outputs_exist = True
 					logging.info("Previous curated outputs exist")
-					combined_manifest_df = read_manifest_files(bucket, args.workflow_name)
-					md5_hashes = md5_check(bucket, args.workflow_name)
+					combined_manifest_df = read_manifest_files(bucket, args.release_version, args.workflow_name)
+					md5_hashes = md5_check(bucket, args.release_version, args.workflow_name)
 					file_results[env] = {
 						"blob_names": blob_names,
 						"gs_files": gs_files,
@@ -127,7 +130,7 @@ def main(args):
 				logging.info("Previous curated outputs do not exist")
 
 		bucket = client.get_bucket(f"asap-uat-{dataset_id}")
-		not_empty_test_results = non_empty_check(bucket, args.workflow_name, GREEN_CHECKMARK, RED_X)
+		not_empty_test_results = non_empty_check(bucket, args.release_version, args.workflow_name, GREEN_CHECKMARK, RED_X)
 		metadata_present_test_results = associated_metadata_check(file_results["uat"]["combined_manifest_df"], file_results["uat"]["blob_names"], GREEN_CHECKMARK, RED_X)
 		data_integrity_test_results = {**not_empty_test_results, **metadata_present_test_results}
 		all_tests_result_status = "True"
@@ -169,12 +172,14 @@ def main(args):
 			staging_uat_bucket = f"gs://asap-uat-{dataset_id}"
 			production_bucket = f"gs://asap-curated-{dataset_id}"
 
-			production_workflow_bucket = f"gs://asap-curated-{dataset_id}/{args.workflow_name}"
-			production_workflow_version_bucket = f"gs://asap-curated-{dataset_id}/{args.workflow_name}/archive/workflow_version/{workflow_version}"
-			production_workflow_metadata_path = f"{production_workflow_version_bucket}/workflow_metadata/{formatted_time}"
+			production_workflow_path = f"gs://asap-curated-{dataset_id}/{args.workflow_name}"
+			production_release_version_path = f"gs://asap-curated-{dataset_id}/{args.workflow_name}/release/{args.release_version}"
+			production_workflow_metadata_path = f"{production_release_version_path}/workflow_metadata/{formatted_time}"
 
-			dev_workflow_metadata_path = f"{staging_dev_bucket}/{args.workflow_name}/archive/workflow_version/{workflow_version}/workflow_metadata/{formatted_time}"
-			uat_workflow_metadata_path = f"{staging_uat_bucket}/{args.workflow_name}/archive/workflow_version/{workflow_version}/workflow_metadata/{formatted_time}"
+			dev_workflow_release_version_path = f"{staging_dev_bucket}/{args.workflow_name}/release/{args.release_version}"
+			uat_workflow_release_version_path = f"{staging_uat_bucket}/{args.workflow_name}/release/{args.release_version}"
+			dev_workflow_metadata_path = f"{staging_dev_bucket}/{args.workflow_name}/release/{args.release_version}/workflow_metadata/{formatted_time}"
+			uat_workflow_metadata_path = f"{staging_uat_bucket}/{args.workflow_name}/release/{args.release_version}/workflow_metadata/{formatted_time}"
 			file_results["uat"]["combined_manifest_df"].to_csv(f"{dataset_id_underscore}_MANIFEST.tsv", index=False, sep="\t")
 
 			cohort = "cohort" in dataset_id
@@ -182,6 +187,7 @@ def main(args):
 			if dry_run:
 				logging.info(f"Would copy {dataset_id_underscore}_MANIFEST.tsv to {dev_workflow_metadata_path}/MANIFEST.tsv and {uat_workflow_metadata_path}/MANIFEST.tsv")
 				logging.info(f"Would copy {dataset_id_underscore}_data_promotion_report.md to {dev_workflow_metadata_path}/data_promotion_report.md and {uat_workflow_metadata_path}/data_promotion_report.md")
+				logging.info(f"Would copy workflow_version plain text file to {dev_workflow_release_version_path} and {uat_workflow_release_version_path}")
 				logging.info(f"Would remove internal-qc-data label from [{raw_bucket}]")
 				if not cohort:
 					logging.info(f"Would grant storage.objectViewer permission to asap-cloud-readers@verily-bvdp.com on [{raw_bucket}]")
@@ -192,6 +198,10 @@ def main(args):
 				gcopy(f"{dataset_id_underscore}_MANIFEST.tsv", f"{uat_workflow_metadata_path}/MANIFEST.tsv")
 				gcopy(f"{dataset_id_underscore}_data_promotion_report.md", f"{dev_workflow_metadata_path}/data_promotion_report.md")
 				gcopy(f"{dataset_id_underscore}_data_promotion_report.md", f"{uat_workflow_metadata_path}/data_promotion_report.md")
+				logging.info(f"Uploading workflow_version for [{dataset_id}]")
+				open("workflow_version", "w").write(workflow_version)
+				gcopy("workflow_version", f"{dev_workflow_release_version_path}/workflow_version")
+				gcopy("workflow_version", f"{uat_workflow_release_version_path}/workflow_version")
 				logging.info(f"Removing internal-qc-data label from [{raw_bucket}]")
 				remove_internal_qc_label(raw_bucket)
 				if not cohort:
@@ -205,17 +215,6 @@ def main(args):
 			logging.info(f"\tProduction bucket:\t[{production_bucket}]")
 			gsync_del(f"{staging_uat_bucket}/{args.workflow_name}", f"{production_bucket}/{args.workflow_name}", args.workflow_name, dry_run)
 			gsync_del(staging_uat_bucket, production_bucket, args.workflow_name, dry_run)
-
-			# Folder path must exist for rsync
-			if not previous_curated_outputs_exist:
-				with open(tmp_file, "w") as f:
-					pass
-				gmove(tmp_file, f"{production_workflow_version_bucket}/")
-			logging.info(f"Saving workflow version [{workflow_version}] of [{dataset_id}] production data in archive folder")
-			logging.info(f"\tProduction bucket path:\t\t[{production_workflow_bucket}]")
-			logging.info(f"\tProduction archive/workflow_version bucket path:\t[{production_workflow_version_bucket}]")
-			# Dry and real run will only work if staging data gets promoted to production in previous step
-			gsync_del(production_workflow_bucket, production_workflow_version_bucket, args.workflow_name, dry_run)
 
 			if dry_run:
 				logging.info(f"Would copy {uat_workflow_metadata_path} to {production_workflow_metadata_path}")
@@ -244,10 +243,25 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"-w",
 		"--workflow-name",
-		choices=['pmdbs_sc_rnaseq', 'pmdbs_bulk_rnaseq', 'spatial_visium', 'spatial_geomx', 'mouse_sc_rnaseq'],
+		choices=[
+			'pmdbs_sc_rnaseq',
+			'mouse_sc_rnaseq',
+			'pmdbs_sc_atacseq',
+			'pmdbs_bulk_rnaseq',
+			'invitro_bulk_rnaseq',
+			'spatial_visium',
+			'spatial_geomx',
+		],
 		type=str,
 		required=True,
 		help="Workflow name used as a directory in bucket."
+	)
+	parser.add_argument(
+		"-v",
+		"--release-version",
+		type=str,
+		required=True,
+		help="Release version."
 	)
 	parser.add_argument(
 		"-p",
@@ -258,5 +272,11 @@ if __name__ == "__main__":
 	)
 
 	args = parser.parse_args()
+
+	pattern = r"^v\d+\.\d+\.\d+$"
+	if not re.match(pattern, args.release_version):
+		raise ValueError(
+			f"Release version: [{args.release_version}] is invalid. Expected format example: v4.0.0"
+		)
 
 	main(args)
