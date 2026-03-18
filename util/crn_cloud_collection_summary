@@ -10,7 +10,7 @@ cat << EOF
   - Raw bucket sizes include files that are used for development
   - Storage size used for this project is much larger since unreleased data is stored in there as well and cross-team cohort data
   - Sample and subject breakdown is ongoing as more data modalities are being added
-  - Samples included in the same data modality does NOT mean all samples went through curation
+  - Samples included in the same data assay/modality does NOT mean all samples went through curation
 
   Output: crn_cloud_collection_summary.<date_str>.tsv
 
@@ -230,7 +230,7 @@ calculate_breakdown() {
         bucket = $bucket_col
         total_count += count
         
-        # Data modality grouping logic
+        # Data assay/modality grouping logic
         if (bucket ~ /sc-rnaseq/ || bucket ~ /sn-rnaseq/) {
             grp["sc_sn"] += count
         } else if (bucket ~ /bulk-rnaseq/) {

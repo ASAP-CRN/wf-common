@@ -160,6 +160,8 @@ unembargoed_dev_buckets_and_workflow_version_outputs = {
 	"gs://asap-dev-team-biederer-mouse-sc-rnaseq": "v4.0.0",
 	"gs://asap-dev-team-cragg-mouse-sn-rnaseq-striatum": "v4.0.0",
 	"gs://asap-dev-cohort-mouse-sc-rnaseq": "v4.0.0",
+	# Human PMDBS Single Nucleus/Cell ATAC-seq
+	"gs://asap-dev-team-voet-pmdbs-sn-atacseq-10x": "v1.0.0",
 	# Human PMDBS Bulk RNA-seq
 	"gs://asap-dev-team-hardy-pmdbs-bulk-rnaseq": "v1.1.1",
 	"gs://asap-dev-team-lee-pmdbs-bulk-rnaseq-mfg": "v1.1.1",
@@ -172,8 +174,6 @@ unembargoed_dev_buckets_and_workflow_version_outputs = {
 	"gs://asap-dev-team-scherzer-pmdbs-spatial-visium-mtg": "v1.0.1",
 	# Mouse Spatial Transcriptomics 10x Visium
 	"gs://asap-dev-team-cragg-mouse-spatial-visium-striatum": "v1.0.0",
-	# Human PMDBS Single Nucleus/Cell ATAC-seq
-	"gs://asap-dev-team-voet-pmdbs-sn-atacseq-10x": "v1.0.0",
 }
 
 embargoed_dev_buckets = [
@@ -223,14 +223,14 @@ def list_teams():
 		logging.info(team)
 
 
-def list_gs_files(bucket, workflow_name):
+def list_gs_files(bucket, release_version, workflow_name):
 	blobs = bucket.list_blobs(prefix=workflow_name) # This skips the curated metadata and artifacts directories
 	blob_names = []
 	gs_files = []
 	sample_list_loc = []
-	pattern = re.compile(rf"{workflow_name}/archive/")
+	pattern = re.compile(rf"{workflow_name}/release/{release_version}/") # This checks for the most recent release version
 	for blob in blobs:
-		if not pattern.match(blob.name):
+		if pattern.match(blob.name):
 			blob_names.append(blob.name)
 			gs_files.append(f"gs://{bucket.name}/{blob.name}")
 			if blob.name.endswith("sample_list.tsv"):
@@ -238,12 +238,12 @@ def list_gs_files(bucket, workflow_name):
 	return blob_names, gs_files, sample_list_loc
 
 
-def read_manifest_files(bucket, workflow_name):
+def read_manifest_files(bucket, release_version, workflow_name):
 	blobs = bucket.list_blobs(prefix=workflow_name) # This has to be called again because 'Iterator has already started'
 	manifest_dfs = []
-	pattern = re.compile(rf"{workflow_name}/archive/")
+	pattern = re.compile(rf"{workflow_name}/release/{release_version}/")
 	for blob in blobs:
-		if blob.name.endswith("MANIFEST.tsv") and not pattern.match(blob.name):
+		if blob.name.endswith("MANIFEST.tsv") and pattern.match(blob.name):
 			content = blob.download_as_text()
 			manifest_df = pd.read_csv(StringIO(content), sep="\t")
 			manifest_dfs.append(manifest_df)
@@ -251,22 +251,22 @@ def read_manifest_files(bucket, workflow_name):
 	return combined_df
 
 
-def md5_check(bucket, workflow_name):
+def md5_check(bucket, release_version, workflow_name):
 	blobs = bucket.list_blobs(prefix=workflow_name)
 	hashes = {}
-	pattern = re.compile(rf"{workflow_name}/archive/")
+	pattern = re.compile(rf"{workflow_name}/release/{release_version}/")
 	for blob in blobs:
-		if not pattern.match(blob.name):
+		if pattern.match(blob.name):
 			hashes[blob] = blob.md5_hash
 	return hashes
 
 
-def non_empty_check(bucket, workflow_name, GREEN_CHECKMARK, RED_X):
+def non_empty_check(bucket, release_version, workflow_name, GREEN_CHECKMARK, RED_X):
 	blobs = bucket.list_blobs(prefix=workflow_name)
 	not_empty_tests = {}
-	pattern = re.compile(rf"{workflow_name}/archive/")
+	pattern = re.compile(rf"{workflow_name}/release/{release_version}/")
 	for blob in blobs:
-		if not pattern.match(blob.name):
+		if pattern.match(blob.name):
 			if blob.size <= 10:
 				logging.error(f"Found a file less than or equal to 10 bytes: [{blob.name}]")
 				not_empty_tests[blob.name] = f"{RED_X}"

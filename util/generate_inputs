@@ -80,7 +80,7 @@ def main(args):
 
             source = row.source
             dataset_id = row.dataset_id
-            modality_flavour = row.modality_flavour
+            assay = row.assay
             asap_dataset_doi_url = row.dataset_DOI_url
 
             if args.workflow_name == "spatial_visium_analysis":
