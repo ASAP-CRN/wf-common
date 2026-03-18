@@ -159,7 +159,7 @@ calculate_breakdown() {
         total_count += count
         team_count[asap_team] += count
 
-        # Data modality grouping logic
+        # Data assay/modality grouping logic
         data_type_category = ""
         if (bucket ~ /sc-rnaseq/ || bucket ~ /sn-rnaseq/) {
             data_type_category = "sc_sn"

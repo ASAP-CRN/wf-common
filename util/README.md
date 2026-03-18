@@ -214,13 +214,13 @@ metadata/
 
 ![Scripts used in different Data Release Scenarios diagram](./data_promotion_diagram.svg "Data promotion diagram")
 
-Note: Previous Minor Releases did not contain pipeline/curated outputs (SOW 2); however, moving forward there will be outputs (SOW 3 - onwards) [06/12/2025]. Minor Releases apply to both diagrams, as some datasets may include either pipeline/curated outputs depending on the data modality. If a dataset was previously released in an Urgent or Minor Release and is later scheduled for a Major Release, the curated buckets will be overwritten with the most recent version of the data.
+Note: Previous Minor Releases did not contain pipeline/curated outputs (SOW 2); however, moving forward there will be outputs (SOW 3 - onwards) [06/12/2025]. Minor Releases apply to both diagrams, as some datasets may include either pipeline/curated outputs depending on the data assay/modality. If a dataset was previously released in an Urgent or Minor Release and is later scheduled for a Major Release, the curated buckets will be overwritten with the most recent version of the data.
 
 ---
 
 ## Output bucket structure
 ```
-asap-{dev,uat,curated}-{cohort,team-xxyy}-{source}-{modality_flavour}-{context}
+asap-{dev,uat,curated}-{cohort,team-xxyy}-{source}-{assay}-{context}
 ├── <raw_data>
 ├── artifacts
 ├── file_metadata
@@ -245,7 +245,7 @@ asap-{dev,uat,curated}-{cohort,team-xxyy}-{source}-{modality_flavour}-{context}
 
 # CRN Cloud Statistics
 
-Utility scripts for tracking ASAP dataset statistics across the CRN Cloud and internal GCP infrastructure. Reports on bucket sizes, sample/subject counts, and breakdowns by data modality and biological origin.
+Utility scripts for tracking ASAP dataset statistics across the CRN Cloud and internal GCP infrastructure. Reports on bucket sizes, sample/subject counts, and breakdowns by data assay/modality and biological origin.
 
 ## Scripts
 
@@ -322,7 +322,7 @@ OPTIONS
 
 Both scripts print a breakdown to stdout after writing the TSV, including counts grouped by:
 
-**Data modality**
+**Data assay/modality**
 | Group | Matched bucket patterns |
 |-------|------------------------|
 | sc/sn RNAseq | `sc-rnaseq`, `sn-rnaseq` |
