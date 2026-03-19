@@ -4,9 +4,26 @@ import logging
 import subprocess
 import json
 import pandas as pd
+import os
 import re
+import gspread
 from io import StringIO
 from google.cloud import storage
+from google.oauth2.service_account import Credentials
+
+
+#####################################################
+##### PULL FROM LIVE GOOGLE SPREADSHEET AS SSOT #####
+#####################################################
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+SHEET_ID = "1-Up6AWBw3jc7EO3xVg6jrpK8a_NN1LVaVGXRpPPjesk"
+RELEASES_TAB_NAME = "Releases_automated"
+
+def get_releases_df(credentials_path: str = os.path.expanduser("~/.config/gspread/credentials.json")) -> pd.DataFrame:
+	creds = Credentials.from_service_account_file(credentials_path, scopes=SCOPES)
+	gc = gspread.authorize(creds)
+	ws = gc.open_by_key(SHEET_ID).worksheet(RELEASES_TAB_NAME)
+	return pd.DataFrame(ws.get_all_records())
 
 
 ######################################################################
@@ -214,7 +231,6 @@ ALL_TEAMS = [
 	"team-edwards",
 	"team-vila",
 ]
-
 
 
 def list_teams():
