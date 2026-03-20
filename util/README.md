@@ -245,7 +245,7 @@ asap-{dev,uat,curated}-{cohort,team-xxyy}-{source}-{assay}-{context}
 
 # Set up for pulling data from live Google Spreadsheets using [`gspread`](https://docs.gspread.org/en/v6.1.4/index.html)
 
-1. Grant the SA asap-gcs-admin@dnastack-asap-parkinsons.iam.gserviceaccount.com Viewer access to the Google Spreadsheet
+1. Grant the SA asap-gcs-admin@dnastack-asap-parkinsons.iam.gserviceaccount.com Viewer access to the Google Spreadsheet.
 2. Download the SA credentials:
 ```bash
 gcloud iam service-accounts keys create ~/.config/gspread/credentials.json \

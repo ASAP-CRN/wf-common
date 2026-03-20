@@ -7,9 +7,8 @@ import logging
 import subprocess
 from google.cloud import storage
 from common import (
+	releases_df,
 	completed_platforming_raw_buckets,
-	unembargoed_platforming_raw_buckets,
-	embargoed_platforming_raw_buckets,
 	unembargoed_dev_buckets_and_workflow_version_outputs,
 	embargoed_dev_buckets,
 	list_dirs,
@@ -25,6 +24,11 @@ from common import (
 logging.basicConfig(
 	level=logging.INFO,
 	format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
+# Get SSOT from "Dataset Tracker - Scoping and Release" Google Spreadsheet
+unembargoed_platforming_raw_buckets = (
+	releases_df[releases_df["release_version"] == args.release_version]["raw_buckets"].tolist()
 )
 
 
@@ -54,7 +58,6 @@ def main(args):
 		logging.info("Urgent and Minor release or platforming exercise related info:")
 		logging.info(f"Previously released team buckets:\n" + "\n".join(completed_platforming_raw_buckets))
 		logging.info(f"Unembargoed team buckets:\n" + "\n".join(unembargoed_platforming_raw_buckets))
-		logging.info(f"Embargoed team buckets:\n" + "\n".join(embargoed_platforming_raw_buckets))
 		logging.info("Minor and Major release related info (pipeline/curated outputs present):")
 		logging.info(f"Unembargoed team buckets:\n" + "\n".join(unembargoed_team_dev_buckets))
 		logging.info(f"Embargoed team buckets:\n" + "\n".join(embargoed_dev_buckets))
@@ -64,7 +67,7 @@ def main(args):
 
 	if args.type_of_release == "urgent" or args.type_of_release == "minor":
 		if args.all_datasets:
-			raw_buckets_to_promote = completed_platforming_raw_buckets + unembargoed_platforming_raw_buckets
+			raw_buckets_to_promote = list(set(completed_platforming_raw_buckets + unembargoed_platforming_raw_buckets))
 			logging.info(f"Promoting data for all raw buckets: [{raw_buckets_to_promote}]")
 		else:
 			raw_buckets_to_promote = unembargoed_platforming_raw_buckets

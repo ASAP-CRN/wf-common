@@ -18,7 +18,7 @@ from google.oauth2.service_account import Credentials
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 def get_releases_df(
-	sheet_id: str = "1-Up6AWBw3jc7EO3xVg6jrpK8a_NN1LVaVGXRpPPjesk", # TODO
+	sheet_id: str = "1Qx4W3EsGQwRHXKtDd6jBnEyPGsuhxB8YCVdgJ-Mn6Hs",
 	tab_name: str = "Releases_automated",
 	credentials_path: str = os.path.expanduser("~/.config/gspread/credentials.json")
 ) -> pd.DataFrame:
@@ -53,15 +53,6 @@ completed_platforming_raw_buckets = (
 ######################################################################
 ##### PROMOTE QC'ED METADATA AND ARTIFACTS - RAW TO PROD SECTION #####
 ######################################################################
-embargoed_platforming_raw_buckets = [
-	# Metagenomics
-	"gs://asap-raw-team-schapira-fecal-metagenome-human-baseline",
-]
-
-unembargoed_platforming_raw_buckets = [
-]
-
-
 def remove_internal_qc_label(bucket_name):
 	command = [
 		"gcloud",
