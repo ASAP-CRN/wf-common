@@ -38,6 +38,8 @@ unembargoed_dev_buckets_and_workflow_version_outputs = (
 	releases_df[
 		releases_df["workflow_version"].str.startswith("v", na=False)
 	]
+	.sort_values("workflow_version")
+	.drop_duplicates(subset="dev_buckets", keep="last")
 	.set_index("dev_buckets")["workflow_version"]
 	.to_dict()
 )
@@ -46,6 +48,7 @@ completed_platforming_raw_buckets = (
 	releases_df[
 		~releases_df["workflow_version"].str.startswith("v", na=False)
 	]["dataset_id"]
+	.drop_duplicates()
 	.tolist()
 )
 
