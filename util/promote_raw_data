@@ -26,11 +26,6 @@ logging.basicConfig(
 	format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-# Get SSOT from "Dataset Tracker - Scoping and Release" Google Spreadsheet
-unembargoed_platforming_raw_buckets = (
-	releases_df[releases_df["release_version"] == args.release_version]["raw_buckets"].tolist()
-)
-
 
 def gsync_artifacts(source_path, destination_path, dry_run):
 	command = [
@@ -51,6 +46,10 @@ def gsync_artifacts(source_path, destination_path, dry_run):
 
 
 def main(args):
+	# Get SSOT from "Dataset Tracker - Scoping and Release" Google Spreadsheet
+	unembargoed_platforming_raw_buckets = (
+		releases_df[releases_df["release_version"] == args.release_version]["raw_buckets"].tolist()
+	)
 	# Convert dict to list
 	unembargoed_team_dev_buckets = list(unembargoed_dev_buckets_and_workflow_version_outputs.keys())
 
