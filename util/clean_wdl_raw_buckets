@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""
+Cleanup script for GCP raw bucket workflow execution timestamp cohort analysis and downstream folders.
+
+For each unique file path (relative to the timestamp folder) within a version,
+keeps only the copy in the latest timestamp folder and prints gcloud rm commands
+for all older copies.
+
+Usage:
+    ./clean_wdl_raw_buckets           # dry run — prints gcloud storage rm commands
+    ./clean_wdl_raw_buckets -p        # production — actually deletes files
+"""
+
+import argparse
+import logging
+import subprocess
+import sys
+import re
+from collections import defaultdict
+
+from common import (
+    gremove,
+    unembargoed_dev_buckets_and_workflow_version_outputs,
+)
+
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+raw_buckets = [
+    bucket.replace("dev", "raw")
+    for bucket in unembargoed_dev_buckets_and_workflow_version_outputs.keys()
+]
+PREFIX = "workflow_execution/"
+BILLING_PROJECT = "dnastack-asap-parkinsons"
+
+
+def list_files(bucket, prefix):
+    """List all files recursively under bucket/prefix using gcloud storage ls."""
+    uri = f"{bucket}/{prefix}"
+    command = [
+        "gcloud", "storage", "ls", "--recursive",
+        "--billing-project", BILLING_PROJECT,
+        uri
+    ]
+    result = subprocess.run(command, check=True, capture_output=True, text=True)
+    return [
+        line.strip()
+        for line in result.stdout.splitlines()
+        if line.strip() and not line.strip().endswith(":")
+    ]
+
+
+def parse_path(full_path, bucket):
+    """
+    Parse a GCP path, where the timestamp folder always directly contains the file.
+    These are cohort analysis and downstream folders.
+    Handles:
+      gs://bucket/workflow_execution/<subdir>/<version>/<timestamp>/<file>
+      gs://bucket/workflow_execution/<subdir>/<version>/<subdir>/<timestamp>/<file>
+    """
+    prefix_full = f"{bucket}/{PREFIX}"
+    if not full_path.startswith(prefix_full):
+        return None
+
+    remainder = full_path[len(prefix_full):]
+    parts = remainder.split("/")
+
+    # Need at least: subdir/version/timestamp/file = 4 parts
+    if len(parts) < 4:
+        return None
+
+    semver_pattern = re.compile(r"^\d+\.\d+\.\d+$")
+
+    # Find the version index (first semver match)
+    version_idx = next((i for i, p in enumerate(parts) if semver_pattern.match(p)), None)
+    if version_idx is None:
+        return None
+
+    # timestamp is the second-to-last part, file is the last
+    # everything from start to timestamp (inclusive) is the "key", rel_path is the filename
+    timestamp = parts[-2]
+    rel_path = parts[-1]
+    version = "/".join(parts[:version_idx + 1])  # includes leading subdir(s)
+
+    if not rel_path:
+        return None
+
+    return version, timestamp, rel_path
+
+
+def main():
+    for BUCKET in raw_buckets:
+        logging.info(f"Listing files under {BUCKET}/{PREFIX} ...")
+        try:
+            all_files = list_files(BUCKET, PREFIX)
+        except subprocess.CalledProcessError as e:
+            logging.error(f"Failed to list files: {e.stderr}")
+            sys.exit(1)
+        logging.info(f"Found {len(all_files)} files")
+
+        # Group by (version, rel_path) -> list of (timestamp, full_path)
+        groups = defaultdict(list)
+        for full_path in all_files:
+            parsed = parse_path(full_path, BUCKET)
+            if parsed is None:
+                continue
+            version, timestamp, rel_path = parsed
+            groups[(version, rel_path)].append((timestamp, full_path))
+
+        to_delete = []
+        for (version, rel_path), copies in groups.items():
+            if len(copies) == 1:
+                continue  # only one copy, nothing to delete
+            # Timestamp strings are ISO 8601 with dashes — lexicographic sort is correct
+            copies_sorted = sorted(copies, key=lambda x: x[0])
+            # Keep the latest (last), delete the rest
+            for _timestamp, full_path in copies_sorted[:-1]:
+                to_delete.append(full_path)
+
+        if not to_delete:
+            logging.info("Nothing to delete.")
+            continue
+
+        logging.info(f"{len(to_delete)} files to delete.")
+
+        if args.production:
+            logging.info("Running in PRODUCTION mode — deleting files...")
+            for path in sorted(to_delete):
+                gremove(path)
+        else:
+            logging.info("Running in DRY-RUN mode — printing gcloud storage rm commands only.\n")
+            for path in sorted(to_delete):
+                print(f"gcloud storage rm --billing-project={BILLING_PROJECT} '{path}'")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Clean up non-latest timestamp cohort analysis and downstream folder copies in GCP raw buckets."
+    )
+
+    parser.add_argument(
+        "-p",
+        "--production",
+        action="store_true",
+        help="Actually delete files (default is dry-run: print gcloud rm commands only)"
+    )
+
+    args = parser.parse_args()
+
+    main()
