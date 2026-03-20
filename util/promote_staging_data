@@ -5,7 +5,6 @@ import sys
 import re
 import logging
 import subprocess
-import pandas as pd
 from datetime import datetime, timezone
 from google.cloud import storage
 from common import (
@@ -42,7 +41,6 @@ logging.basicConfig(
 )
 
 tmp_file = "tmp.txt"
-
 
 # This will also upload the past data promotion reports and combined MANIFEST.tsv's in workflow_name/release/release_version/workflow_metadata folder
 def gsync_del(source_path, destination_path, workflow_name, dry_run):
