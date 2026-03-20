@@ -4,49 +4,58 @@ import logging
 import subprocess
 import json
 import pandas as pd
+import os
 import re
+import gspread
 from io import StringIO
 from google.cloud import storage
+from google.oauth2.service_account import Credentials
+
+
+#####################################################
+##### PULL FROM LIVE GOOGLE SPREADSHEET AS SSOT #####
+#####################################################
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+
+def get_releases_df(
+	sheet_id: str = "1Qx4W3EsGQwRHXKtDd6jBnEyPGsuhxB8YCVdgJ-Mn6Hs",
+	tab_name: str = "Releases_automated",
+	credentials_path: str = os.path.expanduser("~/.config/gspread/credentials.json")
+) -> pd.DataFrame:
+	creds = Credentials.from_service_account_file(credentials_path, scopes=SCOPES)
+	gc = gspread.authorize(creds)
+	ws = gc.open_by_key(sheet_id).worksheet(tab_name)
+	return pd.DataFrame(ws.get_all_records())
+
+releases_df = get_releases_df()
+releases_df["raw_buckets"] = "gs://asap-raw-" + releases_df["dataset_id"]
+releases_df["dev_buckets"] = "gs://asap-dev-" + releases_df["dataset_id"]
+
+ALL_TEAMS = releases_df["team_id"].unique().tolist()
+
+## Minor and Major Release that includes pipeline/curated outputs
+unembargoed_dev_buckets_and_workflow_version_outputs = (
+	releases_df[
+		releases_df["workflow_version"].str.startswith("v", na=False)
+	]
+	.sort_values("workflow_version")
+	.drop_duplicates(subset="dev_buckets", keep="last")
+	.set_index("dev_buckets")["workflow_version"]
+	.to_dict()
+)
+## Urgent and Minor Release or platforming exercise during a Major Release
+completed_platforming_raw_buckets = (
+	releases_df[
+		~releases_df["workflow_version"].str.startswith("v", na=False)
+	]["dataset_id"]
+	.drop_duplicates()
+	.tolist()
+)
 
 
 ######################################################################
 ##### PROMOTE QC'ED METADATA AND ARTIFACTS - RAW TO PROD SECTION #####
 ######################################################################
-# Urgent and Minor Release or platforming exercise during a Major Release
-completed_platforming_raw_buckets = [
-	# Human Single Nucleus RNA-seq hybsel
-	"gs://asap-raw-team-scherzer-pmdbs-sn-rnaseq-mtg-hybsel",
-	# Mouse Single Nucleus/Cell RNA-seq
-	"gs://asap-raw-team-schlossmacher-mouse-sn-rnaseq-osn-aav-transd",
-	"gs://asap-raw-team-alessi-mouse-sn-rnaseq-dorsal-striatum-g2019s",
-	"gs://asap-raw-team-lee-mouse-sn-rnaseq-midbrain-g2019s-hf-diet",
-	# Human PMDBS Single Nucleus/Cell RNA-seq (other)
-	"gs://asap-raw-team-scherzer-pmdbs-genetics",
-	# Invitro Bulk RNA-seq
-	"gs://asap-raw-team-jakobsson-invitro-bulk-rnaseq-dopaminergic",
-	"gs://asap-raw-team-jakobsson-invitro-bulk-rnaseq-microglia",
-	# Invitro Proteomics
-	"gs://asap-raw-team-alessi-invitro-ms-p-hek293-gtip",
-	# Mouse Bulk RNA-seq (non-brain)
-	"gs://asap-raw-team-lee-mouse-liver-bulk-rnaseq-g2019s",
-	"gs://asap-raw-team-lee-mouse-bulk-rnaseq-striatum-g2019s-hf-diet",
-	# Fecal Metagenome
-	"gs://asap-raw-team-schapira-fecal-metagenome-human-baseline",
-	# Human Colon Spatial CosMx
-	"gs://asap-raw-team-liddle-human-colon-spatial-cosmx-rna-1000p",
-	"gs://asap-raw-team-liddle-human-colon-spatial-cosmx-protein-64p"
-]
-
-
-embargoed_platforming_raw_buckets = [
-	# Metagenomics
-	"gs://asap-raw-team-schapira-fecal-metagenome-human-baseline",
-]
-
-unembargoed_platforming_raw_buckets = [
-]
-
-
 def remove_internal_qc_label(bucket_name):
 	command = [
 		"gcloud",
@@ -146,36 +155,6 @@ def change_gg_storage_admin_to_read_write(bucket_name):
 ##########################################################################
 ##### PROMOTE QC'ED METADATA AND ARTIFACTS - STAGING TO PROD SECTION #####
 ##########################################################################
-# Minor and Major Release that includes pipeline/curated outputs
-unembargoed_dev_buckets_and_workflow_version_outputs = {
-	# Human PMDBS Single Nucleus/Cell RNA-seq
-	"gs://asap-dev-team-hafler-pmdbs-sn-rnaseq-pfc": "v3.0.0",
-	"gs://asap-dev-team-hardy-pmdbs-sn-rnaseq": "v3.0.0",
-	"gs://asap-dev-team-scherzer-pmdbs-sn-rnaseq-mtg": "v3.0.0",
-	"gs://asap-dev-team-jakobsson-pmdbs-sn-rnaseq": "v3.0.0",
-	"gs://asap-dev-team-lee-pmdbs-sn-rnaseq": "v3.0.0",
-	"gs://asap-dev-team-sulzer-pmdbs-sn-rnaseq": "v3.1.0",
-	"gs://asap-dev-cohort-pmdbs-sc-rnaseq": "v3.1.0",
-	# Mouse Single Nucleus/Cell RNA-seq
-	"gs://asap-dev-team-biederer-mouse-sc-rnaseq": "v4.0.0",
-	"gs://asap-dev-team-cragg-mouse-sn-rnaseq-striatum": "v4.0.0",
-	"gs://asap-dev-cohort-mouse-sc-rnaseq": "v4.0.0",
-	# Human PMDBS Single Nucleus/Cell ATAC-seq
-	"gs://asap-dev-team-voet-pmdbs-sn-atacseq-10x": "v1.0.0",
-	# Human PMDBS Bulk RNA-seq
-	"gs://asap-dev-team-hardy-pmdbs-bulk-rnaseq": "v1.1.1",
-	"gs://asap-dev-team-lee-pmdbs-bulk-rnaseq-mfg": "v1.1.1",
-	"gs://asap-dev-team-wood-pmdbs-bulk-rnaseq": "v1.1.1",
-	"gs://asap-dev-team-jakobsson-pmdbs-bulk-rnaseq": "v1.1.1",
-	"gs://asap-dev-cohort-pmdbs-bulk-rnaseq": "v1.1.1",
-	# Human PMDBS Spatial Transcriptomics Nanostring GeoMx
-	"gs://asap-dev-team-edwards-pmdbs-spatial-geomx-th": "v1.0.0",
-	# Human Spatial Transcriptomics 10x Visium
-	"gs://asap-dev-team-scherzer-pmdbs-spatial-visium-mtg": "v1.0.1",
-	# Mouse Spatial Transcriptomics 10x Visium
-	"gs://asap-dev-team-cragg-mouse-spatial-visium-striatum": "v1.0.0",
-}
-
 embargoed_dev_buckets = [
 	# Human PMDBS Multimodal Seq
 	"gs://asap-raw-team-wood-pmdbs-multimodal-seq",
@@ -199,24 +178,6 @@ def list_dirs(bucket_name):
 #######################################
 ##### DATA INTEGRITY TEST SECTION #####
 #######################################
-ALL_TEAMS = [
-	"cohort",
-	"team-hafler",
-	"team-hardy",
-	"team-jakobsson",
-	"team-lee",
-	"team-scherzer",
-	"team-sulzer",
-	"team-voet",
-	"team-wood",
-	"team-biederer",
-	"team-cragg",
-	"team-edwards",
-	"team-vila",
-]
-
-
-
 def list_teams():
 	logging.info("Available teams:")
 	for team in ALL_TEAMS:

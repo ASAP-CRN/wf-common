@@ -14,3 +14,6 @@ promote_staging_data_script.log
 *crn_cloud_collection_summary.*.tsv
 *internal_qc_dataset_collection_summary.*.tsv
 
+# Credentials
+*credentials.json
+

@@ -1,2 +1,4 @@
 pandas>=2.1.0
 google-cloud-storage>=2.18.2
+gspread>=6.1.2
+google-auth>=2.0.0
