@@ -237,11 +237,18 @@ asap-{dev,uat,curated}-{cohort,team-xxyy}-{source}-{assay}-{context}
             ├── <curated_outputs>
             │   ├── ...
             │   └── MANIFEST.tsv
-            ├── workflow_version     # plain text file, no extension
+            ├── VERSION              # plain text file, no extension
             └── workflow_metadata
                 └── ${timestamp}
                     ├── MANIFEST.tsv # combined
                     └── data_promotion_report.md
+```
+
+The `VERSION` plain txt file contains associated versions to the ASAP CRN Cloud Release which can be found on [Zenodo](https://zenodo.org/communities/asaphub/records), following a similar structure to the `metadata/release/<release_version>/VERSION` file:
+```
+WORKFLOW_VERSION=
+COLLECTION_VERSION=
+RELEASE_VERSION=
 ```
 
 
