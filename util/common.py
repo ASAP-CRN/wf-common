@@ -206,8 +206,15 @@ def read_manifest_files(bucket, release_version, workflow_name):
 	pattern = re.compile(rf"{workflow_name}/release/{release_version}/")
 	for blob in blobs:
 		if blob.name.endswith("MANIFEST.tsv") and pattern.match(blob.name):
+			gs_path = f"gs://{bucket.name}/{blob.name}"
+			logging.info(f"Reading manifest: {gs_path}")
 			content = blob.download_as_text()
-			manifest_df = pd.read_csv(StringIO(content), sep="\t")
+			try:
+				manifest_df = pd.read_csv(StringIO(content), sep="\t")
+			except pd.errors.ParserError as e:
+				raise pd.errors.ParserError(
+					f"Failed to parse {gs_path}: {e}"
+				) from e
 			manifest_dfs.append(manifest_df)
 	combined_df = pd.concat(manifest_dfs, ignore_index=True)
 	return combined_df
