@@ -175,7 +175,7 @@ def main(args):
 
 			production_workflow_path = f"gs://asap-curated-{dataset_id}/{args.workflow_name}"
 			production_release_version_path = f"gs://asap-curated-{dataset_id}/{args.workflow_name}/release/{args.release_version}"
-			production_workflow_metadata_path = f"{production_release_version_path}/workflow_metadata/{formatted_time}"
+			production_workflow_metadata_path = f"{production_release_version_path}/workflow_metadata"
 
 			dev_workflow_release_version_path = f"{staging_dev_bucket}/{args.workflow_name}/release/{args.release_version}"
 			uat_workflow_release_version_path = f"{staging_uat_bucket}/{args.workflow_name}/release/{args.release_version}"
