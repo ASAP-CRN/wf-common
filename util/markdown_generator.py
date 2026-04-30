@@ -21,6 +21,7 @@ def generate_markdown_report(
 	dataset_id,
 	dataset_id_underscore,
 	workflow,
+	release_version,
 	file_info,
 	not_empty_tests,
 	metadata_present_tests,

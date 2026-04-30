@@ -148,6 +148,7 @@ def main(args):
 			dataset_id,
 			dataset_id_underscore,
 			args.workflow_name,
+			args.release_version,
 			file_results,
 			not_empty_test_results,
 			metadata_present_test_results,
