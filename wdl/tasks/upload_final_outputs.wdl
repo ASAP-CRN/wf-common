@@ -21,7 +21,7 @@ task upload_final_outputs {
 		gcloud storage cp --billing-project=~{billing_project} -I ./metadata/ \
 		< metadata_paths.txt
 
-		find metadata -type f -exec cat {} \; \
+		find metadata -type f -exec awk 1 {} + \
 		>> MANIFEST.tsv
 
 		while read -r staging_data_bucket || [[ -n "${staging_data_bucket}" ]]; do

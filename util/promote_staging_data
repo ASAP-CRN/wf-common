@@ -148,6 +148,7 @@ def main(args):
 			dataset_id,
 			dataset_id_underscore,
 			args.workflow_name,
+			args.release_version,
 			file_results,
 			not_empty_test_results,
 			metadata_present_test_results,
@@ -174,7 +175,7 @@ def main(args):
 
 			production_workflow_path = f"gs://asap-curated-{dataset_id}/{args.workflow_name}"
 			production_release_version_path = f"gs://asap-curated-{dataset_id}/{args.workflow_name}/release/{args.release_version}"
-			production_workflow_metadata_path = f"{production_release_version_path}/workflow_metadata/{formatted_time}"
+			production_workflow_metadata_path = f"{production_release_version_path}/workflow_metadata"
 
 			dev_workflow_release_version_path = f"{staging_dev_bucket}/{args.workflow_name}/release/{args.release_version}"
 			uat_workflow_release_version_path = f"{staging_uat_bucket}/{args.workflow_name}/release/{args.release_version}"
@@ -187,7 +188,7 @@ def main(args):
 			if dry_run:
 				logging.info(f"Would copy {dataset_id_underscore}_MANIFEST.tsv to {dev_workflow_metadata_path}/MANIFEST.tsv and {uat_workflow_metadata_path}/MANIFEST.tsv")
 				logging.info(f"Would copy {dataset_id_underscore}_data_promotion_report.md to {dev_workflow_metadata_path}/data_promotion_report.md and {uat_workflow_metadata_path}/data_promotion_report.md")
-				logging.info(f"Would copy workflow_version plain text file to {dev_workflow_release_version_path} and {uat_workflow_release_version_path}")
+				logging.info(f"Would copy VERSION plain text file to {dev_workflow_release_version_path} and {uat_workflow_release_version_path}")
 				logging.info(f"Would remove internal-qc-data label from [{raw_bucket}]")
 				if not cohort:
 					logging.info(f"Would grant storage.objectViewer permission to asap-cloud-readers@verily-bvdp.com on [{raw_bucket}]")
@@ -198,10 +199,15 @@ def main(args):
 				gcopy(f"{dataset_id_underscore}_MANIFEST.tsv", f"{uat_workflow_metadata_path}/MANIFEST.tsv")
 				gcopy(f"{dataset_id_underscore}_data_promotion_report.md", f"{dev_workflow_metadata_path}/data_promotion_report.md")
 				gcopy(f"{dataset_id_underscore}_data_promotion_report.md", f"{uat_workflow_metadata_path}/data_promotion_report.md")
-				logging.info(f"Uploading workflow_version for [{dataset_id}]")
-				open("workflow_version", "w").write(workflow_version)
-				gcopy("workflow_version", f"{dev_workflow_release_version_path}/workflow_version")
-				gcopy("workflow_version", f"{uat_workflow_release_version_path}/workflow_version")
+				logging.info(f"Uploading VERSION file for [{dataset_id}]")
+				with open("VERSION", "w") as version_file:
+					version_file.write(
+						f"WORKFLOW_VERSION={workflow_version}\n"
+						f"COLLECTION_VERSION={args.collection_version}\n"
+						f"RELEASE_VERSION={args.release_version}\n"
+					)
+				gcopy("VERSION", f"{dev_workflow_release_version_path}/VERSION")
+				gcopy("VERSION", f"{uat_workflow_release_version_path}/VERSION")
 				logging.info(f"Removing internal-qc-data label from [{raw_bucket}]")
 				remove_internal_qc_label(raw_bucket)
 				if not cohort:
@@ -253,15 +259,22 @@ if __name__ == "__main__":
 			'spatial_geomx',
 		],
 		type=str,
-		required=True,
-		help="Workflow name used as a directory in bucket."
+		required=False,
+		help="Workflow name used as a directory in bucket. Required unless --list is specified."
 	)
 	parser.add_argument(
 		"-v",
 		"--release-version",
 		type=str,
-		required=True,
-		help="Release version."
+		required=False,
+		help="ASAP CRN Cloud Release version. Required unless --list is specified."
+	)
+	parser.add_argument(
+		"-c",
+		"--collection-version",
+		type=str,
+		required=False,
+		help="ASAP CRN Cloud Collection version. Required unless --list is specified."
 	)
 	parser.add_argument(
 		"-p",
@@ -273,10 +286,25 @@ if __name__ == "__main__":
 
 	args = parser.parse_args()
 
-	pattern = r"^v\d+\.\d+\.\d+$"
-	if not re.match(pattern, args.release_version):
-		raise ValueError(
-			f"Release version: [{args.release_version}] is invalid. Expected format example: v4.0.0"
-		)
+	if not args.list:
+		missing = [
+			flag for flag, value in [
+				("--workflow-name", args.workflow_name),
+				("--release-version", args.release_version),
+				("--collection-version", args.collection_version),
+			] if not value
+		]
+		if missing:
+			parser.error(f"The following arguments are required: {', '.join(missing)}")
+
+		version_pattern = re.compile(r"^v\d+\.\d+\.\d+$")
+		for label, value in [
+			("Release", args.release_version),
+			("Collection", args.collection_version),
+		]:
+			if not version_pattern.match(value):
+				raise ValueError(
+					f"{label} version: [{value}] is invalid. Expected format example: v4.0.0"
+				)
 
 	main(args)

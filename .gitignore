@@ -9,6 +9,7 @@ promote_staging_data_script.log
 *_MANIFEST.tsv
 *_data_promotion_report.md
 *workflow_version
+*VERSION
 
 # CRN Cloud Collection summary stats outputs
 *crn_cloud_collection_summary.*.tsv
