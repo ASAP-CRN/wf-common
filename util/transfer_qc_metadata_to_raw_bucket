@@ -71,7 +71,7 @@ def main(args):
         logging.info(f"Transferring local metadata directory to [{metadata_bucket}]")
         
         # Early exit if original metadata is missing: implies incomplete QC
-        if not check_original_metadata_exists_locally(metadata_dir):
+        if not is_cohort and not check_original_metadata_exists_locally(metadata_dir):
             raise ValueError(f"original/ directory is missing in local metadata dir: {metadata_dir}")
         
         gsync(
