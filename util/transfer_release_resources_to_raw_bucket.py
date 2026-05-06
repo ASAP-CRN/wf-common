@@ -91,7 +91,7 @@ def main(args):
     validated_files_per_dataset = {}
     for dataset_id in dataset_ids:
         dataset_name = strip_team_prefix(dataset_id)  # Saved paths use dataset_name (no team- prefix)
-        bucket_name = bucket_name = f"gs://asap-raw-{dataset_id}"
+        bucket_name = f"gs://asap-raw-{dataset_id}"
         files_per_subdir = defaultdict(lambda : defaultdict(dict))
         files_per_subdir["config"] = files_per_subdir.get("config", []) + [f"release_{release_version}.json"]
         files_per_subdir["publisher_cards/text"] = files_per_subdir.get("publisher_cards/text", []) + [f"{dataset_name}_CARD.html"]
@@ -106,7 +106,7 @@ def main(args):
     # Transfers validated files per dataset
     # to gs://asap-raw-team-<dataset_id>/release-resources/<release_version>/
     for dataset_id in dataset_ids:
-        bucket_name = bucket_name = f"gs://asap-raw-{dataset_id}"
+        bucket_name = f"gs://asap-raw-{dataset_id}"
         release_resources_bucket = f"{bucket_name}/release_resources/{release_version}" # Note: "release_resources" (with underscore)
         validate_files = validated_files_per_dataset[dataset_id]
         for local_file_path in validate_files:
