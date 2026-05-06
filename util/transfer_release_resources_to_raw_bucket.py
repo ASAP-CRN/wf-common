@@ -2,7 +2,7 @@
 
 """
 This CLI transfers locally saved release-resources configs and outputs to dataset raw Google bucket
-(i.e. to gs://asap-raw-team-<team_name>-<dataset_name>/release-resources/<release_version>/)
+(i.e. to gs://asap-raw-<dataset_id>/release-resources/<release_version>/)
 
 - Local requirements:
   {your_asap_repos_root}/
@@ -16,9 +16,9 @@ Usage:
     <infile_json> should be a JSON file with the following structure:
     "general": {
     "release_version": "v4.0.1",
-    "dataset_names": [
-        "smith-pmdbs-sc-rnaseq", 
-        "smith-pmdbs-bulk-rnaseq"
+    "dataset_ids": [
+        "team-smith-pmdbs-sc-rnaseq", 
+        "team-smith-pmdbs-bulk-rnaseq"
     ],
     }
 
@@ -51,6 +51,8 @@ from bucket_validation_utils import (
     validate_local_release_resources_structure
 )
 
+from common import strip_team_prefix
+
 logging.basicConfig(
 	level=logging.INFO,
 	format="%(asctime)s - %(levelname)s - %(message)s"
@@ -72,7 +74,7 @@ def main(args):
 
     # general parameters
     release_version = config['general']['release_version']
-    dataset_names = config['general']['dataset_names']
+    dataset_ids = config['general']['dataset_ids']
 
     # Early exit if local release-resources directory is missing
     release_resources_dir = Path(dss_meta_root) / "release-resources" / release_version
@@ -81,31 +83,32 @@ def main(args):
         sys.exit(1)
 
     # Check that buckets exist
-    for dataset_name in dataset_names:
-        bucket_name = f"gs://asap-raw-team-{dataset_name}"
+    for dataset_id in dataset_ids:
+        bucket_name = f"gs://asap-raw-{dataset_id}"
         check_bucket_exists(bucket_name)
 
     # Define key files expected per subdir in local release-resources for each dataset, to validate before transfer
     validated_files_per_dataset = {}
-    for dataset_name in dataset_names:
-        bucket_name = f"gs://asap-raw-team-{dataset_name}"
+    for dataset_id in dataset_ids:
+        dataset_name = strip_team_prefix(dataset_id)  # Saved paths use dataset_name (no team- prefix)
+        bucket_name = f"gs://asap-raw-{dataset_id}"
         files_per_subdir = defaultdict(lambda : defaultdict(dict))
         files_per_subdir["config"] = files_per_subdir.get("config", []) + [f"release_{release_version}.json"]
         files_per_subdir["publisher_cards/text"] = files_per_subdir.get("publisher_cards/text", []) + [f"{dataset_name}_CARD.html"]
         files_per_subdir["publisher_cards/figures/combined"] = files_per_subdir.get("publisher_cards/figures/combined", []) + [f"{dataset_name}-ALL.svg"]
         files_per_subdir["release_stats"] = files_per_subdir.get("release_stats", []) + [f"{dataset_name}/release_stats.json"]
 
-        validated_files_per_dataset[dataset_name] = validate_local_release_resources_structure(
+        validated_files_per_dataset[dataset_id] = validate_local_release_resources_structure(
             release_resources_dir=release_resources_dir,
             files_per_subdir=files_per_subdir
             )
 
     # Transfers validated files per dataset
-    # to gs://asap-raw-team-<team_name>-<dataset_name>/release-resources/<release_version>/
-    for dataset_name in dataset_names:
-        bucket_name = f"gs://asap-raw-team-{dataset_name}"
+    # to gs://asap-raw-team-<dataset_id>/release-resources/<release_version>/
+    for dataset_id in dataset_ids:
+        bucket_name = f"gs://asap-raw-{dataset_id}"
         release_resources_bucket = f"{bucket_name}/release_resources/{release_version}" # Note: "release_resources" (with underscore)
-        validate_files = validated_files_per_dataset[dataset_name]
+        validate_files = validated_files_per_dataset[dataset_id]
         for local_file_path in validate_files:
             bucket_file_path = f"{release_resources_bucket}/{local_file_path.relative_to(release_resources_dir)}"
             if dry_run:
@@ -134,9 +137,9 @@ if __name__ == "__main__":
             "    <infile_json> should be a JSON file with the following structure:\n"
             '    "general": {\n'
             '     "release_version": "v4.0.1",\n'
-            '     "dataset_names": [\n'
-            '        "smith-pmdbs-sc-rnaseq", \n'
-            '        "smith-pmdbs-bulk-rnaseq"\n'
+            '     "dataset_ids": [\n'
+            '        "team-smith-pmdbs-sc-rnaseq", \n'
+            '        "team-smith-pmdbs-bulk-rnaseq"\n'
             '     ],\n'
             '    }\n'
         ),
