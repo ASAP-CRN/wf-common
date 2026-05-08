@@ -170,8 +170,7 @@ def check_original_metadata_files_in_bucket(bucket_name: str) -> bool:
     logging.error(f"No metadata files found in {metadata_dir} or {original_dir}")
     return False
 
-
-    
+ 
 def get_bucket_structure(bucket_name: str) -> tuple[dict, dict, dict]:
     """"
     Check which required, recommended, and optional directories are present in a bucket.
@@ -287,6 +286,7 @@ def check_original_metadata_exists_locally(metadata_dir: Path) -> bool:
     csv_files = list(original_dir.glob("*.csv"))
     return len(csv_files) > 0
 
+
 def validate_local_metadata_structure(
     metadata_dir: Path, 
     release_version: str,
@@ -323,7 +323,10 @@ def validate_local_metadata_structure(
     }
     
     if not results['original']:
-        raise ValueError(f"metadata/original/ directory not found: {original_dir}")
+        if is_cohort:
+            logging.info("Skipping original/ check for cohort dataset")
+        else:
+            raise ValueError(f"metadata/original/ directory not found: {original_dir}")
     
     # CDE/ is not created for cohorts, only release/ metadata copies are made
     if is_cohort:
@@ -349,6 +352,7 @@ def validate_local_metadata_structure(
             
     logging.info(f"Local metadata structure validated for dataset at: {metadata_dir}")
     return results
+
 
 def validate_local_release_resources_structure(
     release_resources_dir: Path, 
