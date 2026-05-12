@@ -53,6 +53,26 @@ echo -e "asap_sample_id\tpublisher_slug"  > "$sample_membership_file"
 echo -e "asap_subject_id\tpublisher_slug" > "$brain_donor_membership_file"
 echo -e "asap_subject_id\tprimary_diagnosis\tpublisher_slug" > "$subject_diagnosis_membership_file"
 
+# Normalize a CSV so that multi-line quoted fields are collapsed to a single line.
+# Embedded newlines (CR/LF) inside quoted fields are replaced with spaces.
+# Embedded commas and quotes are preserved. This makes the CSV safe to parse with
+# awk -F',' downstream (which can't handle multi-line quoted fields).
+# Usage: normalized=$(echo "$raw_csv" | normalize_csv)   OR   normalized=$(normalize_csv <<< "$raw_csv")
+normalize_csv() {
+    python3 -c '
+import csv, io, sys
+text = sys.stdin.read()
+if not text:
+    sys.exit(0)
+reader = csv.reader(io.StringIO(text))
+writer = csv.writer(sys.stdout, lineterminator="\n")
+for row in reader:
+    # Replace embedded newlines in any field with a space
+    cleaned = [c.replace("\r", " ").replace("\n", " ") for c in row]
+    writer.writerow(cleaned)
+'
+}
+
 get_unique_column_count() {
     local csv_content="$1"
     local column_name="$2"
@@ -164,7 +184,7 @@ while IFS= read -r bucket; do
     # First try: metadata/release/SAMPLE.csv
     if gcloud storage ls "$gcp_raw_bucket/metadata/release/SAMPLE.csv" &>/dev/null; then
         echo "  Found metadata/release/SAMPLE.csv"
-        sample_csv=$(gcloud storage cat "$gcp_raw_bucket/metadata/release/SAMPLE.csv")
+        sample_csv=$(gcloud storage cat "$gcp_raw_bucket/metadata/release/SAMPLE.csv" | normalize_csv)
         sample_csv_dir="$gcp_raw_bucket/metadata/release"
         sample_count=$(get_unique_column_count "$sample_csv" "sample_id")
         subject_count=$(get_unique_column_count "$sample_csv" "subject_id")
@@ -175,7 +195,7 @@ while IFS= read -r bucket; do
 
         if [ -n "$sample_csv_loc" ]; then
             echo "  Found SAMPLE.csv at: $sample_csv_loc"
-            sample_csv=$(gcloud storage cat "$sample_csv_loc")
+            sample_csv=$(gcloud storage cat "$sample_csv_loc" | normalize_csv)
             sample_csv_dir="${sample_csv_loc%/SAMPLE.csv}"
             sample_count=$(get_unique_column_count "$sample_csv" "sample_id")
             subject_count=$(get_unique_column_count "$sample_csv" "subject_id")
@@ -225,7 +245,7 @@ while IFS= read -r bucket; do
             dataset_brain_samples=0
             brain_sample_ids=""
             if gcloud storage ls "$pmdbs_loc" &>/dev/null; then
-                pmdbs_csv=$(gcloud storage cat "$pmdbs_loc")
+                pmdbs_csv=$(gcloud storage cat "$pmdbs_loc" | normalize_csv)
                 brain_sample_ids=$(get_unique_column_values "$pmdbs_csv" "sample_id")
                 if [[ -n "$brain_sample_ids" ]]; then
                     dataset_brain_samples=$(echo "$brain_sample_ids" | grep -cv '^$' || true)
@@ -263,7 +283,7 @@ while IFS= read -r bucket; do
 
             dataset_brain_donors=0
             if gcloud storage ls "$clinpath_loc" &>/dev/null; then
-                clinpath_csv=$(gcloud storage cat "$clinpath_loc")
+                clinpath_csv=$(gcloud storage cat "$clinpath_loc" | normalize_csv)
                 clinpath_subjects=$(get_unique_column_values "$clinpath_csv" "subject_id")
 
                 # Write (subject_id, primary_diagnosis, slug) for human/PMDBS datasets — mirrors CRN logic.
@@ -346,11 +366,19 @@ print(n)
 
                 brain_subjects=""
                 if "$_has_pmdbs"; then
-                    # CLINPATH ∩ SAMPLE.subject_id where SAMPLE.sample_id ∈ PMDBS
-                    brain_subjects=$(awk -F',' -v brain_ids="$brain_sample_ids" '
+                    # CLINPATH ∩ SAMPLE.subject_id where SAMPLE.sample_id ∈ PMDBS.
+                    # Write brain_sample_ids to a temp file rather than passing via -v —
+                    # BSD awk (macOS) rejects newlines inside -v argument values with
+                    # "newline in string" errors.
+                    _brain_ids_tmp=$(mktemp /tmp/iqc_brain_ids.XXXXXX)
+                    printf '%s\n' "$brain_sample_ids" > "$_brain_ids_tmp"
+                    brain_subjects=$(awk -F',' -v brain_ids_file="$_brain_ids_tmp" '
                         BEGIN {
-                            n = split(brain_ids, arr, "\n")
-                            for (i=1; i<=n; i++) { gsub(/\r/, "", arr[i]); if (arr[i] != "") is_brain[arr[i]] = 1 }
+                            while ((getline line < brain_ids_file) > 0) {
+                                gsub(/\r/, "", line)
+                                if (line != "") is_brain[line] = 1
+                            }
+                            close(brain_ids_file)
                         }
                         NR==1 {
                             for (i=1; i<=NF; i++) {
@@ -365,6 +393,7 @@ print(n)
                             if (sid in is_brain && sub_id != "") print sub_id
                         }
                     ' <<< "$sample_csv" | sort -u)
+                    rm -f "$_brain_ids_tmp"
                 elif "$_has_region"; then
                     # CLINPATH ∩ SAMPLE.subject_id where SAMPLE.region_level_1 is non-null
                     brain_subjects=$(awk -F',' '
