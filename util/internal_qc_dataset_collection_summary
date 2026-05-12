@@ -161,8 +161,11 @@ calculate_breakdown() {
         # Data assay/modality grouping logic
         data_type_category = ""
         if (bucket ~ /sc-rnaseq/ || bucket ~ /sn-rnaseq/) {
-            data_type_category = "sc_sn"
-            grp["sc_sn"] += count
+            data_type_category = "sc_sn_rna"
+            grp["sc_sn_rna"] += count
+        } else if (bucket ~ /sc-atacseq/ || bucket ~ /sn-atacseq/) {
+            data_type_category = "sc_sn_atac"
+            grp["sc_sn_atac"] += count
         } else if (bucket ~ /bulk-rnaseq/) {
             data_type_category = "bulk"
             grp["bulk"] += count
@@ -214,7 +217,8 @@ calculate_breakdown() {
         print ""
 
         printf "=== BREAKDOWN BY DATA TYPE ===\n"
-        printf "sc/sn RNAseq: %d\n", grp["sc_sn"]
+        printf "sc/sn RNAseq: %d\n", grp["sc_sn_rna"]
+        printf "sc/sn ATACseq: %d\n", grp["sc_sn_atac"]
         printf "bulk RNAseq:  %d\n", grp["bulk"]
         printf "spatial:      %d\n", grp["spatial"]
         printf "proteomics:   %d\n", grp["ms_p"]
