@@ -184,6 +184,9 @@ calculate_breakdown() {
         } else if (bucket ~ /metagenome/) {
             data_type_category = "metagenomics"
             grp["metagenomics"] += count
+        } else if (bucket ~ /wgs/) {
+            data_type_category = "wgs"
+            grp["wgs"] += count
         } else {
             data_type_category = "other"
             grp["other"] += count
@@ -225,6 +228,7 @@ calculate_breakdown() {
         printf "parsebio:     %d\n", grp["parsebio"]
         printf "multimodal:   %d\n", grp["multimodal"]
         printf "metagenomics: %d\n", grp["metagenomics"]
+        printf "wgs:          %d\n", grp["wgs"]
         printf "other:        %d\n", grp["other"]
         print ""
 
@@ -263,8 +267,10 @@ calculate_breakdown() {
             team_name = toupper(substr(team, 1, 1)) substr(team, 2)
             printf "Team %s:\n", team_name
             
-            if (team_data_type_category[team, "sc_sn"] > 0)
-                printf "  sc/sn RNAseq: %d\n", team_data_type_category[team, "sc_sn"]
+            if (team_data_type_category[team, "sc_sn_rna"] > 0)
+                printf "  sc/sn RNAseq: %d\n", team_data_type_category[team, "sc_sn_rna"]
+            if (team_data_type_category[team, "sc_sn_atac"] > 0)
+                printf "  sc/sn ATACseq: %d\n", team_data_type_category[team, "sc_sn_atac"]
             if (team_data_type_category[team, "bulk"] > 0)
                 printf "  bulk RNAseq:  %d\n", team_data_type_category[team, "bulk"]
             if (team_data_type_category[team, "spatial"] > 0)
@@ -277,6 +283,8 @@ calculate_breakdown() {
                 printf "  multimodal:   %d\n", team_data_type_category[team, "multimodal"]
             if (team_data_type_category[team, "metagenomics"] > 0)
                 printf "  metagenomics: %d\n", team_data_type_category[team, "metagenomics"]
+            if (team_data_type_category[team, "wgs"] > 0)
+                printf "  wgs: %d\n", team_data_type_category[team, "wgs"]
             if (team_data_type_category[team, "other"] > 0)
                 printf "  other:        %d\n", team_data_type_category[team, "other"]
             print ""
