@@ -620,6 +620,8 @@ calculate_breakdown() {
         # Data assay/modality grouping logic
         if (bucket ~ /sc-rnaseq/ || bucket ~ /sn-rnaseq/) {
             grp["sc_sn"] += count
+        } else if (bucket ~ /sc-atacseq/ || bucket ~ /sn-atacseq/) {
+            grp["sc_sn_atac"] += count
         } else if (bucket ~ /bulk-rnaseq/) {
             grp["bulk"] += count
         } else if (bucket ~ /spatial/) {
@@ -629,9 +631,13 @@ calculate_breakdown() {
         } else if (bucket ~ /parsebio/) {
             grp["parsebio"] += count
         } else if (bucket ~ /multimodal/ || bucket ~ /multiome/ || bucket ~ /multiomics/) {
-            grp["multimodal"] += count
+            grp["multiome"] += count
         } else if (bucket ~ /metagenome/) {
             grp["metagenomics"] += count
+        } else if (bucket ~ /wgs/) {
+            grp["wgs"] += count
+        } else if (bucket ~ /genetics/ || bucket ~ /genotyp/ || bucket ~ /gwas/) {
+            grp["genetics"] += count
         } else {
             grp["other"] += count
             other_buckets[bucket] = 1
@@ -655,14 +661,17 @@ calculate_breakdown() {
         print ""
 
         print "=== BREAKDOWN BY DATA TYPE ==="
-        printf "sc/sn RNAseq: %d\n", grp["sc_sn"]
-        printf "bulk RNAseq:  %d\n", grp["bulk"]
-        printf "spatial:      %d\n", grp["spatial"]
-        printf "proteomics:   %d\n", grp["ms_p"]
-        printf "parsebio:     %d\n", grp["parsebio"]
-        printf "multimodal:   %d\n", grp["multimodal"]
-        printf "metagenomics: %d\n", grp["metagenomics"]
-        printf "other:        %d\n", grp["other"]
+        printf "sc/sn RNAseq:  %d\n", grp["sc_sn"]
+        printf "sc/sn ATACseq: %d\n", grp["sc_sn_atac"]
+        printf "sc/sn Multiome:%d\n", grp["multiome"]
+        printf "bulk RNAseq:   %d\n", grp["bulk"]
+        printf "spatial:       %d\n", grp["spatial"]
+        printf "proteomics:    %d\n", grp["ms_p"]
+        printf "parsebio:      %d\n", grp["parsebio"]
+        printf "genetics:      %d\n", grp["genetics"]
+        printf "wgs:           %d\n", grp["wgs"]
+        printf "metagenomics:  %d\n", grp["metagenomics"]
+        printf "other:         %d\n", grp["other"]
         print ""
 
         print "=== BUCKETS IN \"OTHER\" DATA MODALITY GROUP ==="
