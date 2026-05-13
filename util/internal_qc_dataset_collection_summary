@@ -44,10 +44,10 @@ output_file="internal_qc_dataset_collection_summary.$date_str.tsv"
 echo -e "publisher_slug\tteam\tgcp_raw_bucket\tgcp_raw_bucket_size\tsample_count\tsubject_count" > "$output_file"
 
 # Membership files (match CRN script's headers so the Python summary tool can read both)
-subject_membership_file="subject_dataset_membership.$date_str.tsv"
-sample_membership_file="sample_dataset_membership.$date_str.tsv"
-brain_donor_membership_file="brain_donor_dataset_membership.$date_str.tsv"
-subject_diagnosis_membership_file="subject_diagnosis_membership.$date_str.tsv"
+subject_membership_file="internal_qc_dataset_collection_summary.subject_dataset_membership.$date_str.tsv"
+sample_membership_file="internal_qc_dataset_collection_summary.sample_dataset_membership.$date_str.tsv"
+brain_donor_membership_file="internal_qc_dataset_collection_summary.brain_donor_dataset_membership.$date_str.tsv"
+subject_diagnosis_membership_file="internal_qc_dataset_collection_summary.subject_diagnosis_membership.$date_str.tsv"
 echo -e "subject_id\tpublisher_slug"      > "$subject_membership_file"
 echo -e "asap_sample_id\tpublisher_slug"  > "$sample_membership_file"
 echo -e "asap_subject_id\tpublisher_slug" > "$brain_donor_membership_file"
@@ -296,16 +296,41 @@ slug = sys.argv[1]
 out  = sys.argv[2]
 text = sys.stdin.read()
 
+import re
+
 # Diagnosis column priority: primary_diagnosis → last_diagnosis → path_autopsy_dx_main.
 # Try each in order, but skip a column if all its values are empty/NA (the column
 # exists but no row has a usable value — we want to fall through to the next one).
 NA_VALUES = {"", "na", "n/a", "none", "null", "nan", "-", "."}
+# Patterns that look like ages, dates, or other numeric data accidentally placed
+# in a diagnosis column. A real clinical diagnosis is never purely numeric.
+NUMERIC_LIKE_RE = re.compile(r"^[\d./\s-]+$")
 
-def values_for(reader_rows, col):
-    return [(r.get(col) or "").strip().strip("\"") for r in reader_rows]
+def is_usable_dx(v):
+    """A diagnosis value is usable if non-empty, not NA-like, and not purely
+    numeric (ages, dates, etc. sometimes end up in diagnosis columns)."""
+    if not v:
+        return False
+    low = v.lower()
+    if low in NA_VALUES:
+        return False
+    if NUMERIC_LIKE_RE.match(v):
+        return False
+    return True
 
-def has_usable_values(values):
-    return any(v and v.lower() not in NA_VALUES for v in values)
+def has_usable_values(rows, col):
+    """A column qualifies as a diagnosis source only if EVERY non-empty value is
+    a usable diagnosis. A single numeric/date-like value (age, year, etc.)
+    disqualifies the entire column — fall through to the next candidate."""
+    has_any = False
+    for r in rows:
+        v = (r.get(col) or "").strip().strip("\"")
+        if not v or v.lower() in NA_VALUES:
+            continue
+        if not is_usable_dx(v):
+            return False  # any non-diagnosis value kills this column
+        has_any = True
+    return has_any
 
 reader = csv.DictReader(io.StringIO(text))
 fields = reader.fieldnames or []
@@ -315,9 +340,9 @@ sub_key = norm.get("subject_id")
 rows = list(reader)  # materialize so we can inspect multiple columns
 
 dx_key = None
-for candidate in ("primary_diagnosis", "last_diagnosis", "path_autopsy_dx_main"):
+for candidate in ("primary_diagnosis", "last_diagnosis", "path_autopsy_dx_main", "path_autopsy_second_dx"):
     actual = norm.get(candidate)
-    if actual and has_usable_values(values_for(rows, actual)):
+    if actual and has_usable_values(rows, actual):
         dx_key = actual
         break
 
@@ -327,18 +352,18 @@ if not (sub_key and dx_key):
     sys.exit(0)
 
 # Log which diagnosis column was used (so we can verify fallback fired)
-print(f"USING_DX_COL:{dx_key}", file=sys.stderr)
+print("USING_DX_COL:" + dx_key, file=sys.stderr)
 n = 0
 with open(out, "a") as fh:
     for row in rows:
         sid = (row.get(sub_key) or "").strip().strip("\"")
         dx  = (row.get(dx_key)  or "").strip().strip("\"")
-        # Skip NA-like diagnosis values even when writing rows
-        if sid and dx and dx.lower() not in NA_VALUES:
+        # Skip NA-like and numeric-only diagnosis values
+        if sid and is_usable_dx(dx):
             # Tab/newline in values would break the TSV — replace with spaces
             sid = sid.replace("\t", " ").replace("\n", " ").replace("\r", " ")
             dx  = dx.replace("\t",  " ").replace("\n",  " ").replace("\r",  " ")
-            fh.write(f"{sid}\t{dx}\t{slug}\n")
+            fh.write(sid + "\t" + dx + "\t" + slug + "\n")
             n += 1
 print(n)
 ' "$publisher_slug" "$subject_diagnosis_membership_file" <<< "$clinpath_csv" 2> /tmp/_diag_stderr.txt || true)
@@ -492,9 +517,6 @@ calculate_breakdown() {
         } else if (bucket ~ /ms-p/) {
             data_type_category = "ms_p"
             grp["ms_p"] += count
-        } else if (bucket ~ /parsebio/) {
-            data_type_category = "parsebio"
-            grp["parsebio"] += count
         } else if (bucket ~ /multimodal/ || bucket ~ /multiome/ || bucket ~ /multiomics/) {
             data_type_category = "multimodal"
             grp["multimodal"] += count
@@ -542,7 +564,6 @@ calculate_breakdown() {
         printf "bulk RNAseq:  %d\n", grp["bulk"]
         printf "spatial:      %d\n", grp["spatial"]
         printf "proteomics:   %d\n", grp["ms_p"]
-        printf "parsebio:     %d\n", grp["parsebio"]
         printf "multimodal:   %d\n", grp["multimodal"]
         printf "metagenomics: %d\n", grp["metagenomics"]
         printf "wgs:          %d\n", grp["wgs"]
@@ -594,8 +615,6 @@ calculate_breakdown() {
                 printf "  spatial:      %d\n", team_data_type_category[team, "spatial"]
             if (team_data_type_category[team, "ms_p"] > 0)
                 printf "  proteomics:   %d\n", team_data_type_category[team, "ms_p"]
-            if (team_data_type_category[team, "parsebio"] > 0)
-                printf "  parsebio:     %d\n", team_data_type_category[team, "parsebio"]
             if (team_data_type_category[team, "multimodal"] > 0)
                 printf "  multimodal:   %d\n", team_data_type_category[team, "multimodal"]
             if (team_data_type_category[team, "metagenomics"] > 0)

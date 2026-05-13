@@ -31,6 +31,8 @@ ASSAY_ORDER = [
     "Bulk RNA-seq",
     "Spatial Transcriptomics",
     "Proteomics",
+    "Metabolomics",
+    "Lipidomics",
     "Genetics",
     "WGS",
     "Metagenomics",
@@ -46,6 +48,9 @@ HUMAN_SOURCES_ORDER = [
 MOUSE_SOURCES_ORDER = [
     "Brain tissue",
     "Liver tissue",
+    "Lung tissue",
+    "Kidney tissue",
+    "Plasma",
     "Embryonic fibroblast",
     "Fecal",
 ]
@@ -75,6 +80,10 @@ def classify_assay(assay):
         return "Spatial Transcriptomics"
     if any(x in a for x in ["proteom", "ms-p", "mass_spec", "mass spec"]):
         return "Proteomics"
+    if any(x in a for x in ["metabolom", "ms-mb"]):
+        return "Metabolomics"
+    if any(x in a for x in ["lipidom", "ms-l"]):
+        return "Lipidomics"
     # WGS before Genetics — Genetics is the catch-all for genotyping/SNP/array data
     if any(x in a for x in ["wgs", "whole_genome", "whole-genome"]):
         return "WGS"
@@ -109,6 +118,12 @@ def classify_source(organism, sample_source):
         return "Fecal"
     if "liver" in s:
         return "Liver tissue"
+    if "lung" in s:
+        return "Lung tissue"
+    if "kidney" in s or "renal" in s:
+        return "Kidney tissue"
+    if any(x in s for x in ["plasma", "serum", "blood"]):
+        return "Plasma"
     if any(x in s for x in ["fibroblast", "mef", "embryon"]):
         return "Embryonic fibroblast"
     if any(x in s for x in ["fecal", "stool", "feces", "metagenom"]) and "mouse" in o:
@@ -128,10 +143,12 @@ def classify_organism_from_slug(slug):
         return "Human"
     if "mouse" in s or "sulzer-fecal-metagenome-fp-spf" in s:
         return "Mouse"
+    if "mef" in s or "mefs" in s:
+        return "Mouse"
     # Cell-line / in-vitro datasets — assume human unless slug also says mouse;
     # the bash scripts treat these as a separate origin but the pivot table only
     # has Human/Mouse, so default to Human (typical for iPSC/HEK293/etc.).
-    if any(x in s for x in ["invitro", "ipsc", "hek", "mef"]):
+    if any(x in s for x in ["invitro", "ipsc", "hek"]):
         return "Human" if "mouse" not in s else "Mouse"
     return None
 
@@ -150,6 +167,12 @@ def classify_source_from_slug(slug):
         return "Fecal"
     if "liver" in s:
         return "Liver tissue"
+    if "lung" in s:
+        return "Lung tissue"
+    if "kidney" in s or "renal" in s:
+        return "Kidney tissue"
+    if any(x in s for x in ["plasma", "serum", "-blood-"]) or s.endswith("-blood"):
+        return "Plasma"
     if any(x in s for x in ["invitro", "ipsc", "hek", "cell-line"]):
         return "Cell lines"
     return None
@@ -173,8 +196,13 @@ def classify_assay_from_slug(slug):
         return "Bulk RNA-seq"
     if any(x in s for x in ["spatial", "visium", "geomx", "cosmx", "xenium"]):
         return "Spatial Transcriptomics"
-    if any(x in s for x in ["-ms-", "proteom", "mass-spec"]):
+    # Mass-spec assays: tighten patterns so ms-p / ms-mb / ms-l don't collide
+    if any(x in s for x in ["ms-p-", "ms-p_", "proteom", "mass-spec"]) or s.endswith("ms-p"):
         return "Proteomics"
+    if any(x in s for x in ["ms-mb-", "ms-mb_", "metabolom"]) or s.endswith("ms-mb"):
+        return "Metabolomics"
+    if any(x in s for x in ["ms-l-", "ms-l_", "lipidom"]) or s.endswith("ms-l"):
+        return "Lipidomics"
     # WGS before Genetics — Genetics is the catch-all for genotyping/SNP/array data
     if any(x in s for x in ["wgs", "whole-genome"]):
         return "WGS"
@@ -316,7 +344,7 @@ def main():
     print(table.to_string())
 
     # Save TSV
-    date_str = pd.Timestamp.now().strftime("%Y-%m-%d")
+    date_str = pd.Timestamp.now().strftime("%Y-%m-%dT%H-%M-%S")
     out_tsv = f"dataset_summary_table.{date_str}.tsv"
     with open(out_tsv, "w") as f:
         f.write("\t" + "\t".join(o for o, s in COL_KEYS) + "\n")
