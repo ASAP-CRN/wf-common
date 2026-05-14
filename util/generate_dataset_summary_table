@@ -399,55 +399,6 @@ def main():
             f.write(assay_ + "\t" + "\t".join(v.replace("\n", " / ") for v in row_vals) + "\n")
     print(f"Saved diagnosis table to {out_diag_tsv}")
 
-    # Save Excel
-    try:
-        import openpyxl
-        from openpyxl.styles import Font, Alignment, PatternFill
-        from openpyxl.utils import get_column_letter
-
-        out_xlsx = f"dataset_summary_table.{date_str}.xlsx"
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Summary"
-
-        fill_h = PatternFill("solid", fgColor="DCE6F1")
-        fill_m = PatternFill("solid", fgColor="EBF1DE")
-        bold   = Font(bold=True)
-        center = Alignment(horizontal="center", vertical="center")
-
-        ws.cell(1, 1, "Data type").font = bold
-        col = 2
-        for org, sources in [("Human", HUMAN_SOURCES_ORDER), ("Mouse", MOUSE_SOURCES_ORDER)]:
-            fill = fill_h if org == "Human" else fill_m
-            start = col
-            for _ in sources:
-                ws.cell(1, col).fill = fill
-                col += 1
-            ws.cell(1, start, org).font = Font(bold=True)
-            ws.cell(1, start).fill = fill
-            ws.cell(1, start).alignment = center
-            ws.merge_cells(start_row=1, start_column=start, end_row=1, end_column=col-1)
-
-        for i, (org, src) in enumerate(COL_KEYS):
-            c = ws.cell(2, i+2, src)
-            c.fill = fill_h if org == "Human" else fill_m
-            c.font = bold
-            c.alignment = center
-
-        for r, assay in enumerate(ASSAY_ORDER):
-            ws.cell(r+3, 1, assay).font = bold
-            for c, (org, src) in enumerate(COL_KEYS):
-                ws.cell(r+3, c+2, lookup.get((org, src, assay), "0/0")).alignment = center
-
-        ws.column_dimensions["A"].width = 24
-        for i in range(len(COL_KEYS)):
-            ws.column_dimensions[get_column_letter(i+2)].width = 22
-
-        wb.save(out_xlsx)
-        print(f"Saved Excel to {out_xlsx}")
-    except ImportError:
-        print("(openpyxl not installed — skipping Excel output)")
-
 
 if __name__ == "__main__":
     main()
