@@ -82,14 +82,45 @@ def team_from_slug(slug):
     return "unknown"
 
 
+# Bank-name alias map. Keys are lowercased+stripped raw names from SUBJECT.csv;
+# values are the canonical display name we want to bucket them under.
+# Add entries here as new spelling variants surface.
+BANK_ALIASES = {
+    "qsbb_uk":                                                "QSBB UK",
+    "qsbb uk":                                                "QSBB UK",
+    "ucl queen square brain bank for neurological disorders (qsbb)": "QSBB UK",
+    "banner_sun_health_usa":                                  "Banner Sun Health Research Institute",
+    "banner sun health research institute":                   "Banner Sun Health Research Institute",
+    "bshri":                                                  "Banner Sun Health Research Institute",
+    "imperial_uk":                                            "Imperial UK",
+}
+
+# Brain banks recognized by the CDE 4.4 controlled vocabulary. A normalized
+# (post-alias) bank name not in this set triggers a warning so it can be
+# investigated and either added here or fixed upstream — but the script does
+# not error out.
+CDE_4_4_RECOGNIZED_BANKS = {
+    "Banner Sun Health Research Institute",
+    "QSBB UK",
+    "Cambridge Brain Bank",
+    "New York Brain Bank",
+    "Imperial UK",
+    "SBB",
+    "NKI/NYUGSOM",
+    "BMC",
+    "Edinburgh UK",
+}
+
+
 def normalize_bank(raw):
-    """Trim whitespace; treat empty/NA as 'Unknown'. No alias-mapping."""
+    """Trim whitespace; treat empty/NA as 'Unknown'. Apply alias map for known
+    variants. Unknown banks fall through with their raw name unchanged."""
     if raw is None:
         return "Unknown"
     s = str(raw).strip()
     if not s or s.lower() in {"na", "n/a", "none", "nan", ""}:
         return "Unknown"
-    return s
+    return BANK_ALIASES.get(s.lower(), s)
 
 
 # ---------------------------------------------------------------------------
@@ -109,6 +140,24 @@ def main():
     bb_df["brain_bank"] = bb_df["biobank_name"].apply(normalize_bank)
     bb_df["team"]       = bb_df["publisher_slug"].apply(team_from_slug)
     bb_df["data_type"]  = bb_df["publisher_slug"].apply(classify_assay_from_slug)
+
+    # CDE 4.4 sanity check: warn (don't fail) when a normalized bank name is
+    # not in the CDE-recognized vocabulary. "Unknown" rows are ignored — those
+    # are already a known data-quality issue surfaced via the Unknown bucket.
+    unrecognized = sorted({
+        b for b in bb_df["brain_bank"].unique()
+        if b not in CDE_4_4_RECOGNIZED_BANKS and b != "Unknown"
+    })
+    if unrecognized:
+        print()
+        print("WARNING: %d brain bank name(s) not in the CDE 4.4 recognized list:"
+              % len(unrecognized))
+        for name in unrecognized:
+            n_rows = (bb_df["brain_bank"] == name).sum()
+            print("  - %r  (%d row(s))" % (name, n_rows))
+        print("  Add an entry to BANK_ALIASES if this is a known spelling variant,")
+        print("  or to CDE_4_4_RECOGNIZED_BANKS if this is a new canonical name.")
+        print()
 
     # ----- Aggregates -----
     # (bank, team, data_type) → counts, subjects, slugs, sources
