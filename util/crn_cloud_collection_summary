@@ -14,10 +14,10 @@ cat << EOF
 
   Output:
   - crn_cloud_collection_summary.<date_str>.tsv
-  - subject_dataset_membership.<date_str>.tsv (excludes cohorts)
-  - sample_dataset_membership.<date_str>.tsv (excludes cohorts)
-  - brain_donor_dataset_membership.<date_str>.tsv (excludes cohorts)
-  - subject_diagnosis_membership.<date_str>.tsv
+  - crn_cloud_collection_summary.subject_dataset_membership.<date_str>.tsv (excludes cohorts)
+  - crn_cloud_collection_summary.sample_dataset_membership.<date_str>.tsv (excludes cohorts)
+  - crn_cloud_collection_summary.brain_donor_dataset_membership.<date_str>.tsv (excludes cohorts)
+  - crn_cloud_collection_summary.subject_diagnosis_membership.<date_str>.tsv
 
   Usage: $0 [OPTIONS]
 
