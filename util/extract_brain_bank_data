@@ -43,6 +43,13 @@ date_str=$(date +"%Y-%m-%d")
 output_file="brain_bank_membership.${date_str}.tsv"
 echo -e "subject_id\tsample_id\tbiobank_name\tpublisher_slug\tsource" > "$output_file"
 
+# Attempted-datasets log: each line is "<source>\t<dataset_suffix>"
+# (dataset_suffix = bucket with the asap-curated-/asap-raw- prefix stripped)
+# After all processing, any (source, suffix) pair that appears here but has
+# no rows in the output TSV is reported as a skip.
+_ATTEMPTED_FILE=$(mktemp /tmp/bb_attempted.XXXXXX)
+trap 'rm -f "$_ATTEMPTED_FILE"' EXIT
+
 # CSV normalizer — flattens multi-line quoted fields so awk -F',' is safe.
 normalize_csv() {
     python3 -c '
@@ -94,6 +101,11 @@ process_bucket() {
         prefix=""
     fi
     local publisher_slug="prod-${bucket#${prefix}}"
+    local dataset_suffix="${bucket#${prefix}}"
+
+    # Log this dataset as attempted — we'll later check whether it produced
+    # any rows in the output TSV.
+    printf '%s\t%s\n' "$source_label" "$dataset_suffix" >> "$_ATTEMPTED_FILE"
 
     # Find SAMPLE.csv and SUBJECT.csv
     local sample_loc subject_loc
@@ -231,12 +243,84 @@ if [[ "$SOURCES" == "internal_qc" || "$SOURCES" == "both" ]]; then
     process_source "internal_qc" "asap-raw-team*"
 fi
 
-# Summary
-total_rows=$(tail -n +2 "$output_file" | wc -l | tr -d '[:space:]')
-unique_banks=$(tail -n +2 "$output_file" | cut -f3 | sort -u | grep -cv '^$' || true)
-unique_slugs=$(tail -n +2 "$output_file" | cut -f4 | sort -u | grep -cv '^$' || true)
+# Summary — broken down by source (curated CRN vs. internal QC) plus combined totals
 echo ""
-echo "Wrote $total_rows rows to $output_file"
-echo "  Unique brain banks: ${unique_banks:-0}"
-echo "  Unique datasets:    ${unique_slugs:-0}"
+echo "============================================================"
+echo "=== BRAIN BANK EXTRACTION SUMMARY ==="
+echo "============================================================"
+
+print_source_summary() {
+    local label="$1" source_value="$2"
+    local n_rows n_banks n_slugs n_subjects n_samples
+    n_rows=$(tail -n +2 "$output_file" | awk -F'\t' -v src="$source_value" '$5 == src' | wc -l | tr -d '[:space:]')
+    n_banks=$(tail -n +2 "$output_file" | awk -F'\t' -v src="$source_value" '$5 == src {print $3}' | sort -u | grep -cv '^$' || true)
+    n_slugs=$(tail -n +2 "$output_file" | awk -F'\t' -v src="$source_value" '$5 == src {print $4}' | sort -u | grep -cv '^$' || true)
+    n_subjects=$(tail -n +2 "$output_file" | awk -F'\t' -v src="$source_value" '$5 == src {print $1}' | sort -u | grep -cv '^$' || true)
+    n_samples=$(tail -n +2 "$output_file" | awk -F'\t' -v src="$source_value" '$5 == src {print $2}' | sort -u | grep -cv '^$' || true)
+    printf "%-30s rows=%-6s unique: subjects=%-5s samples=%-5s banks=%-3s datasets=%s\n" \
+        "$label" "${n_rows:-0}" "${n_subjects:-0}" "${n_samples:-0}" "${n_banks:-0}" "${n_slugs:-0}"
+}
+
+print_source_summary "CRN curated:"     "crn"
+print_source_summary "Internal QC:"     "internal_qc"
+
+# Combined totals (subjects/samples/banks deduplicated across both sources)
+total_rows=$(tail -n +2 "$output_file" | wc -l | tr -d '[:space:]')
+total_subjects=$(tail -n +2 "$output_file" | cut -f1 | sort -u | grep -cv '^$' || true)
+total_samples=$(tail -n +2 "$output_file" | cut -f2 | sort -u | grep -cv '^$' || true)
+total_banks=$(tail -n +2 "$output_file" | cut -f3 | sort -u | grep -cv '^$' || true)
+total_slugs=$(tail -n +2 "$output_file" | cut -f4 | sort -u | grep -cv '^$' || true)
+echo "------------------------------------------------------------"
+printf "%-30s rows=%-6s unique: subjects=%-5s samples=%-5s banks=%-3s datasets=%s\n" \
+    "TOTAL (dedup across both):" "$total_rows" "${total_subjects:-0}" "${total_samples:-0}" "${total_banks:-0}" "${total_slugs:-0}"
+
+# ----- Skipped datasets: attempted but produced no output rows -----
+# A dataset (identified by its suffix, the bucket name with the source prefix
+# stripped) is considered "skipped" if it appears in the attempted log but has
+# no rows in the output TSV for that (source, suffix) pair. Reasons can be:
+# missing SAMPLE.csv, missing SUBJECT.csv, missing/empty biobank_name column,
+# or simply no matching subject_id joins.
+if [[ -s "$_ATTEMPTED_FILE" ]]; then
+    # Build the set of (source, suffix) pairs that DID produce output
+    produced_file=$(mktemp /tmp/bb_produced.XXXXXX)
+    tail -n +2 "$output_file" \
+        | awk -F'\t' 'NF >= 5 {
+            slug = $4; source = $5
+            sub(/^prod-/, "", slug)
+            printf "%s\t%s\n", source, slug
+          }' \
+        | sort -u > "$produced_file"
+
+    # Sort attempted for diff
+    attempted_sorted=$(mktemp /tmp/bb_att_sorted.XXXXXX)
+    sort -u "$_ATTEMPTED_FILE" > "$attempted_sorted"
+
+    # Attempted minus produced = skipped
+    skipped_file=$(mktemp /tmp/bb_skipped.XXXXXX)
+    comm -23 "$attempted_sorted" "$produced_file" > "$skipped_file"
+    rm -f "$produced_file" "$attempted_sorted"
+
+    if [[ -s "$skipped_file" ]]; then
+        echo ""
+        echo "============================================================"
+        echo "=== SKIPPED DATASETS (no brain bank metadata found) ==="
+        echo "============================================================"
+
+        # Datasets skipped in BOTH — strip source column and intersect
+        crn_only=$(awk -F'\t' '$1 == "crn"         {print $2}' "$skipped_file" | sort -u)
+        iqc_only=$(awk -F'\t' '$1 == "internal_qc" {print $2}' "$skipped_file" | sort -u)
+        if [[ -n "$crn_only" ]] && [[ -n "$iqc_only" ]]; then
+            both=$(comm -12 <(echo "$crn_only") <(echo "$iqc_only"))
+            if [[ -n "$both" ]]; then
+                both_count=$(echo "$both" | wc -l | tr -d '[:space:]')
+                echo ""
+                echo "  Skipped in BOTH CRN curated AND internal QC ($both_count dataset(s)):"
+                echo "$both" | awk '{printf "    %s\n", $0}'
+            fi
+        fi
+    fi
+    rm -f "$skipped_file"
+fi
+
+echo ""
 echo "Saved to [$(pwd)/$output_file]"
