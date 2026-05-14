@@ -447,7 +447,7 @@ Generates two brain-bank-centric TSVs from the `brain_bank_membership.<date>.tsv
 - `brain_bank_membership.<date>.tsv` (output of `extract_brain_bank_data`)
 
 **Output:**
-- `brain_bank_summary_matrix.<date>.tsv` — matrix view: rows = brain banks, columns = data types. Each cell shows `samples / subjects (team)`. Right-side summary columns: `total_samples`, `total_subjects`, `n_data_types`, `n_subjects_multi_modality`, `sources`.
+- `brain_bank_summary_matrix.<date>.tsv` — matrix view: rows = brain banks, columns = data types. Each cell shows `subjects / samples (team)`. Right-side summary columns: `total_samples`, `total_subjects`, `n_data_types`, `n_subjects_multi_modality`, `sources`.
 - `brain_bank_summary_long.<date>.tsv` — long format, one row per (bank, team, data_type) for filtering or pivoting in Excel.
 
 | Column (long format) | Description |
@@ -456,7 +456,7 @@ Generates two brain-bank-centric TSVs from the `brain_bank_membership.<date>.tsv
 | `team` | Team name parsed from the dataset slug |
 | `data_type` | Assay category derived from the slug (sc/snRNA-seq, Spatial Transcriptomics, etc.) |
 | `in_crn` / `in_internal_qc` | Whether this (bank, team, data_type) cell has any rows from each source |
-| `n_samples` | Sample count for this cell |
+| `n_samples` | Distinct sample count for this cell |
 | `n_subjects` | Distinct subject count for this cell |
 | `n_subjects_multi_modality` | Subjects in this cell that also appear in ≥1 other data type for the same (bank, team) |
 | `datasets` | Semicolon-separated list of contributing datasets |

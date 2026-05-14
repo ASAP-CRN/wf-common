@@ -161,8 +161,11 @@ def main():
 
     # ----- Aggregates -----
     # (bank, team, data_type) → counts, subjects, slugs, sources
+    # Both sample_ids and subject_ids are stored as sets so the same physical
+    # sample appearing in multiple datasets (e.g. midbrain + mtg using the
+    # same biobank donor) is counted once.
     cell_agg = defaultdict(lambda: {
-        "n_samples":   0,
+        "sample_ids":  set(),
         "subject_ids": set(),
         "slugs":       set(),
         "sources":     set(),
@@ -171,7 +174,8 @@ def main():
     for _, r in bb_df.iterrows():
         key = (r["brain_bank"], r["team"], r["data_type"])
         a = cell_agg[key]
-        a["n_samples"] += 1
+        if r.get("sample_id"):
+            a["sample_ids"].add(r["sample_id"])
         if r["subject_id"]:
             a["subject_ids"].add(r["subject_id"])
         a["slugs"].add(r["publisher_slug"].removeprefix("prod-"))
@@ -198,7 +202,7 @@ def main():
             "data_type":   dtype,
             "in_crn":          "Yes" if "crn"         in a["sources"] else "No",
             "in_internal_qc":  "Yes" if "internal_qc" in a["sources"] else "No",
-            "n_samples":   a["n_samples"],
+            "n_samples":   len(a["sample_ids"]),
             "n_subjects":  n_subjects,
             "n_subjects_multi_modality": multi_modality_count(bank, team, dtype, a["subject_ids"]),
             "datasets":    "; ".join(sorted(a["slugs"])),
@@ -219,25 +223,25 @@ def main():
     matrix_rows = []
     for bank in banks:
         row = {"brain_bank": bank}
-        bank_total_samples  = 0
+        bank_total_sample_ids = set()
         bank_subject_ids    = set()
         bank_data_types     = set()
 
         for dt in data_types_present:
-            cell_samples  = 0
-            cell_subjects = set()
-            cell_teams    = set()
+            cell_sample_ids = set()
+            cell_subjects   = set()
+            cell_teams      = set()
             for (b, t, d), a in cell_agg.items():
                 if b == bank and d == dt:
-                    cell_samples += a["n_samples"]
+                    cell_sample_ids.update(a["sample_ids"])
                     cell_subjects.update(a["subject_ids"])
                     cell_teams.add(t)
-            if cell_samples or cell_subjects:
+            if cell_sample_ids or cell_subjects:
                 bank_data_types.add(dt)
-                bank_total_samples += cell_samples
+                bank_total_sample_ids.update(cell_sample_ids)
                 bank_subject_ids.update(cell_subjects)
                 teams_str = ", ".join(sorted(cell_teams))
-                row[dt] = "%d / %d  (%s)" % (len(cell_subjects), cell_samples, teams_str)
+                row[dt] = "%d / %d  (%s)" % (len(cell_subjects), len(cell_sample_ids), teams_str)
             else:
                 row[dt] = ""
 
@@ -256,7 +260,7 @@ def main():
             if b == bank:
                 bank_sources.update(a["sources"])
 
-        row["total_samples"]        = bank_total_samples
+        row["total_samples"]        = len(bank_total_sample_ids)
         row["total_subjects"]       = len(bank_subject_ids)
         row["n_data_types"]         = len(bank_data_types)
         row["n_subjects_multi_modality"] = n_multi_bank
