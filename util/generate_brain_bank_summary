@@ -23,63 +23,24 @@ from collections import defaultdict
 
 import pandas as pd
 
-
-# ---------------------------------------------------------------------------
-# Slug → data type classification. Borrowed from generate_dataset_summary_table
-# (same patterns) so consistency is maintained without duplicating the file.
-# ---------------------------------------------------------------------------
-def classify_assay_from_slug(slug):
-    s = str(slug).lower()
-    if any(x in s for x in ["sn-atacseq", "sc-atacseq", "snatacseq", "scatacseq",
-                            "sn-atac", "sc-atac", "atac-seq", "atacseq"]):
-        return "sc/snATAC-seq"
-    if any(x in s for x in ["multimodal", "multiome", "multiomic"]):
-        return "sc/sn Multiome"
-    if any(x in s for x in ["sn-rnaseq", "sc-rnaseq", "scrnaseq", "snrnaseq",
-                            "single-cell", "single-nucleus"]):
-        return "sc/snRNA-seq"
-    if "bulk-rnaseq" in s or "bulk" in s:
-        return "Bulk RNA-seq"
-    if any(x in s for x in ["spatial", "visium", "geomx", "cosmx", "xenium"]):
-        return "Spatial Transcriptomics"
-    if "ms-p-" in s or "ms-p_" in s or "proteom" in s or "mass-spec" in s or s.endswith("ms-p"):
-        return "Proteomics"
-    if "ms-mb-" in s or "ms-mb_" in s or "metabolom" in s or s.endswith("ms-mb"):
-        return "Metabolomics"
-    if "ms-l-" in s or "ms-l_" in s or "lipidom" in s or s.endswith("ms-l"):
-        return "Lipidomics"
-    if any(x in s for x in ["wgs", "whole-genome"]):
-        return "WGS"
-    if any(x in s for x in ["genetic", "genotyp", "gwas"]):
-        return "Genetics"
-    if "metagenome" in s or "metagenomic" in s or "microbiome" in s:
-        return "Metagenomics"
-    return "Unclassified"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from common import (
+    ASSAY_ORDER,
+    classify_assay,
+    team_from_slug,
+)
 
 
-# Data type column ordering for the matrix sheet (matches generate_dataset_summary_table)
-DATA_TYPE_ORDER = [
-    "sc/snRNA-seq",
-    "sc/snATAC-seq",
-    "sc/sn Multiome",
-    "Bulk RNA-seq",
-    "Spatial Transcriptomics",
-    "Proteomics",
-    "Metabolomics",
-    "Lipidomics",
-    "Genetics",
-    "WGS",
-    "Metagenomics",
-    "Unclassified",
-]
+def classify_data_type(slug):
+    """Wrap common.classify_assay so unmatched slugs land in 'Unclassified'
+    instead of None — the matrix layer needs an explicit column for them."""
+    return classify_assay(slug) or "Unclassified"
 
 
-def team_from_slug(slug):
-    """prod-team-hafler-pmdbs-... → hafler"""
-    parts = str(slug).split("-")
-    if len(parts) >= 3 and parts[0] == "prod" and parts[1] == "team":
-        return parts[2]
-    return "unknown"
+# Data type column ordering for the matrix sheet. Mirrors common.ASSAY_ORDER
+# plus the "Unclassified" bucket appended at the end (so any datasets that
+# don't match a known pattern still get a column).
+DATA_TYPE_ORDER = ASSAY_ORDER + ["Unclassified"]
 
 
 # Bank-name alias map. Keys are lowercased+stripped raw names from SUBJECT.csv;
@@ -139,7 +100,7 @@ def main():
 
     bb_df["brain_bank"] = bb_df["biobank_name"].apply(normalize_bank)
     bb_df["team"]       = bb_df["publisher_slug"].apply(team_from_slug)
-    bb_df["data_type"]  = bb_df["publisher_slug"].apply(classify_assay_from_slug)
+    bb_df["data_type"]  = bb_df["publisher_slug"].apply(classify_data_type)
 
     # CDE 4.4 sanity check: warn (don't fail) when a normalized bank name is
     # not in the CDE-recognized vocabulary. "Unknown" rows are ignored — those

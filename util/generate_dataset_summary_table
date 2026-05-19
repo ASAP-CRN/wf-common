@@ -22,38 +22,15 @@ import os
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import get_releases_df
-
-ASSAY_ORDER = [
-    "sc/snRNA-seq",
-    "sc/snATAC-seq",
-    "sc/sn Multiome",
-    "Bulk RNA-seq",
-    "Spatial Transcriptomics",
-    "Proteomics",
-    "Metabolomics",
-    "Lipidomics",
-    "Genetics",
-    "WGS",
-    "Metagenomics",
-]
-
-HUMAN_SOURCES_ORDER = [
-    "Brain tissue",
-    "Cell lines",
-    "Gastrointestinal",
-    "Fecal",
-]
-
-MOUSE_SOURCES_ORDER = [
-    "Brain tissue",
-    "Liver tissue",
-    "Lung tissue",
-    "Kidney tissue",
-    "Plasma",
-    "Embryonic fibroblast",
-    "Fecal",
-]
+from common import (
+    get_releases_df,
+    ASSAY_ORDER,
+    HUMAN_SOURCES_ORDER,
+    MOUSE_SOURCES_ORDER,
+    classify_assay,
+    classify_organism,
+    classify_source,
+)
 
 COL_KEYS = (
     [("Human", s) for s in HUMAN_SOURCES_ORDER] +
@@ -61,163 +38,20 @@ COL_KEYS = (
 )
 
 
-def classify_assay(assay):
-    a = str(assay).lower()
-    # ATAC-seq first — the broader sc/sn regex below would otherwise capture sc_atac
-    if any(x in a for x in ["sc_atac", "sn_atac", "scatac", "snatac",
-                            "sc-atac", "sn-atac", "atacseq", "atac_seq", "atac-seq"]):
-        return "sc/snATAC-seq"
-    # Multiome (paired RNA+ATAC, e.g. 10x Multiome) — checked before sc/sn RNA-seq
-    # so the multimodal/multiome keyword takes precedence over a generic sc-/sn- match
-    if any(x in a for x in ["multimodal", "multiome", "multiomic"]):
-        return "sc/sn Multiome"
-    if any(x in a for x in ["sc_", "sn_", "scrna", "snrna", "single_cell", "single_nucleus",
-                              "sc-rna", "sn-rna", "scrnaseq", "snrnaseq"]):
-        return "sc/snRNA-seq"
-    if "bulk" in a or a in ["bulk_rna_seq", "bulk_rnaseq"]:
-        return "Bulk RNA-seq"
-    if any(x in a for x in ["spatial", "visium", "geomx", "cosmx", "nanostring"]):
-        return "Spatial Transcriptomics"
-    if any(x in a for x in ["proteom", "ms-p", "mass_spec", "mass spec"]):
-        return "Proteomics"
-    if any(x in a for x in ["metabolom", "ms-mb"]):
-        return "Metabolomics"
-    if any(x in a for x in ["lipidom", "ms-l"]):
-        return "Lipidomics"
-    # WGS before Genetics — Genetics is the catch-all for genotyping/SNP/array data
-    if any(x in a for x in ["wgs", "whole_genome", "whole-genome"]):
-        return "WGS"
-    if any(x in a for x in ["genetic", "genotyp", "gwas", "snp", "variant"]):
-        return "Genetics"
-    if any(x in a for x in ["metagenom", "shotgun", "fecal", "microbiome", "16s"]):
-        return "Metagenomics"
-    return None
-
-
-def classify_organism(organism):
-    o = str(organism).lower()
-    if any(x in o for x in ["human", "homo"]):
-        return "Human"
-    if any(x in o for x in ["mouse", "mus"]):
-        return "Mouse"
-    return None
-
-
-def classify_source(organism, sample_source):
-    s = str(sample_source).lower()
-    o = str(organism).lower()
-    if any(x in s for x in ["brain", "pmdbs", "postmortem", "substantia nigra", "cortex",
-                              "striatum", "midbrain", "hippocampus", "cerebellum", "neural"])             or s.strip() == "brain":
-        return "Brain tissue"
-    if any(x in s for x in ["cell line", "invitro", "in vitro", "ipsc", "hek", "neuronal cell",
-                              "hesc", "hpsc"]):
-        return "Cell lines"
-    if any(x in s for x in ["colon", "gastro", "intestin", "gi tract", "gut"]):
-        return "Gastrointestinal"
-    if any(x in s for x in ["fecal", "stool", "feces", "microbiome"]) and "human" in o:
-        return "Fecal"
-    if "liver" in s:
-        return "Liver tissue"
-    if "lung" in s:
-        return "Lung tissue"
-    if "kidney" in s or "renal" in s:
-        return "Kidney tissue"
-    if any(x in s for x in ["plasma", "serum", "blood"]):
-        return "Plasma"
-    if any(x in s for x in ["fibroblast", "mef", "embryon"]):
-        return "Embryonic fibroblast"
-    if any(x in s for x in ["fecal", "stool", "feces", "metagenom"]) and "mouse" in o:
-        return "Fecal"
-    return None
-
-
 # ---------------------------------------------------------------------------
 # Slug-based fallback classifiers (mirror patterns used in the bash scripts).
 # Used when a slug is not present in the Releases sheet — e.g. for pre-release
 # internal-QC datasets whose slug is synthesized from the GCS bucket name.
+#
+# Classification logic lives in common.py — classify_assay / classify_organism /
+# classify_source each handle both Releases-Sheet values and slug inputs.
 # ---------------------------------------------------------------------------
-
-def classify_organism_from_slug(slug):
-    s = str(slug).lower()
-    if "human" in s or "pmdbs" in s:
-        return "Human"
-    if "mouse" in s or "sulzer-fecal-metagenome-fp-spf" in s:
-        return "Mouse"
-    if "mef" in s or "mefs" in s:
-        return "Mouse"
-    # Cell-line / in-vitro datasets — assume human unless slug also says mouse;
-    # the bash scripts treat these as a separate origin but the pivot table only
-    # has Human/Mouse, so default to Human (typical for iPSC/HEK293/etc.).
-    if any(x in s for x in ["invitro", "ipsc", "hek"]):
-        return "Human" if "mouse" not in s else "Mouse"
-    return None
-
-
-def classify_source_from_slug(slug):
-    s = str(slug).lower()
-    # MEF = mouse embryonic fibroblast → must come before generic cell-line check
-    if "mef" in s:
-        return "Embryonic fibroblast"
-    if any(x in s for x in ["pmdbs", "brain", "midbrain", "striatum", "cortex",
-                            "substantia-nigra", "hippocampus", "cerebellum"]):
-        return "Brain tissue"
-    if any(x in s for x in ["colon", "gastro", "intestin", "gi-tract"]):
-        return "Gastrointestinal"
-    if any(x in s for x in ["fecal", "metagenome"]):
-        return "Fecal"
-    if "liver" in s:
-        return "Liver tissue"
-    if "lung" in s:
-        return "Lung tissue"
-    if "kidney" in s or "renal" in s:
-        return "Kidney tissue"
-    if any(x in s for x in ["plasma", "serum", "-blood-"]) or s.endswith("-blood"):
-        return "Plasma"
-    if any(x in s for x in ["invitro", "ipsc", "hek", "cell-line"]):
-        return "Cell lines"
-    return None
-
-
-def classify_assay_from_slug(slug):
-    s = str(slug).lower()
-    # Order matters: more specific before more general.
-    # ATAC must come before RNA to avoid the sn-/sc- prefix catching atac variants.
-    if any(x in s for x in ["sn-atacseq", "sc-atacseq", "snatacseq", "scatacseq",
-                            "sn-atac", "sc-atac", "atac-seq", "atacseq"]):
-        return "sc/snATAC-seq"
-    # Multiome (paired RNA+ATAC) — checked before sc/sn RNA-seq so the
-    # multimodal/multiome keyword takes precedence over a generic sc-/sn- match
-    if any(x in s for x in ["multimodal", "multiome", "multiomic"]):
-        return "sc/sn Multiome"
-    if any(x in s for x in ["sn-rnaseq", "sc-rnaseq",
-                            "scrnaseq", "snrnaseq", "single-cell", "single-nucleus"]):
-        return "sc/snRNA-seq"
-    if "bulk-rnaseq" in s or "bulk" in s:
-        return "Bulk RNA-seq"
-    if any(x in s for x in ["spatial", "visium", "geomx", "cosmx", "xenium"]):
-        return "Spatial Transcriptomics"
-    # Mass-spec assays: tighten patterns so ms-p / ms-mb / ms-l don't collide
-    if any(x in s for x in ["ms-p-", "ms-p_", "proteom", "mass-spec"]) or s.endswith("ms-p"):
-        return "Proteomics"
-    if any(x in s for x in ["ms-mb-", "ms-mb_", "metabolom"]) or s.endswith("ms-mb"):
-        return "Metabolomics"
-    if any(x in s for x in ["ms-l-", "ms-l_", "lipidom"]) or s.endswith("ms-l"):
-        return "Lipidomics"
-    # WGS before Genetics — Genetics is the catch-all for genotyping/SNP/array data
-    if any(x in s for x in ["wgs", "whole-genome"]):
-        return "WGS"
-    if any(x in s for x in ["genetic", "genotyp", "gwas"]):
-        return "Genetics"
-    if "metagenome" in s or "metagenomic" in s or "microbiome" in s:
-        return "Metagenomics"
-    return None
-
 
 def classify_slug_fallback(slug):
     """Try slug-only classification; returns dict or None if not classifiable."""
-    org = classify_organism_from_slug(slug)
-    src = classify_source_from_slug(slug)
-    asy = classify_assay_from_slug(slug)
+    org = classify_organism(slug)
+    src = classify_source(slug)
+    asy = classify_assay(slug)
     if org and src and asy:
         return {"_organism": org, "_source": src, "_assay": asy}
     return None
@@ -264,7 +98,7 @@ def main():
                 .query("prod_slug != ''")
                 .copy())
         meta["_organism"] = meta["organism"].apply(classify_organism)
-        meta["_source"]   = meta.apply(lambda r: classify_source(r["organism"], r["sample_source"]), axis=1)
+        meta["_source"]   = meta.apply(lambda r: classify_source(r["sample_source"], r["organism"]), axis=1)
         meta["_assay"]    = meta["assay"].apply(classify_assay)
     except Exception as e:
         print(f"  (Releases fetch failed: {e!r} — proceeding with slug-name classification only)")
