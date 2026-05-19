@@ -11,9 +11,12 @@ promote_staging_data_script.log
 *workflow_version
 *VERSION
 
-# CRN Cloud Collection summary stats outputs
+# CRN Cloud summary stats outputs
 *crn_cloud_collection_summary.*.tsv
 *internal_qc_dataset_collection_summary.*.tsv
+brain_bank*.tsv
+dataset_summary_table*.tsv
+subject_diagnosis_table*.tsv
 
 # Credentials
 *credentials.json

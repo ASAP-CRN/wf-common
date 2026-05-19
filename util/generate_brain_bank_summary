@@ -1,0 +1,256 @@
+#!/usr/bin/env python3
+"""
+Generate brain-bank-centric summary TSVs from the brain bank membership TSV.
+
+Outputs two TSV files:
+  - brain_bank_summary_matrix.<date>.tsv — matrix view. Rows = brain banks,
+    cols = data types. Each cell shows "samples / subjects (team)".
+    Summary columns on the right: total samples, total subjects, # distinct
+    data types, # multi-modality subjects (subjects with 2+ data types).
+  - brain_bank_summary_long.<date>.tsv — long format, one row per
+    (bank, team, data_type) for filtering/pivoting.
+
+Each unique biobank_name string is treated as a separate brain bank — no
+alias-mapping. Sort the table to spot near-duplicate spellings.
+
+Usage:
+  python3 generate_brain_bank_summary  brain_bank_membership.<date>.tsv
+"""
+import sys
+import os
+from datetime import datetime
+from collections import defaultdict
+
+import pandas as pd
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from common import (
+    ASSAY_ORDER,
+    classify_assay,
+    team_from_slug,
+)
+
+
+def classify_data_type(slug):
+    """Wrap common.classify_assay so unmatched slugs land in 'Unclassified'
+    instead of None — the matrix layer needs an explicit column for them."""
+    return classify_assay(slug) or "Unclassified"
+
+
+# Data type column ordering for the matrix sheet. Mirrors common.ASSAY_ORDER
+# plus the "Unclassified" bucket appended at the end (so any datasets that
+# don't match a known pattern still get a column).
+DATA_TYPE_ORDER = ASSAY_ORDER + ["Unclassified"]
+
+
+# Bank-name alias map. Keys are lowercased+stripped raw names from SUBJECT.csv;
+# values are the canonical display name we want to bucket them under.
+# Add entries here as new spelling variants surface.
+BANK_ALIASES = {
+    "qsbb_uk":                                                "QSBB UK",
+    "qsbb uk":                                                "QSBB UK",
+    "ucl queen square brain bank for neurological disorders (qsbb)": "QSBB UK",
+    "banner_sun_health_usa":                                  "Banner Sun Health Research Institute",
+    "banner sun health research institute":                   "Banner Sun Health Research Institute",
+    "bshri":                                                  "Banner Sun Health Research Institute",
+    "imperial_uk":                                            "Imperial UK",
+}
+
+# Brain banks recognized by the CDE 4.4 controlled vocabulary. A normalized
+# (post-alias) bank name not in this set triggers a warning so it can be
+# investigated and either added here or fixed upstream — but the script does
+# not error out.
+CDE_4_4_RECOGNIZED_BANKS = {
+    "Banner Sun Health Research Institute",
+    "QSBB UK",
+    "Cambridge Brain Bank",
+    "New York Brain Bank",
+    "Imperial UK",
+    "SBB",
+    "NKI/NYUGSOM",
+    "BMC",
+    "Edinburgh UK",
+}
+
+
+def normalize_bank(raw):
+    """Trim whitespace; treat empty/NA as 'Unknown'. Apply alias map for known
+    variants. Unknown banks fall through with their raw name unchanged."""
+    if raw is None:
+        return "Unknown"
+    s = str(raw).strip()
+    if not s or s.lower() in {"na", "n/a", "none", "nan", ""}:
+        return "Unknown"
+    return BANK_ALIASES.get(s.lower(), s)
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+def main():
+    if len(sys.argv) < 2:
+        print(__doc__)
+        sys.exit(1)
+
+    bb_path = sys.argv[1]
+
+    print("Loading inputs...")
+    bb_df = pd.read_csv(bb_path, sep="\t", dtype=str).fillna("")
+    print("  brain-bank rows: %d" % len(bb_df))
+
+    bb_df["brain_bank"] = bb_df["biobank_name"].apply(normalize_bank)
+    bb_df["team"]       = bb_df["publisher_slug"].apply(team_from_slug)
+    bb_df["data_type"]  = bb_df["publisher_slug"].apply(classify_data_type)
+
+    # CDE 4.4 sanity check: warn (don't fail) when a normalized bank name is
+    # not in the CDE-recognized vocabulary. "Unknown" rows are ignored — those
+    # are already a known data-quality issue surfaced via the Unknown bucket.
+    unrecognized = sorted({
+        b for b in bb_df["brain_bank"].unique()
+        if b not in CDE_4_4_RECOGNIZED_BANKS and b != "Unknown"
+    })
+    if unrecognized:
+        print()
+        print("WARNING: %d brain bank name(s) not in the CDE 4.4 recognized list:"
+              % len(unrecognized))
+        for name in unrecognized:
+            n_rows = (bb_df["brain_bank"] == name).sum()
+            print("  - %r  (%d row(s))" % (name, n_rows))
+        print("  Add an entry to BANK_ALIASES if this is a known spelling variant,")
+        print("  or to CDE_4_4_RECOGNIZED_BANKS if this is a new canonical name.")
+        print()
+
+    # ----- Aggregates -----
+    # (bank, team, data_type) → counts, subjects, slugs, sources
+    # Both sample_ids and subject_ids are stored as sets so the same physical
+    # sample appearing in multiple datasets (e.g. midbrain + mtg using the
+    # same biobank donor) is counted once.
+    cell_agg = defaultdict(lambda: {
+        "sample_ids":  set(),
+        "subject_ids": set(),
+        "slugs":       set(),
+        "sources":     set(),
+    })
+
+    for _, r in bb_df.iterrows():
+        key = (r["brain_bank"], r["team"], r["data_type"])
+        a = cell_agg[key]
+        if r.get("sample_id"):
+            a["sample_ids"].add(r["sample_id"])
+        if r["subject_id"]:
+            a["subject_ids"].add(r["subject_id"])
+        a["slugs"].add(r["publisher_slug"].removeprefix("prod-"))
+        if r.get("source"):
+            a["sources"].add(r["source"])
+
+    # (bank, team) → subject → set(data_types)  -- for multi-modality
+    bt_subj_dtypes = defaultdict(lambda: defaultdict(set))
+    for _, r in bb_df.iterrows():
+        if r["subject_id"]:
+            bt_subj_dtypes[(r["brain_bank"], r["team"])][r["subject_id"]].add(r["data_type"])
+
+    def multi_modality_count(bank, team, data_type, subject_ids):
+        sd = bt_subj_dtypes.get((bank, team), {})
+        return sum(1 for sid in subject_ids if len(sd.get(sid, set())) >= 2)
+
+    # ----- Long-format rows (one per cell, for sheet 2) -----
+    long_rows = []
+    for (bank, team, dtype), a in cell_agg.items():
+        n_subjects = len(a["subject_ids"])
+        long_rows.append({
+            "brain_bank":  bank,
+            "team":        team,
+            "data_type":   dtype,
+            "in_crn":          "Yes" if "crn"         in a["sources"] else "No",
+            "in_internal_qc":  "Yes" if "internal_qc" in a["sources"] else "No",
+            "n_samples":   len(a["sample_ids"]),
+            "n_subjects":  n_subjects,
+            "n_subjects_multi_modality": multi_modality_count(bank, team, dtype, a["subject_ids"]),
+            "datasets":    "; ".join(sorted(a["slugs"])),
+        })
+    long_df = pd.DataFrame(long_rows).sort_values(
+        ["brain_bank", "team", "data_type"]
+    ).reset_index(drop=True)
+
+    # ----- Matrix view (bank rows × data_type columns) -----
+    # Build per-bank aggregates collapsed across teams + data_type cells
+    banks = sorted(bb_df["brain_bank"].unique())
+    data_types_present = [dt for dt in DATA_TYPE_ORDER
+                          if dt in set(bb_df["data_type"])]
+    # Append any unexpected data types we missed
+    for dt in sorted(set(bb_df["data_type"]) - set(data_types_present)):
+        data_types_present.append(dt)
+
+    matrix_rows = []
+    for bank in banks:
+        row = {"brain_bank": bank}
+        bank_total_sample_ids = set()
+        bank_subject_ids    = set()
+        bank_data_types     = set()
+
+        for dt in data_types_present:
+            cell_sample_ids = set()
+            cell_subjects   = set()
+            cell_teams      = set()
+            for (b, t, d), a in cell_agg.items():
+                if b == bank and d == dt:
+                    cell_sample_ids.update(a["sample_ids"])
+                    cell_subjects.update(a["subject_ids"])
+                    cell_teams.add(t)
+            if cell_sample_ids or cell_subjects:
+                bank_data_types.add(dt)
+                bank_total_sample_ids.update(cell_sample_ids)
+                bank_subject_ids.update(cell_subjects)
+                teams_str = ", ".join(sorted(cell_teams))
+                row[dt] = "%d / %d  (%s)" % (len(cell_subjects), len(cell_sample_ids), teams_str)
+            else:
+                row[dt] = ""
+
+        # Multi-modality across the whole bank: subjects appearing in 2+ data types
+        # at *any* team within this bank
+        subj_to_dtypes = defaultdict(set)
+        for (b, t), sd in bt_subj_dtypes.items():
+            if b != bank: continue
+            for sid, dts in sd.items():
+                subj_to_dtypes[sid].update(dts)
+        n_multi_bank = sum(1 for sid, dts in subj_to_dtypes.items() if len(dts) >= 2)
+
+        # Source(s) for this bank
+        bank_sources = set()
+        for (b, t, d), a in cell_agg.items():
+            if b == bank:
+                bank_sources.update(a["sources"])
+
+        row["total_samples"]        = len(bank_total_sample_ids)
+        row["total_subjects"]       = len(bank_subject_ids)
+        row["n_data_types"]         = len(bank_data_types)
+        row["n_subjects_multi_modality"] = n_multi_bank
+        row["sources"]              = ", ".join(sorted(bank_sources))
+        matrix_rows.append(row)
+
+    # Order matrix columns: brain_bank, [data types], summary cols
+    matrix_cols = (["brain_bank"]
+                   + data_types_present
+                   + ["total_samples", "total_subjects", "n_data_types",
+                      "n_subjects_multi_modality", "sources"])
+    matrix_df = pd.DataFrame(matrix_rows, columns=matrix_cols).sort_values(
+        ["total_samples", "brain_bank"], ascending=[False, True]
+    ).reset_index(drop=True)
+
+    # ----- Write TSVs -----
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    matrix_path = "brain_bank_summary_matrix.%s.tsv" % date_str
+    long_path   = "brain_bank_summary_long.%s.tsv"   % date_str
+    matrix_df.to_csv(matrix_path, sep="\t", index=False)
+    long_df.to_csv(long_path,     sep="\t", index=False)
+
+    print()
+    print("Wrote %d banks to:" % len(matrix_df))
+    print("  %s  (matrix view: banks × data types)" % matrix_path)
+    print("  %s  (long format: one row per bank/team/data_type)" % long_path)
+    print("  Banks with multi-modality: %d" %
+          (matrix_df["n_subjects_multi_modality"] > 0).sum())
+
+
+if __name__ == "__main__":
+    main()

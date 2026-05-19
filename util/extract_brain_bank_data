@@ -1,0 +1,326 @@
+#!/bin/bash
+# extract_brain_bank_data
+#
+# Walks both CRN curated (asap-curated-team-*) and internal QC raw
+# (asap-raw-team-*) buckets, finds SUBJECT.csv + SAMPLE.csv for each PMDBS
+# dataset, and emits one row per sample with its brain bank.
+#
+# Output: brain_bank_membership.<date_str>.tsv
+#   columns: subject_id, sample_id, biobank_name, publisher_slug, source
+#   where `source` is "crn" or "internal_qc"
+#
+# Usage:
+#   ./extract_brain_bank_data [-l datasets.txt] [-s crn|internal_qc|both]
+#
+# Options:
+#   -l FILE   Restrict to datasets listed in FILE (one slug per line,
+#             without the asap-{raw,curated}- prefix)
+#   -s SRC    Which source(s) to scan (default: both)
+
+set -eEo pipefail
+
+SOURCES="both"
+DATASETS=""
+
+while getopts "l:s:h" OPTION; do
+    case "${OPTION}" in
+        l) DATASETS="$OPTARG" ;;
+        s) SOURCES="$OPTARG" ;;
+        h)
+            sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        *) echo "Unknown option" >&2; exit 1 ;;
+    esac
+done
+
+case "$SOURCES" in
+    crn|internal_qc|both) ;;
+    *) echo "Invalid -s value: $SOURCES (expected crn|internal_qc|both)" >&2; exit 1 ;;
+esac
+
+date_str=$(date +"%Y-%m-%d")
+output_file="brain_bank_membership.${date_str}.tsv"
+echo -e "subject_id\tsample_id\tbiobank_name\tpublisher_slug\tsource" > "$output_file"
+
+# Attempted-datasets log: each line is "<source>\t<dataset_suffix>"
+# (dataset_suffix = bucket with the asap-curated-/asap-raw- prefix stripped)
+# After all processing, any (source, suffix) pair that appears here but has
+# no rows in the output TSV is reported as a skip.
+_ATTEMPTED_FILE=$(mktemp /tmp/bb_attempted.XXXXXX)
+trap 'rm -f "$_ATTEMPTED_FILE"' EXIT
+
+# CSV normalizer — flattens multi-line quoted fields so awk -F',' is safe.
+normalize_csv() {
+    python3 -c '
+import csv, io, sys
+text = sys.stdin.read()
+if not text:
+    sys.exit(0)
+reader = csv.reader(io.StringIO(text))
+writer = csv.writer(sys.stdout, lineterminator="\n")
+for row in reader:
+    cleaned = [c.replace("\r", " ").replace("\n", " ") for c in row]
+    writer.writerow(cleaned)
+'
+}
+
+# Locate a metadata CSV in a bucket. Tries metadata/release/<NAME> first,
+# then recursively searches metadata/ for the first match. Prints the gs://
+# path, or empty if not found.
+find_metadata_csv() {
+    local bucket_uri="$1" csv_name="$2"
+    if gcloud storage ls "${bucket_uri}/metadata/release/${csv_name}" &>/dev/null; then
+        echo "${bucket_uri}/metadata/release/${csv_name}"
+        return 0
+    fi
+    gcloud storage ls -r "${bucket_uri}/metadata" 2>/dev/null \
+        | grep -i "/${csv_name}$" | head -n 1 || true
+}
+
+# Process a single bucket: read SAMPLE.csv + SUBJECT.csv, join on subject_id,
+# emit (subject_id, sample_id, biobank_name, slug, source) rows.
+process_bucket() {
+    local bucket="$1" source_label="$2"
+    local bucket_uri="gs://${bucket}"
+
+    # Skip non-PMDBS buckets — biobank_name only meaningful for postmortem brain
+    if [[ "$bucket" != *pmdbs* ]]; then
+        return 0
+    fi
+
+    echo "  [${source_label}] ${bucket}"
+
+    # Derive a publisher_slug consistent with the other scripts
+    local prefix
+    if [[ "$bucket" == asap-raw-* ]]; then
+        prefix="asap-raw-"
+    elif [[ "$bucket" == asap-curated-* ]]; then
+        prefix="asap-curated-"
+    else
+        prefix=""
+    fi
+    local publisher_slug="prod-${bucket#${prefix}}"
+    local dataset_suffix="${bucket#${prefix}}"
+
+    # Log this dataset as attempted — we'll later check whether it produced
+    # any rows in the output TSV.
+    printf '%s\t%s\n' "$source_label" "$dataset_suffix" >> "$_ATTEMPTED_FILE"
+
+    # Find SAMPLE.csv and SUBJECT.csv
+    local sample_loc subject_loc
+    sample_loc=$(find_metadata_csv "$bucket_uri" "SAMPLE.csv")
+    subject_loc=$(find_metadata_csv "$bucket_uri" "SUBJECT.csv")
+
+    if [[ -z "$sample_loc" ]]; then
+        echo "    [SKIP] no SAMPLE.csv found"
+        return 0
+    fi
+    if [[ -z "$subject_loc" ]]; then
+        echo "    [SKIP] no SUBJECT.csv found (no biobank_name source)"
+        return 0
+    fi
+
+    local sample_csv subject_csv
+    sample_csv=$(gcloud storage cat "$sample_loc" | normalize_csv)
+    subject_csv=$(gcloud storage cat "$subject_loc" | normalize_csv)
+
+    # Use Python's csv module to do the join — handles quoted/multi-line cells
+    # cleanly and avoids awk -F',' pitfalls.
+    local rows_written
+    rows_written=$(python3 -c '
+import csv, io, sys
+slug = sys.argv[1]; source = sys.argv[2]; out = sys.argv[3]
+
+def read_csv(text):
+    r = csv.DictReader(io.StringIO(text))
+    fields = r.fieldnames or []
+    norm = {f.strip().strip("\"").lstrip("\ufeff"): f for f in fields}
+    return list(r), norm
+
+sample_text  = sys.argv[4]
+subject_text = sys.argv[5]
+sample_rows, sn  = read_csv(sample_text)
+subject_rows, un = read_csv(subject_text)
+
+# Resolve column names (case-insensitive header tolerance via norm dict).
+sub_id_s  = sn.get("subject_id")
+samp_id_s = sn.get("sample_id")
+sub_id_u  = un.get("subject_id")
+biobank_u = un.get("biobank_name")
+
+problems = []
+if not sub_id_s:   problems.append("SAMPLE missing subject_id")
+if not samp_id_s:  problems.append("SAMPLE missing sample_id")
+if not sub_id_u:   problems.append("SUBJECT missing subject_id")
+if not biobank_u:  problems.append("SUBJECT missing biobank_name")
+if problems:
+    print("[SKIP] " + ", ".join(problems), file=sys.stderr)
+    print(0)
+    sys.exit(0)
+
+# Build subject_id -> biobank_name lookup
+sub_to_bank = {}
+for row in subject_rows:
+    sid = (row.get(sub_id_u) or "").strip().strip("\"")
+    bank = (row.get(biobank_u) or "").strip().strip("\"")
+    if sid and bank and bank.lower() not in ("", "na", "n/a", "none", "null", "nan"):
+        sub_to_bank[sid] = bank
+
+if not sub_to_bank:
+    print("[SKIP] SUBJECT has biobank_name column but all values empty/NA", file=sys.stderr)
+    print(0)
+    sys.exit(0)
+
+# Emit one row per sample
+n = 0
+with open(out, "a") as fh:
+    for row in sample_rows:
+        sub_id  = (row.get(sub_id_s)  or "").strip().strip("\"")
+        samp_id = (row.get(samp_id_s) or "").strip().strip("\"")
+        bank = sub_to_bank.get(sub_id, "")
+        if sub_id and samp_id and bank:
+            # Defensive: replace any tabs/newlines surviving normalization
+            cleaned = [v.replace("\t", " ").replace("\n", " ").replace("\r", " ")
+                       for v in (sub_id, samp_id, bank, slug, source)]
+            fh.write("\t".join(cleaned) + "\n")
+            n += 1
+print(n)
+' "$publisher_slug" "$source_label" "$output_file" "$sample_csv" "$subject_csv" 2>/tmp/_bb_stderr.txt || true)
+
+    if [[ -s /tmp/_bb_stderr.txt ]]; then
+        echo "    $(cat /tmp/_bb_stderr.txt)"
+    fi
+    echo "    Wrote ${rows_written:-0} rows"
+}
+
+# ---------------------------------------------------------------------------
+# Main: enumerate buckets per source and process them
+# ---------------------------------------------------------------------------
+
+process_source() {
+    local source_label="$1" bucket_filter="$2"
+
+    local all_buckets
+    if [[ -n "$DATASETS" ]]; then
+        # User-provided dataset list — prepend the correct prefix
+        local prefix
+        if [[ "$source_label" == "crn" ]]; then prefix="asap-curated-"
+        else                                    prefix="asap-raw-"; fi
+        all_buckets=$(sed "s;^;${prefix};g" "$DATASETS")
+    else
+        all_buckets=$(gcloud storage buckets list \
+            --format="value(name)" \
+            --filter="name:${bucket_filter}")
+    fi
+
+    # For internal_qc, additionally filter to those labeled "internal-qc-data"
+    if [[ "$source_label" == "internal_qc" ]]; then
+        local filtered=""
+        while IFS= read -r bucket; do
+            [[ -z "$bucket" ]] && continue
+            if gcloud storage buckets describe "gs://$bucket" \
+                --format="value(labels)" 2>/dev/null | grep -q "internal-qc-data"; then
+                filtered="${filtered}${bucket}"$'\n'
+            fi
+        done <<< "$all_buckets"
+        all_buckets="$filtered"
+    fi
+
+    while IFS= read -r bucket; do
+        [[ -z "$bucket" ]] && continue
+        process_bucket "$bucket" "$source_label"
+    done <<< "$all_buckets"
+}
+
+if [[ "$SOURCES" == "crn" || "$SOURCES" == "both" ]]; then
+    echo "=== Scanning CRN curated buckets ==="
+    process_source "crn" "asap-curated-team*"
+fi
+
+if [[ "$SOURCES" == "internal_qc" || "$SOURCES" == "both" ]]; then
+    echo "=== Scanning internal QC raw buckets ==="
+    process_source "internal_qc" "asap-raw-team*"
+fi
+
+# Summary — broken down by source (curated CRN vs. internal QC) plus combined totals
+echo ""
+echo "============================================================"
+echo "=== BRAIN BANK EXTRACTION SUMMARY ==="
+echo "============================================================"
+
+print_source_summary() {
+    local label="$1" source_value="$2"
+    local n_rows n_banks n_slugs n_subjects n_samples
+    n_rows=$(tail -n +2 "$output_file" | awk -F'\t' -v src="$source_value" '$5 == src' | wc -l | tr -d '[:space:]')
+    n_banks=$(tail -n +2 "$output_file" | awk -F'\t' -v src="$source_value" '$5 == src {print $3}' | sort -u | grep -cv '^$' || true)
+    n_slugs=$(tail -n +2 "$output_file" | awk -F'\t' -v src="$source_value" '$5 == src {print $4}' | sort -u | grep -cv '^$' || true)
+    n_subjects=$(tail -n +2 "$output_file" | awk -F'\t' -v src="$source_value" '$5 == src {print $1}' | sort -u | grep -cv '^$' || true)
+    n_samples=$(tail -n +2 "$output_file" | awk -F'\t' -v src="$source_value" '$5 == src {print $2}' | sort -u | grep -cv '^$' || true)
+    printf "%-30s rows=%-6s unique: subjects=%-5s samples=%-5s banks=%-3s datasets=%s\n" \
+        "$label" "${n_rows:-0}" "${n_subjects:-0}" "${n_samples:-0}" "${n_banks:-0}" "${n_slugs:-0}"
+}
+
+print_source_summary "CRN curated:"     "crn"
+print_source_summary "Internal QC:"     "internal_qc"
+
+# Combined totals (subjects/samples/banks deduplicated across both sources)
+total_rows=$(tail -n +2 "$output_file" | wc -l | tr -d '[:space:]')
+total_subjects=$(tail -n +2 "$output_file" | cut -f1 | sort -u | grep -cv '^$' || true)
+total_samples=$(tail -n +2 "$output_file" | cut -f2 | sort -u | grep -cv '^$' || true)
+total_banks=$(tail -n +2 "$output_file" | cut -f3 | sort -u | grep -cv '^$' || true)
+total_slugs=$(tail -n +2 "$output_file" | cut -f4 | sort -u | grep -cv '^$' || true)
+echo "------------------------------------------------------------"
+printf "%-30s rows=%-6s unique: subjects=%-5s samples=%-5s banks=%-3s datasets=%s\n" \
+    "TOTAL (dedup across both):" "$total_rows" "${total_subjects:-0}" "${total_samples:-0}" "${total_banks:-0}" "${total_slugs:-0}"
+
+# ----- Skipped datasets: attempted but produced no output rows -----
+# A dataset (identified by its suffix, the bucket name with the source prefix
+# stripped) is considered "skipped" if it appears in the attempted log but has
+# no rows in the output TSV for that (source, suffix) pair. Reasons can be:
+# missing SAMPLE.csv, missing SUBJECT.csv, missing/empty biobank_name column,
+# or simply no matching subject_id joins.
+if [[ -s "$_ATTEMPTED_FILE" ]]; then
+    # Build the set of (source, suffix) pairs that DID produce output
+    produced_file=$(mktemp /tmp/bb_produced.XXXXXX)
+    tail -n +2 "$output_file" \
+        | awk -F'\t' 'NF >= 5 {
+            slug = $4; source = $5
+            sub(/^prod-/, "", slug)
+            printf "%s\t%s\n", source, slug
+          }' \
+        | sort -u > "$produced_file"
+
+    # Sort attempted for diff
+    attempted_sorted=$(mktemp /tmp/bb_att_sorted.XXXXXX)
+    sort -u "$_ATTEMPTED_FILE" > "$attempted_sorted"
+
+    # Attempted minus produced = skipped
+    skipped_file=$(mktemp /tmp/bb_skipped.XXXXXX)
+    comm -23 "$attempted_sorted" "$produced_file" > "$skipped_file"
+    rm -f "$produced_file" "$attempted_sorted"
+
+    if [[ -s "$skipped_file" ]]; then
+        echo ""
+        echo "============================================================"
+        echo "=== SKIPPED DATASETS (no brain bank metadata found) ==="
+        echo "============================================================"
+
+        # Datasets skipped in BOTH — strip source column and intersect
+        crn_only=$(awk -F'\t' '$1 == "crn"         {print $2}' "$skipped_file" | sort -u)
+        iqc_only=$(awk -F'\t' '$1 == "internal_qc" {print $2}' "$skipped_file" | sort -u)
+        if [[ -n "$crn_only" ]] && [[ -n "$iqc_only" ]]; then
+            both=$(comm -12 <(echo "$crn_only") <(echo "$iqc_only"))
+            if [[ -n "$both" ]]; then
+                both_count=$(echo "$both" | wc -l | tr -d '[:space:]')
+                echo ""
+                echo "  Skipped in BOTH CRN curated AND internal QC ($both_count dataset(s)):"
+                echo "$both" | awk '{printf "    %s\n", $0}'
+            fi
+        fi
+    fi
+    rm -f "$skipped_file"
+fi
+
+echo ""
+echo "Saved to [$(pwd)/$output_file]"

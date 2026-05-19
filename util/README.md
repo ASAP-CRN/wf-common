@@ -14,6 +14,8 @@
 | [`crn_cloud_collection_summary`](./crn_cloud_collection_summary) | Track the ASAP raw/curated buckets, size, sample breakdown, and subject breakdown in the CRN Cloud. | See [CRN Cloud Statistics](#crn-cloud-statistics) below for more details. | `./crn_cloud_collection_summary` |
 | [`internal_qc_dataset_collection_summary`](./internal_qc_dataset_collection_summary) | Track datasets in internal QC by getting their ASAP raw buckets, size, sample, and subject breakdown in GCP. | See [CRN Cloud Statistics](#crn-cloud-statistics) below for more details. | `./internal_qc_dataset_collection_summary` |
 | [`generate_dataset_summary_table`](./generate_dataset_summary_table) | Generate pivot tables of unique subject/sample counts and subject diagnosis counts by organism × tissue type × assay from CRN Cloud or internal QC summary outputs. | Run after `crn_cloud_collection_summary` or `internal_qc_dataset_collection_summary` to produce summary tables for reporting. Auto-detects input source from the filename and prefixes outputs accordingly. Reads dataset metadata from the Google Releases Sheet via `get_releases_df()` when available; falls back to slug-name classification otherwise. | `python3 generate_dataset_summary_table <prefix>.<date>.tsv <prefix>.subject_dataset_membership.<date>.tsv <prefix>.sample_dataset_membership.<date>.tsv <prefix>.subject_diagnosis_membership.<date>.tsv` |
+| [`extract_brain_bank_data`](./extract_brain_bank_data) | Extract brain bank (`biobank_name`) metadata for every PMDBS sample across CRN curated and/or internal QC raw buckets. | Walks `asap-curated-team-*` and `asap-raw-team-*` buckets, reads `SUBJECT.csv` + `SAMPLE.csv`, joins on `subject_id`, and emits one row per sample with its associated brain bank. Tracks attempted datasets and flags those skipped in both curated and internal QC. | `./extract_brain_bank_data` |
+| [`generate_brain_bank_summary`](./generate_brain_bank_summary) | Generate brain-bank-centric summary tables (matrix + long format) from the brain bank membership TSV. | Run after `extract_brain_bank_data` to produce brain-bank-focused summaries useful for identifying well-characterized samples vs. data gaps across data types. | `python3 generate_brain_bank_summary brain_bank_membership.<date>.tsv` |
 | [`transfer_release_resources_to_raw_bucket.py`](./transfer_release_resources_to_raw_bucket.py) | Sync local release-resources config/, release_stats/ and publisher_cards/ to dataset ASAP raw buckets. | After producing Publisher card text and summary figures, this script syncs locally stored files (presumably living at asap-crn-cloud-dataset-metadata/) into each dataset gs:// raw bucket. If any later changes are made to the release-resources, this script will need to be re-run to ensure that the raw bucket contains the most up to date copies. | `./transfer_release_resources_to_raw_bucket.py -i /path/to/release_<release_version>.json -p` |
 | [`clean_wdl_raw_buckets`](./clean_wdl_raw_buckets) | Clean up script for GCP raw bucket workflow execution timestamp cohort analysis and downstream folders. | Removes outdated timestamp folder contents across all raw buckets in the cohort analysis and downstream folders while preserving versions. | `./clean_wdl_raw_buckets -p` |
 
@@ -265,7 +267,7 @@ gcloud iam service-accounts keys create ~/.config/gspread/credentials.json \
 
 # CRN Cloud Statistics
 
-Utility scripts for tracking ASAP dataset statistics across the CRN Cloud and internal GCP infrastructure. Reports on bucket sizes, sample/subject counts, and breakdowns by data assay/modality and biological origin.
+Utility scripts for tracking ASAP dataset statistics across the CRN Cloud and internal GCP infrastructure. Reports on bucket sizes, sample/subject counts, brain bank coverage, and breakdowns by data assay/modality and biological origin.
 
 ## Scripts
 
@@ -402,9 +404,78 @@ python3 generate_dataset_summary_table \
 
 ---
 
+### `extract_brain_bank_data`
+
+Walks both CRN curated (`asap-curated-team-*`) and internal QC raw (`asap-raw-team-*`) buckets, locates `SUBJECT.csv` and `SAMPLE.csv` for each PMDBS dataset, joins them on `subject_id`, and emits one row per sample with its `biobank_name`. Designed to support brain-bank-centric reporting (which samples came from which bank, across which datasets and data types).
+
+**Output:**
+- `brain_bank_membership.<date>.tsv` — one row per sample-dataset pair
+
+| Column | Description |
+|--------|-------------|
+| `subject_id` | Subject identifier from `SUBJECT.csv` |
+| `sample_id` | Sample identifier from `SAMPLE.csv` |
+| `biobank_name` | Brain bank name from `SUBJECT.csv` |
+| `publisher_slug` | Dataset slug name, synthesized from bucket name as `prod-team-...` |
+| `source` | `crn` (from curated bucket) or `internal_qc` (from raw bucket) |
+
+**Usage:**
+```bash
+./extract_brain_bank_data [OPTIONS]
+
+OPTIONS
+  -h          Display this message and exit
+  -l FILE     Restrict to datasets listed in FILE (one slug per line, without the asap-{raw,curated}- prefix)
+  -s SRC      Which source(s) to scan: crn, internal_qc, or both (default: both)
+```
+
+**Notes:**
+- Requires `gcloud` authenticated with access to both `asap-curated-team-*` and `asap-raw-team-*` buckets, plus `python3` for CSV parsing
+- Only PMDBS buckets are scanned — `biobank_name` is meaningful only for postmortem brain tissue datasets
+- Cohort buckets (`cohort-*`) are skipped — they aggregate across teams and do not have a per-team `SUBJECT.csv`
+- `SAMPLE.csv` and `SUBJECT.csv` are searched first at `metadata/release/<name>.csv`, then recursively across `metadata/`
+- Each `gcloud storage cat` output is piped through a CSV normalizer that flattens multi-line quoted fields (e.g., GeoMX-style sample IDs) before parsing
+- After all buckets are processed, the script summarizes counts per source (CRN curated vs. internal QC) and deduplicated totals, then lists any datasets attempted in **both** CRN curated **and** internal QC that produced no output rows (missing `SUBJECT.csv`, missing `biobank_name`, empty join, etc.)
+
+---
+
+### `generate_brain_bank_summary`
+
+Generates two brain-bank-centric TSVs from the `brain_bank_membership.<date>.tsv` output of `extract_brain_bank_data`. Each unique `biobank_name` string is treated as a separate bank (no alias normalization) — sort the output to spot near-duplicate spellings manually.
+
+**Input:**
+- `brain_bank_membership.<date>.tsv` (output of `extract_brain_bank_data`)
+
+**Output:**
+- `brain_bank_summary_matrix.<date>.tsv` — matrix view: rows = brain banks, columns = data types. Each cell shows `subjects / samples (team)`. Right-side summary columns: `total_samples`, `total_subjects`, `n_data_types`, `n_subjects_multi_modality`, `sources`.
+- `brain_bank_summary_long.<date>.tsv` — long format, one row per (bank, team, data_type) for filtering or pivoting in Excel.
+
+| Column (long format) | Description |
+|--------|-------------|
+| `brain_bank` | Brain bank name as it appears in `biobank_name` |
+| `team` | Team name parsed from the dataset slug |
+| `data_type` | Assay category derived from the slug (sc/snRNA-seq, Spatial Transcriptomics, etc.) |
+| `in_crn` / `in_internal_qc` | Whether this (bank, team, data_type) cell has any rows from each source |
+| `n_samples` | Distinct sample count for this cell |
+| `n_subjects` | Distinct subject count for this cell |
+| `n_subjects_multi_modality` | Subjects in this cell that also appear in ≥1 other data type for the same (bank, team) |
+| `datasets` | Semicolon-separated list of contributing datasets |
+
+**Usage:**
+```bash
+python3 generate_brain_bank_summary brain_bank_membership.<date>.tsv
+```
+
+**Notes:**
+- Data-type classification uses the same slug-name patterns as `generate_dataset_summary_table` so categories stay consistent across reports
+- The matrix sheet is sorted by `total_samples` descending — banks with the most data appear first; banks with sparse coverage and empty cells highlight where data gaps exist
+- `n_subjects_multi_modality` answers the "well-characterized samples" question: high values mean the same subject was profiled with multiple assays at the same bank+team
+
+---
+
 ## Summary Statistics
 
-Both scripts print a breakdown to stdout after writing the TSV, including counts grouped by:
+`crn_cloud_collection_summary` and `internal_qc_dataset_collection_summary` print a breakdown to stdout after writing the TSV, including counts grouped by:
 
 **Data assay/modality**
 | Group | Matched bucket patterns |
@@ -434,11 +505,13 @@ Buckets that fall into the `other` category are listed explicitly in the output 
 
 ## Dependencies
 
-- [`gcloud` CLI](https://cloud.google.com/sdk/gcloud) — required for `crn_cloud_collection_summary` and `internal_qc_dataset_collection_summary`
+- [`gcloud` CLI](https://cloud.google.com/sdk/gcloud) — required for `crn_cloud_collection_summary`, `internal_qc_dataset_collection_summary`, and `extract_brain_bank_data`
 - [`dnastack` CLI](https://docs.dnastack.com/docs/cli-overview) — required for `crn_cloud_collection_summary` only
 - `jq` — required for `crn_cloud_collection_summary`
-- `python3` (≥ 3.8) — required for `internal_qc_dataset_collection_summary` and `generate_dataset_summary_table`
-- `pandas`, `gspread` — required for `generate_dataset_summary_table`; `gspread` is optional and only enables Releases-sheet-based classification
+- `python3` (≥ 3.8) — required for `internal_qc_dataset_collection_summary`, `extract_brain_bank_data`, `generate_dataset_summary_table`, and `generate_brain_bank_summary`
+- `pandas` — required for `generate_dataset_summary_table` and `generate_brain_bank_summary`
+- `gspread` (optional) — enables Releases-sheet-based classification in `generate_dataset_summary_table`
+- `openpyxl` (optional) — enables xlsx output in `generate_dataset_summary_table`
 
 # Helpful resources
 
