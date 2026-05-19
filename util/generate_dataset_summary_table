@@ -4,12 +4,16 @@ Generate a pivot table of unique subject/sample counts by organism x tissue type
 
 Usage:
     python3 generate_dataset_summary_table \
-        <crn_summary_tsv> \
+        <summary_tsv> \
         <subject_membership_tsv> \
         <sample_membership_tsv> \
         <subject_diagnosis_membership_tsv>
 
-All three files are outputs of the crn_cloud_collection_summary script.
+Works with output from either:
+  - crn_cloud_collection_summary (production datasets in Releases)
+  - internal_qc_dataset_collection_summary (pre-release datasets — slugs synthesized
+    from bucket names; classified by slug-name fallback since they're not in Releases)
+
 Subjects and samples are deduplicated globally across all team datasets.
 """
 
@@ -22,10 +26,15 @@ from common import get_releases_df
 
 ASSAY_ORDER = [
     "sc/snRNA-seq",
+    "sc/snATAC-seq",
+    "sc/sn Multiome",
     "Bulk RNA-seq",
     "Spatial Transcriptomics",
     "Proteomics",
+    "Metabolomics",
+    "Lipidomics",
     "Genetics",
+    "WGS",
     "Metagenomics",
 ]
 
@@ -39,6 +48,9 @@ HUMAN_SOURCES_ORDER = [
 MOUSE_SOURCES_ORDER = [
     "Brain tissue",
     "Liver tissue",
+    "Lung tissue",
+    "Kidney tissue",
+    "Plasma",
     "Embryonic fibroblast",
     "Fecal",
 ]
@@ -51,6 +63,14 @@ COL_KEYS = (
 
 def classify_assay(assay):
     a = str(assay).lower()
+    # ATAC-seq first — the broader sc/sn regex below would otherwise capture sc_atac
+    if any(x in a for x in ["sc_atac", "sn_atac", "scatac", "snatac",
+                            "sc-atac", "sn-atac", "atacseq", "atac_seq", "atac-seq"]):
+        return "sc/snATAC-seq"
+    # Multiome (paired RNA+ATAC, e.g. 10x Multiome) — checked before sc/sn RNA-seq
+    # so the multimodal/multiome keyword takes precedence over a generic sc-/sn- match
+    if any(x in a for x in ["multimodal", "multiome", "multiomic"]):
+        return "sc/sn Multiome"
     if any(x in a for x in ["sc_", "sn_", "scrna", "snrna", "single_cell", "single_nucleus",
                               "sc-rna", "sn-rna", "scrnaseq", "snrnaseq"]):
         return "sc/snRNA-seq"
@@ -60,7 +80,14 @@ def classify_assay(assay):
         return "Spatial Transcriptomics"
     if any(x in a for x in ["proteom", "ms-p", "mass_spec", "mass spec"]):
         return "Proteomics"
-    if any(x in a for x in ["genetic", "genotyp", "wgs", "gwas", "snp", "variant"]):
+    if any(x in a for x in ["metabolom", "ms-mb"]):
+        return "Metabolomics"
+    if any(x in a for x in ["lipidom", "ms-l"]):
+        return "Lipidomics"
+    # WGS before Genetics — Genetics is the catch-all for genotyping/SNP/array data
+    if any(x in a for x in ["wgs", "whole_genome", "whole-genome"]):
+        return "WGS"
+    if any(x in a for x in ["genetic", "genotyp", "gwas", "snp", "variant"]):
         return "Genetics"
     if any(x in a for x in ["metagenom", "shotgun", "fecal", "microbiome", "16s"]):
         return "Metagenomics"
@@ -91,10 +118,108 @@ def classify_source(organism, sample_source):
         return "Fecal"
     if "liver" in s:
         return "Liver tissue"
+    if "lung" in s:
+        return "Lung tissue"
+    if "kidney" in s or "renal" in s:
+        return "Kidney tissue"
+    if any(x in s for x in ["plasma", "serum", "blood"]):
+        return "Plasma"
     if any(x in s for x in ["fibroblast", "mef", "embryon"]):
         return "Embryonic fibroblast"
     if any(x in s for x in ["fecal", "stool", "feces", "metagenom"]) and "mouse" in o:
         return "Fecal"
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Slug-based fallback classifiers (mirror patterns used in the bash scripts).
+# Used when a slug is not present in the Releases sheet — e.g. for pre-release
+# internal-QC datasets whose slug is synthesized from the GCS bucket name.
+# ---------------------------------------------------------------------------
+
+def classify_organism_from_slug(slug):
+    s = str(slug).lower()
+    if "human" in s or "pmdbs" in s:
+        return "Human"
+    if "mouse" in s or "sulzer-fecal-metagenome-fp-spf" in s:
+        return "Mouse"
+    if "mef" in s or "mefs" in s:
+        return "Mouse"
+    # Cell-line / in-vitro datasets — assume human unless slug also says mouse;
+    # the bash scripts treat these as a separate origin but the pivot table only
+    # has Human/Mouse, so default to Human (typical for iPSC/HEK293/etc.).
+    if any(x in s for x in ["invitro", "ipsc", "hek"]):
+        return "Human" if "mouse" not in s else "Mouse"
+    return None
+
+
+def classify_source_from_slug(slug):
+    s = str(slug).lower()
+    # MEF = mouse embryonic fibroblast → must come before generic cell-line check
+    if "mef" in s:
+        return "Embryonic fibroblast"
+    if any(x in s for x in ["pmdbs", "brain", "midbrain", "striatum", "cortex",
+                            "substantia-nigra", "hippocampus", "cerebellum"]):
+        return "Brain tissue"
+    if any(x in s for x in ["colon", "gastro", "intestin", "gi-tract"]):
+        return "Gastrointestinal"
+    if any(x in s for x in ["fecal", "metagenome"]):
+        return "Fecal"
+    if "liver" in s:
+        return "Liver tissue"
+    if "lung" in s:
+        return "Lung tissue"
+    if "kidney" in s or "renal" in s:
+        return "Kidney tissue"
+    if any(x in s for x in ["plasma", "serum", "-blood-"]) or s.endswith("-blood"):
+        return "Plasma"
+    if any(x in s for x in ["invitro", "ipsc", "hek", "cell-line"]):
+        return "Cell lines"
+    return None
+
+
+def classify_assay_from_slug(slug):
+    s = str(slug).lower()
+    # Order matters: more specific before more general.
+    # ATAC must come before RNA to avoid the sn-/sc- prefix catching atac variants.
+    if any(x in s for x in ["sn-atacseq", "sc-atacseq", "snatacseq", "scatacseq",
+                            "sn-atac", "sc-atac", "atac-seq", "atacseq"]):
+        return "sc/snATAC-seq"
+    # Multiome (paired RNA+ATAC) — checked before sc/sn RNA-seq so the
+    # multimodal/multiome keyword takes precedence over a generic sc-/sn- match
+    if any(x in s for x in ["multimodal", "multiome", "multiomic"]):
+        return "sc/sn Multiome"
+    if any(x in s for x in ["sn-rnaseq", "sc-rnaseq",
+                            "scrnaseq", "snrnaseq", "single-cell", "single-nucleus"]):
+        return "sc/snRNA-seq"
+    if "bulk-rnaseq" in s or "bulk" in s:
+        return "Bulk RNA-seq"
+    if any(x in s for x in ["spatial", "visium", "geomx", "cosmx", "xenium"]):
+        return "Spatial Transcriptomics"
+    # Mass-spec assays: tighten patterns so ms-p / ms-mb / ms-l don't collide
+    if any(x in s for x in ["ms-p-", "ms-p_", "proteom", "mass-spec"]) or s.endswith("ms-p"):
+        return "Proteomics"
+    if any(x in s for x in ["ms-mb-", "ms-mb_", "metabolom"]) or s.endswith("ms-mb"):
+        return "Metabolomics"
+    if any(x in s for x in ["ms-l-", "ms-l_", "lipidom"]) or s.endswith("ms-l"):
+        return "Lipidomics"
+    # WGS before Genetics — Genetics is the catch-all for genotyping/SNP/array data
+    if any(x in s for x in ["wgs", "whole-genome"]):
+        return "WGS"
+    if any(x in s for x in ["genetic", "genotyp", "gwas"]):
+        return "Genetics"
+    if "metagenome" in s or "metagenomic" in s or "microbiome" in s:
+        return "Metagenomics"
+    return None
+
+
+def classify_slug_fallback(slug):
+    """Try slug-only classification; returns dict or None if not classifiable."""
+    org = classify_organism_from_slug(slug)
+    src = classify_source_from_slug(slug)
+    asy = classify_assay_from_slug(slug)
+    if org and src and asy:
+        return {"_organism": org, "_source": src, "_assay": asy}
     return None
 
 
@@ -132,15 +257,19 @@ def main():
         df.drop(df[df["publisher_slug"].str.contains("cohort", na=False)].index, inplace=True)
 
     print("Fetching Releases sheet...")
-    releases_df = get_releases_df()
-    meta = (releases_df[["prod_slug", "organism", "sample_source", "assay"]]
-            .dropna(subset=["prod_slug"])
-            .query("prod_slug != ''")
-            .copy())
-
-    meta["_organism"] = meta["organism"].apply(classify_organism)
-    meta["_source"]   = meta.apply(lambda r: classify_source(r["organism"], r["sample_source"]), axis=1)
-    meta["_assay"]    = meta["assay"].apply(classify_assay)
+    try:
+        releases_df = get_releases_df()
+        meta = (releases_df[["prod_slug", "organism", "sample_source", "assay"]]
+                .dropna(subset=["prod_slug"])
+                .query("prod_slug != ''")
+                .copy())
+        meta["_organism"] = meta["organism"].apply(classify_organism)
+        meta["_source"]   = meta.apply(lambda r: classify_source(r["organism"], r["sample_source"]), axis=1)
+        meta["_assay"]    = meta["assay"].apply(classify_assay)
+    except Exception as e:
+        print(f"  (Releases fetch failed: {e!r} — proceeding with slug-name classification only)")
+        meta = pd.DataFrame(columns=["prod_slug", "organism", "sample_source", "assay",
+                                       "_organism", "_source", "_assay"])
 
     OVERRIDES = {
         "prod-team-scherzer-pmdbs-genetics": {"_organism": "Human", "_source": "Brain tissue", "_assay": "Genetics"},
@@ -149,6 +278,37 @@ def main():
     meta = meta.dropna(subset=["_organism", "_source", "_assay"])
     slug_to_meta = meta.set_index("prod_slug")[["_organism", "_source", "_assay"]].to_dict("index")
     slug_to_meta.update(OVERRIDES)
+
+    # Fallback: any slug seen in the inputs but missing from Releases gets
+    # classified from the slug itself (mirrors bash-script bucket-name heuristics).
+    # This handles pre-release / internal-QC datasets whose slug is derived from
+    # the GCS bucket name rather than a Releases row.
+    input_slugs = set()
+    for df in [crn_df, subj_df, sample_df, diag_df]:
+        input_slugs.update(df["publisher_slug"].dropna().unique())
+
+    fallback_classified = []
+    fallback_unclassified = []
+    for slug in input_slugs - set(slug_to_meta):
+        m = classify_slug_fallback(slug)
+        if m:
+            slug_to_meta[slug] = m
+            fallback_classified.append(slug)
+        else:
+            fallback_unclassified.append(slug)
+
+    if fallback_classified:
+        print(f"\nClassified {len(fallback_classified)} slug(s) from slug-name fallback "
+              f"(not in Releases):")
+        for slug in sorted(fallback_classified):
+            m = slug_to_meta[slug]
+            print(f"  {slug} → {m['_organism']} / {m['_source']} / {m['_assay']}")
+
+    if fallback_unclassified:
+        print(f"\nWarning: {len(fallback_unclassified)} slug(s) could not be classified "
+              f"by Releases or by slug name (will be excluded from pivot):")
+        for slug in sorted(fallback_unclassified):
+            print(f"  {slug}")
 
     unmatched = meta[meta["_organism"].isna() | meta["_source"].isna() | meta["_assay"].isna()]
     unmatched = unmatched[~unmatched["prod_slug"].isin(OVERRIDES)]
@@ -184,7 +344,7 @@ def main():
     print(table.to_string())
 
     # Save TSV
-    date_str = pd.Timestamp.now().strftime("%Y-%m-%d")
+    date_str = pd.Timestamp.now().strftime("%Y-%m-%dT%H-%M-%S")
     out_tsv = f"dataset_summary_table.{date_str}.tsv"
     with open(out_tsv, "w") as f:
         f.write("\t" + "\t".join(o for o, s in COL_KEYS) + "\n")
@@ -238,55 +398,6 @@ def main():
             row_vals = [diag_lookup.get((s, assay_), "") for o, s in COL_KEYS if o == "Human"]
             f.write(assay_ + "\t" + "\t".join(v.replace("\n", " / ") for v in row_vals) + "\n")
     print(f"Saved diagnosis table to {out_diag_tsv}")
-
-    # Save Excel
-    try:
-        import openpyxl
-        from openpyxl.styles import Font, Alignment, PatternFill
-        from openpyxl.utils import get_column_letter
-
-        out_xlsx = f"dataset_summary_table.{date_str}.xlsx"
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Summary"
-
-        fill_h = PatternFill("solid", fgColor="DCE6F1")
-        fill_m = PatternFill("solid", fgColor="EBF1DE")
-        bold   = Font(bold=True)
-        center = Alignment(horizontal="center", vertical="center")
-
-        ws.cell(1, 1, "Data type").font = bold
-        col = 2
-        for org, sources in [("Human", HUMAN_SOURCES_ORDER), ("Mouse", MOUSE_SOURCES_ORDER)]:
-            fill = fill_h if org == "Human" else fill_m
-            start = col
-            for _ in sources:
-                ws.cell(1, col).fill = fill
-                col += 1
-            ws.cell(1, start, org).font = Font(bold=True)
-            ws.cell(1, start).fill = fill
-            ws.cell(1, start).alignment = center
-            ws.merge_cells(start_row=1, start_column=start, end_row=1, end_column=col-1)
-
-        for i, (org, src) in enumerate(COL_KEYS):
-            c = ws.cell(2, i+2, src)
-            c.fill = fill_h if org == "Human" else fill_m
-            c.font = bold
-            c.alignment = center
-
-        for r, assay in enumerate(ASSAY_ORDER):
-            ws.cell(r+3, 1, assay).font = bold
-            for c, (org, src) in enumerate(COL_KEYS):
-                ws.cell(r+3, c+2, lookup.get((org, src, assay), "0/0")).alignment = center
-
-        ws.column_dimensions["A"].width = 24
-        for i in range(len(COL_KEYS)):
-            ws.column_dimensions[get_column_letter(i+2)].width = 22
-
-        wb.save(out_xlsx)
-        print(f"Saved Excel to {out_xlsx}")
-    except ImportError:
-        print("(openpyxl not installed — skipping Excel output)")
 
 
 if __name__ == "__main__":

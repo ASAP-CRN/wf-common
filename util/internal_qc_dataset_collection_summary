@@ -11,7 +11,12 @@ cat << EOF
   - Sample and subject breakdown is ongoing as more data modalities are being added
   - Sample and subject count can change as our Data Curators collaborate with CRN Teams to define this
     
-  Output: internal_qc_dataset_collection_summary.<date_str>.tsv
+  Output:
+  - internal_qc_dataset_collection_summary.<date_str>.tsv
+  - internal_qc_dataset_collection_summary.subject_dataset_membership.<date_str>.tsv
+  - internal_qc_dataset_collection_summary.sample_dataset_membership.<date_str>.tsv
+  - internal_qc_dataset_collection_summary.brain_donor_dataset_membership.<date_str>.tsv
+  - internal_qc_dataset_collection_summary.subject_diagnosis_membership.<date_str>.tsv
 
   Usage: $0 [OPTIONS]
 
@@ -36,32 +41,107 @@ done
 
 date_str=$(date +"%Y-%m-%d")
 output_file="internal_qc_dataset_collection_summary.$date_str.tsv"
-echo -e "team\tgcp_raw_bucket\tgcp_raw_bucket_size\tsample_count\tsubject_count" > "$output_file"
+echo -e "publisher_slug\tteam\tgcp_raw_bucket\tgcp_raw_bucket_size\tsample_count\tsubject_count" > "$output_file"
+
+# Membership files (match CRN script's headers so the Python summary tool can read both)
+subject_membership_file="internal_qc_dataset_collection_summary.subject_dataset_membership.$date_str.tsv"
+sample_membership_file="internal_qc_dataset_collection_summary.sample_dataset_membership.$date_str.tsv"
+brain_donor_membership_file="internal_qc_dataset_collection_summary.brain_donor_dataset_membership.$date_str.tsv"
+subject_diagnosis_membership_file="internal_qc_dataset_collection_summary.subject_diagnosis_membership.$date_str.tsv"
+echo -e "subject_id\tpublisher_slug"      > "$subject_membership_file"
+echo -e "asap_sample_id\tpublisher_slug"  > "$sample_membership_file"
+echo -e "asap_subject_id\tpublisher_slug" > "$brain_donor_membership_file"
+echo -e "asap_subject_id\tprimary_diagnosis\tpublisher_slug" > "$subject_diagnosis_membership_file"
+
+# Normalize a CSV so that multi-line quoted fields are collapsed to a single line.
+# Embedded newlines (CR/LF) inside quoted fields are replaced with spaces.
+# Embedded commas and quotes are preserved. This makes the CSV safe to parse with
+# awk -F',' downstream (which can't handle multi-line quoted fields).
+# Usage: normalized=$(echo "$raw_csv" | normalize_csv)   OR   normalized=$(normalize_csv <<< "$raw_csv")
+normalize_csv() {
+    python3 -c '
+import csv, io, sys
+text = sys.stdin.read()
+if not text:
+    sys.exit(0)
+reader = csv.reader(io.StringIO(text))
+writer = csv.writer(sys.stdout, lineterminator="\n")
+for row in reader:
+    # Replace embedded newlines in any field with a space
+    cleaned = [c.replace("\r", " ").replace("\n", " ") for c in row]
+    writer.writerow(cleaned)
+'
+}
 
 get_unique_column_count() {
     local csv_content="$1"
     local column_name="$2"
 
     local col_no
-    col_no=$(echo "$csv_content" \
-        | head -n 1 \
-        | tr "," "\n" \
-        | grep -n "^${column_name}$" \
-        | cut -d : -f 1)
+    col_no=$(awk -F',' -v col="$column_name" '
+        NR==1 {
+            for (i=1; i<=NF; i++) {
+                f=$i; gsub(/^"|"$|\r/, "", f)
+                if (f == col) { print i; exit }
+            }
+            exit
+        }
+    ' <<< "$csv_content")
 
     if [[ -z "$col_no" ]]; then
         echo ""
         return 0
     fi
 
-    echo "$csv_content" \
-        | cut -d "," -f "$col_no" \
-        | tail -n +2 \
-        | sed -r "/^\s*$/d" \
-        | sort -u \
-        | wc -l \
-        | tr -d '[:space:]'
+    awk -F',' -v c="$col_no" '
+        NR>1 {
+            v=$c; gsub(/^"|"$|\r/, "", v)
+            if (v ~ /[^[:space:]]/) print v
+        }
+    ' <<< "$csv_content" | sort -u | wc -l | tr -d '[:space:]'
 }
+
+# Extract distinct, non-empty values from a named column in a CSV string.
+# Strips surrounding quotes and CR. Prints one value per line.
+# Usage: get_unique_column_values <csv_content> <column_name>
+get_unique_column_values() {
+    local csv_content="$1"
+    local column_name="$2"
+
+    local col_no
+    col_no=$(awk -F',' -v col="$column_name" '
+        NR==1 {
+            for (i=1; i<=NF; i++) {
+                f=$i; gsub(/^"|"$|\r/, "", f)
+                if (f == col) { print i; exit }
+            }
+            exit
+        }
+    ' <<< "$csv_content")
+
+    if [[ -z "$col_no" ]]; then
+        return 0
+    fi
+
+    awk -F',' -v c="$col_no" '
+        NR>1 {
+            v=$c; gsub(/^"|"$|\r/, "", v)
+            if (v ~ /[^[:space:]]/) print v
+        }
+    ' <<< "$csv_content" | sort -u
+}
+
+# Temp files to collect IDs across all datasets for deduplication
+_HUMAN_IDS_FILE=$(mktemp /tmp/iqc_human_ids.XXXXXX)
+_MOUSE_IDS_FILE=$(mktemp /tmp/iqc_mouse_ids.XXXXXX)
+_CELL_IDS_FILE=$(mktemp /tmp/iqc_cell_ids.XXXXXX)
+_SAMPLE_IDS_FILE=$(mktemp /tmp/iqc_sample_ids.XXXXXX)
+_BRAIN_DONOR_IDS_FILE=$(mktemp /tmp/iqc_brain_donor_ids.XXXXXX)
+trap 'rm -f "$_HUMAN_IDS_FILE" "$_MOUSE_IDS_FILE" "$_CELL_IDS_FILE" "$_SAMPLE_IDS_FILE" "$_BRAIN_DONOR_IDS_FILE"' EXIT
+
+# Running totals (not deduped — same sample/donor in two datasets counts twice)
+total_brain_samples=0
+total_brain_donors=0
 
 
 if [[ -n "${DATASETS:-}" ]]; then
@@ -92,13 +172,20 @@ while IFS= read -r bucket; do
     team=$(echo "$bucket" | sed "s/^asap-raw-team-//" | cut -d'-' -f1)
     gcp_raw_bucket=$(echo "gs://$bucket")
 
+    # Synthesize CRN-style slug from bucket name so membership TSVs are interoperable
+    # gs://asap-raw-team-hafler-pmdbs-sn-rnaseq-pfc → prod-team-hafler-pmdbs-sn-rnaseq-pfc
+    publisher_slug="prod-${bucket#asap-raw-}"
+
     echo "Trying to get # of samples and subjects"
     sample_count="NA"
     subject_count="NA"
+    sample_csv=""
+    sample_csv_dir=""
     # First try: metadata/release/SAMPLE.csv
     if gcloud storage ls "$gcp_raw_bucket/metadata/release/SAMPLE.csv" &>/dev/null; then
         echo "  Found metadata/release/SAMPLE.csv"
-        sample_csv=$(gcloud storage cat "$gcp_raw_bucket/metadata/release/SAMPLE.csv")
+        sample_csv=$(gcloud storage cat "$gcp_raw_bucket/metadata/release/SAMPLE.csv" | normalize_csv)
+        sample_csv_dir="$gcp_raw_bucket/metadata/release"
         sample_count=$(get_unique_column_count "$sample_csv" "sample_id")
         subject_count=$(get_unique_column_count "$sample_csv" "subject_id")
     else
@@ -108,11 +195,266 @@ while IFS= read -r bucket; do
 
         if [ -n "$sample_csv_loc" ]; then
             echo "  Found SAMPLE.csv at: $sample_csv_loc"
-            sample_csv=$(gcloud storage cat "$sample_csv_loc")
+            sample_csv=$(gcloud storage cat "$sample_csv_loc" | normalize_csv)
+            sample_csv_dir="${sample_csv_loc%/SAMPLE.csv}"
             sample_count=$(get_unique_column_count "$sample_csv" "sample_id")
             subject_count=$(get_unique_column_count "$sample_csv" "subject_id")
         else
             echo "  No SAMPLE.csv found in metadata/ path"
+        fi
+    fi
+
+    # Collect IDs for global deduplication (only when SAMPLE.csv was found)
+    if [[ -n "$sample_csv" ]]; then
+        # Classify subject IDs by origin using bucket-name heuristic (mirrors CRN script)
+        if [[ "$bucket" == *human* ]] || [[ "$bucket" == *pmdbs* ]]; then
+            _dest_subject_file="$_HUMAN_IDS_FILE"
+        elif [[ "$bucket" == *mouse* ]] || [[ "$bucket" == *sulzer-fecal-metagenome-fp-spf* ]]; then
+            _dest_subject_file="$_MOUSE_IDS_FILE"
+        elif [[ "$bucket" == *cell* ]] || [[ "$bucket" == *invitro* ]] || [[ "$bucket" == *ipsc* ]] || [[ "$bucket" == *mef* ]]; then
+            _dest_subject_file="$_CELL_IDS_FILE"
+        else
+            _dest_subject_file=""
+        fi
+
+        if [[ -n "$_dest_subject_file" ]]; then
+            get_unique_column_values "$sample_csv" "subject_id" >> "$_dest_subject_file"
+        fi
+        get_unique_column_values "$sample_csv" "sample_id" >> "$_SAMPLE_IDS_FILE"
+
+        # Write membership rows: <id>\t<publisher_slug>
+        get_unique_column_values "$sample_csv" "subject_id" \
+            | awk -v slug="$publisher_slug" 'NF { print $0 "\t" slug }' \
+            >> "$subject_membership_file"
+        get_unique_column_values "$sample_csv" "sample_id" \
+            | awk -v slug="$publisher_slug" 'NF { print $0 "\t" slug }' \
+            >> "$sample_membership_file"
+
+        # Brain sample / donor logic mirrors CRN cloud script:
+        #   1. Brain samples (independent of CLINPATH):
+        #        - if PMDBS.csv exists → COUNT(DISTINCT sample_id) from PMDBS
+        #        - else → COUNT(DISTINCT sample_id) from SAMPLE where lower(tissue) ~ /brain/
+        #   2. Brain donors (only if CLINPATH.csv exists):
+        #        - if PMDBS.csv exists → CLINPATH.subject_id ∩ SAMPLE.subject_id where SAMPLE.sample_id ∈ PMDBS
+        #        - else if SAMPLE has any non-null region_level_1 → CLINPATH.subject_id ∩ SAMPLE.subject_id where SAMPLE.region_level_1 is non-null
+        if [[ -n "$sample_csv_dir" ]]; then
+            pmdbs_loc="$sample_csv_dir/PMDBS.csv"
+            clinpath_loc="$sample_csv_dir/CLINPATH.csv"
+
+            # --- Brain sample count (independent of CLINPATH) ---
+            dataset_brain_samples=0
+            brain_sample_ids=""
+            if gcloud storage ls "$pmdbs_loc" &>/dev/null; then
+                pmdbs_csv=$(gcloud storage cat "$pmdbs_loc" | normalize_csv)
+                brain_sample_ids=$(get_unique_column_values "$pmdbs_csv" "sample_id")
+                if [[ -n "$brain_sample_ids" ]]; then
+                    dataset_brain_samples=$(echo "$brain_sample_ids" | grep -cv '^$' || true)
+                fi
+            else
+                # No PMDBS — count SAMPLE rows with tissue ~ /brain/i
+                tissue_brain_count=$(awk -F',' '
+                    NR==1 {
+                        for (i=1; i<=NF; i++) {
+                            if ($i == "sample_id") s_col = i
+                            if ($i == "tissue")    t_col = i
+                        }
+                        next
+                    }
+                    NR>1 && s_col && t_col {
+                        t = $t_col; gsub(/^"|"$|\r/, "", t)
+                        sid = $s_col; gsub(/^"|"$|\r/, "", sid)
+                        if (tolower(t) ~ /brain/ && sid != "") print sid
+                    }
+                ' <<< "$sample_csv" | sort -u | grep -cv '^$' || true)
+                dataset_brain_samples=${tissue_brain_count:-0}
+            fi
+            total_brain_samples=$(( total_brain_samples + dataset_brain_samples ))
+
+            # --- Brain donor count (only if CLINPATH exists) ---
+            # Try CLINPATH next to SAMPLE first, then fall back to a recursive search
+            # in metadata/ (mirrors the SAMPLE.csv lookup pattern).
+            if ! gcloud storage ls "$clinpath_loc" &>/dev/null; then
+                clinpath_loc_recursive=$(gcloud storage ls -r "$gcp_raw_bucket/metadata" 2>/dev/null | grep -i "CLINPATH.csv" | head -n 1 || true)
+                if [[ -n "$clinpath_loc_recursive" ]]; then
+                    echo "  CLINPATH.csv not next to SAMPLE.csv, found at: $clinpath_loc_recursive"
+                    clinpath_loc="$clinpath_loc_recursive"
+                fi
+            fi
+
+            dataset_brain_donors=0
+            if gcloud storage ls "$clinpath_loc" &>/dev/null; then
+                clinpath_csv=$(gcloud storage cat "$clinpath_loc" | normalize_csv)
+                clinpath_subjects=$(get_unique_column_values "$clinpath_csv" "subject_id")
+
+                # Write (subject_id, primary_diagnosis, slug) for human/PMDBS datasets — mirrors CRN logic.
+                # Use Python's csv module rather than awk -F',' because diagnosis fields can contain
+                # commas inside quotes (e.g. "Idiopathic PD, mild") which awk would split on.
+                if [[ "$bucket" == *human* ]] || [[ "$bucket" == *pmdbs* ]]; then
+                    diag_rows_written=$(python3 -c '
+import csv, io, sys
+slug = sys.argv[1]
+out  = sys.argv[2]
+text = sys.stdin.read()
+
+import re
+
+# Diagnosis column priority: primary_diagnosis → last_diagnosis → path_autopsy_dx_main.
+# Try each in order, but skip a column if all its values are empty/NA (the column
+# exists but no row has a usable value — we want to fall through to the next one).
+NA_VALUES = {"", "na", "n/a", "none", "null", "nan", "-", "."}
+# Patterns that look like ages, dates, or other numeric data accidentally placed
+# in a diagnosis column. A real clinical diagnosis is never purely numeric.
+NUMERIC_LIKE_RE = re.compile(r"^[\d./\s-]+$")
+
+def is_usable_dx(v):
+    """A diagnosis value is usable if non-empty, not NA-like, and not purely
+    numeric (ages, dates, etc. sometimes end up in diagnosis columns)."""
+    if not v:
+        return False
+    low = v.lower()
+    if low in NA_VALUES:
+        return False
+    if NUMERIC_LIKE_RE.match(v):
+        return False
+    return True
+
+def has_usable_values(rows, col):
+    """A column qualifies as a diagnosis source only if EVERY non-empty value is
+    a usable diagnosis. A single numeric/date-like value (age, year, etc.)
+    disqualifies the entire column — fall through to the next candidate."""
+    has_any = False
+    for r in rows:
+        v = (r.get(col) or "").strip().strip("\"")
+        if not v or v.lower() in NA_VALUES:
+            continue
+        if not is_usable_dx(v):
+            return False  # any non-diagnosis value kills this column
+        has_any = True
+    return has_any
+
+reader = csv.DictReader(io.StringIO(text))
+fields = reader.fieldnames or []
+# Strip whitespace/quotes/BOM from header names for robust matching
+norm = {f.strip().strip("\"").lstrip("\ufeff"): f for f in fields}
+sub_key = norm.get("subject_id")
+rows = list(reader)  # materialize so we can inspect multiple columns
+
+dx_key = None
+for candidate in ("primary_diagnosis", "last_diagnosis", "path_autopsy_dx_main", "path_autopsy_second_dx"):
+    actual = norm.get(candidate)
+    if actual and has_usable_values(rows, actual):
+        dx_key = actual
+        break
+
+if not (sub_key and dx_key):
+    print("MISSING_OR_EMPTY_DX_COLUMNS:" + ",".join(sorted(norm.keys())), file=sys.stderr)
+    print(0)
+    sys.exit(0)
+
+# Log which diagnosis column was used (so we can verify fallback fired)
+print("USING_DX_COL:" + dx_key, file=sys.stderr)
+n = 0
+with open(out, "a") as fh:
+    for row in rows:
+        sid = (row.get(sub_key) or "").strip().strip("\"")
+        dx  = (row.get(dx_key)  or "").strip().strip("\"")
+        # Skip NA-like and numeric-only diagnosis values
+        if sid and is_usable_dx(dx):
+            # Tab/newline in values would break the TSV — replace with spaces
+            sid = sid.replace("\t", " ").replace("\n", " ").replace("\r", " ")
+            dx  = dx.replace("\t",  " ").replace("\n",  " ").replace("\r",  " ")
+            fh.write(sid + "\t" + dx + "\t" + slug + "\n")
+            n += 1
+print(n)
+' "$publisher_slug" "$subject_diagnosis_membership_file" <<< "$clinpath_csv" 2> /tmp/_diag_stderr.txt || true)
+                    if [[ -s /tmp/_diag_stderr.txt ]]; then
+                        echo "  [diagnosis] $(cat /tmp/_diag_stderr.txt)"
+                    fi
+                    echo "  Wrote $diag_rows_written diagnosis rows from CLINPATH"
+                fi
+
+                # Decide which path to take: PMDBS join, region_level_1 fallback, or skip
+                _has_pmdbs=false
+                _has_region=false
+                [[ -n "$brain_sample_ids" ]] && _has_pmdbs=true
+                if ! "$_has_pmdbs"; then
+                    _region_check=$(awk -F',' '
+                        NR==1 { for (i=1; i<=NF; i++) if ($i == "region_level_1") r_col = i; next }
+                        NR>1 && r_col {
+                            r = $r_col; gsub(/^"|"$|\r/, "", r)
+                            if (r != "" && r != "NA") { c++ }
+                        }
+                        END { print c+0 }
+                    ' <<< "$sample_csv")
+                    [[ "${_region_check:-0}" -gt 0 ]] && _has_region=true
+                fi
+
+                brain_subjects=""
+                if "$_has_pmdbs"; then
+                    # CLINPATH ∩ SAMPLE.subject_id where SAMPLE.sample_id ∈ PMDBS.
+                    # Write brain_sample_ids to a temp file rather than passing via -v —
+                    # BSD awk (macOS) rejects newlines inside -v argument values with
+                    # "newline in string" errors.
+                    _brain_ids_tmp=$(mktemp /tmp/iqc_brain_ids.XXXXXX)
+                    printf '%s\n' "$brain_sample_ids" > "$_brain_ids_tmp"
+                    brain_subjects=$(awk -F',' -v brain_ids_file="$_brain_ids_tmp" '
+                        BEGIN {
+                            while ((getline line < brain_ids_file) > 0) {
+                                gsub(/\r/, "", line)
+                                if (line != "") is_brain[line] = 1
+                            }
+                            close(brain_ids_file)
+                        }
+                        NR==1 {
+                            for (i=1; i<=NF; i++) {
+                                if ($i == "sample_id")  s_col = i
+                                if ($i == "subject_id") sub_col = i
+                            }
+                            next
+                        }
+                        NR>1 && s_col && sub_col {
+                            sid = $s_col; gsub(/^"|"$|\r/, "", sid)
+                            sub_id = $sub_col; gsub(/^"|"$|\r/, "", sub_id)
+                            if (sid in is_brain && sub_id != "") print sub_id
+                        }
+                    ' <<< "$sample_csv" | sort -u)
+                    rm -f "$_brain_ids_tmp"
+                elif "$_has_region"; then
+                    # CLINPATH ∩ SAMPLE.subject_id where SAMPLE.region_level_1 is non-null
+                    brain_subjects=$(awk -F',' '
+                        NR==1 {
+                            for (i=1; i<=NF; i++) {
+                                if ($i == "subject_id")    sub_col = i
+                                if ($i == "region_level_1") r_col = i
+                            }
+                            next
+                        }
+                        NR>1 && sub_col && r_col {
+                            r = $r_col; gsub(/^"|"$|\r/, "", r)
+                            sub_id = $sub_col; gsub(/^"|"$|\r/, "", sub_id)
+                            if (r != "" && r != "NA" && sub_id != "") print sub_id
+                        }
+                    ' <<< "$sample_csv" | sort -u)
+                fi
+
+                if [[ -n "$brain_subjects" ]] && [[ -n "$clinpath_subjects" ]]; then
+                    dataset_donors=$(comm -12 \
+                        <(echo "$clinpath_subjects" | sort -u) \
+                        <(echo "$brain_subjects"   | sort -u))
+                    if [[ -n "$dataset_donors" ]]; then
+                        dataset_brain_donors=$(echo "$dataset_donors" | grep -cv '^$' || true)
+                        echo "$dataset_donors" >> "$_BRAIN_DONOR_IDS_FILE"
+                        echo "$dataset_donors" \
+                            | awk -v slug="$publisher_slug" 'NF { print $0 "\t" slug }' \
+                            >> "$brain_donor_membership_file"
+                    fi
+                fi
+            else
+                if [[ "$bucket" == *human* ]] || [[ "$bucket" == *pmdbs* ]]; then
+                    echo "  [WARN] No CLINPATH.csv found in $gcp_raw_bucket/metadata — no diagnosis data for $publisher_slug"
+                fi
+            fi
+            total_brain_donors=$(( total_brain_donors + dataset_brain_donors ))
         fi
     fi
 
@@ -123,7 +465,7 @@ while IFS= read -r bucket; do
         gcp_raw_bucket_size=$(gcloud storage du -s "$gcp_raw_bucket" | grep -oE '^[0-9]+')
     fi
 
-    echo -e "${team}\t${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${sample_count}\t${subject_count}" >> "$output_file"
+    echo -e "${publisher_slug}\t${team}\t${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${sample_count}\t${subject_count}" >> "$output_file"
 done <<< "$RAW_BUCKETS"
 
 # Clean up
@@ -161,8 +503,11 @@ calculate_breakdown() {
         # Data assay/modality grouping logic
         data_type_category = ""
         if (bucket ~ /sc-rnaseq/ || bucket ~ /sn-rnaseq/) {
-            data_type_category = "sc_sn"
-            grp["sc_sn"] += count
+            data_type_category = "sc_sn_rna"
+            grp["sc_sn_rna"] += count
+        } else if (bucket ~ /sc-atacseq/ || bucket ~ /sn-atacseq/) {
+            data_type_category = "sc_sn_atac"
+            grp["sc_sn_atac"] += count
         } else if (bucket ~ /bulk-rnaseq/) {
             data_type_category = "bulk"
             grp["bulk"] += count
@@ -172,15 +517,15 @@ calculate_breakdown() {
         } else if (bucket ~ /ms-p/) {
             data_type_category = "ms_p"
             grp["ms_p"] += count
-        } else if (bucket ~ /parsebio/) {
-            data_type_category = "parsebio"
-            grp["parsebio"] += count
         } else if (bucket ~ /multimodal/ || bucket ~ /multiome/ || bucket ~ /multiomics/) {
             data_type_category = "multimodal"
             grp["multimodal"] += count
         } else if (bucket ~ /metagenome/) {
             data_type_category = "metagenomics"
             grp["metagenomics"] += count
+        } else if (bucket ~ /wgs/) {
+            data_type_category = "wgs"
+            grp["wgs"] += count
         } else {
             data_type_category = "other"
             grp["other"] += count
@@ -214,13 +559,14 @@ calculate_breakdown() {
         print ""
 
         printf "=== BREAKDOWN BY DATA TYPE ===\n"
-        printf "sc/sn RNAseq: %d\n", grp["sc_sn"]
+        printf "sc/sn RNAseq: %d\n", grp["sc_sn_rna"]
+        printf "sc/sn ATACseq: %d\n", grp["sc_sn_atac"]
         printf "bulk RNAseq:  %d\n", grp["bulk"]
         printf "spatial:      %d\n", grp["spatial"]
         printf "proteomics:   %d\n", grp["ms_p"]
-        printf "parsebio:     %d\n", grp["parsebio"]
         printf "multimodal:   %d\n", grp["multimodal"]
         printf "metagenomics: %d\n", grp["metagenomics"]
+        printf "wgs:          %d\n", grp["wgs"]
         printf "other:        %d\n", grp["other"]
         print ""
 
@@ -259,20 +605,22 @@ calculate_breakdown() {
             team_name = toupper(substr(team, 1, 1)) substr(team, 2)
             printf "Team %s:\n", team_name
             
-            if (team_data_type_category[team, "sc_sn"] > 0)
-                printf "  sc/sn RNAseq: %d\n", team_data_type_category[team, "sc_sn"]
+            if (team_data_type_category[team, "sc_sn_rna"] > 0)
+                printf "  sc/sn RNAseq: %d\n", team_data_type_category[team, "sc_sn_rna"]
+            if (team_data_type_category[team, "sc_sn_atac"] > 0)
+                printf "  sc/sn ATACseq: %d\n", team_data_type_category[team, "sc_sn_atac"]
             if (team_data_type_category[team, "bulk"] > 0)
                 printf "  bulk RNAseq:  %d\n", team_data_type_category[team, "bulk"]
             if (team_data_type_category[team, "spatial"] > 0)
                 printf "  spatial:      %d\n", team_data_type_category[team, "spatial"]
             if (team_data_type_category[team, "ms_p"] > 0)
                 printf "  proteomics:   %d\n", team_data_type_category[team, "ms_p"]
-            if (team_data_type_category[team, "parsebio"] > 0)
-                printf "  parsebio:     %d\n", team_data_type_category[team, "parsebio"]
             if (team_data_type_category[team, "multimodal"] > 0)
                 printf "  multimodal:   %d\n", team_data_type_category[team, "multimodal"]
             if (team_data_type_category[team, "metagenomics"] > 0)
                 printf "  metagenomics: %d\n", team_data_type_category[team, "metagenomics"]
+            if (team_data_type_category[team, "wgs"] > 0)
+                printf "  wgs: %d\n", team_data_type_category[team, "wgs"]
             if (team_data_type_category[team, "other"] > 0)
                 printf "  other:        %d\n", team_data_type_category[team, "other"]
             print ""
@@ -332,4 +680,64 @@ if ! "${SAMPLES_SUBJECTS_ONLY}"; then
     }' "$output_file"
 fi
 
+echo ""
+echo "========================================"
+echo "=== UNIQUE ID COUNTS ACROSS ALL DATASETS ==="
+n_unique_samples=$(sort -u "$_SAMPLE_IDS_FILE" 2>/dev/null | grep -cv '^$' || true)
+n_unique_samples=${n_unique_samples:-0}
+printf "Unique samples (sample_id) across all datasets: %d\n" "$n_unique_samples"
+
+printf "Total brain samples (with overlap):             %d\n" "$total_brain_samples"
+printf "Total brain donors (with overlap):              %d\n" "$total_brain_donors"
+n_unique_donors=$(sort -u "$_BRAIN_DONOR_IDS_FILE" 2>/dev/null | grep -cv '^$' || true)
+n_unique_donors=${n_unique_donors:-0}
+printf "Unique brain donors across all datasets:        %d\n" "$n_unique_donors"
+
+echo ""
+echo "=== SUBJECT ORIGIN BREAKDOWN ==="
+n_human_unique=$(sort -u "$_HUMAN_IDS_FILE" 2>/dev/null | grep -cv '^$' || true)
+n_mouse_unique=$(sort -u "$_MOUSE_IDS_FILE" 2>/dev/null | grep -cv '^$' || true)
+n_cell_unique=$(sort -u  "$_CELL_IDS_FILE"  2>/dev/null | grep -cv '^$' || true)
+n_human_unique=${n_human_unique:-0}
+n_mouse_unique=${n_mouse_unique:-0}
+n_cell_unique=${n_cell_unique:-0}
+n_total_unique=$(( n_human_unique + n_mouse_unique + n_cell_unique ))
+awk -F'\t' -v n_human_unique="$n_human_unique" -v n_mouse_unique="$n_mouse_unique" \
+            -v n_cell_unique="$n_cell_unique"   -v n_total_unique="$n_total_unique" '
+NR==1 {
+    for (i=1; i<=NF; i++) {
+        if ($i == "subject_count")  subj_col = i
+        if ($i == "gcp_raw_bucket") bucket_col = i
+    }
+    next
+}
+NR>1 {
+    if (subj_col > 0 && $subj_col ~ /^[0-9]+$/ && $subj_col+0 > 0) {
+        count = $subj_col+0
+        bucket = $bucket_col
+        total += count
+        if (bucket ~ /human/ || bucket ~ /pmdbs/)
+            origin["human"] += count
+        else if (bucket ~ /mouse/ || bucket ~ /sulzer-fecal-metagenome-fp-spf/)
+            origin["mouse"] += count
+        else if (bucket ~ /cell/ || bucket ~ /invitro/ || bucket ~ /ipsc/ || bucket ~ /mef/)
+            origin["cell"] += count
+        else
+            origin["other"] += count
+    }
+}
+END {
+    printf "%-30s %10s %10s\n", "", "all", "unique"
+    printf "%-30s %10d %10d\n", "human (subject_id):",     origin["human"], n_human_unique
+    printf "%-30s %10d %10d\n", "mouse (subject_id):",     origin["mouse"], n_mouse_unique
+    printf "%-30s %10d %10d\n", "cell  (subject_id):",     origin["cell"],  n_cell_unique
+    printf "%-30s %10d %10d\n", "other:",                  origin["other"], 0
+    printf "%-30s %10d %10d\n", "Total:",                  total,           n_total_unique
+}' "$output_file"
+
+echo ""
 echo "Saved results to [$(pwd)/$output_file]"
+echo "Saved subject membership to [$(pwd)/$subject_membership_file]"
+echo "Saved sample membership to [$(pwd)/$sample_membership_file]"
+echo "Saved brain donor membership to [$(pwd)/$brain_donor_membership_file]"
+echo "Saved subject diagnosis membership to [$(pwd)/$subject_diagnosis_membership_file]"

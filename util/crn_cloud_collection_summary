@@ -14,10 +14,10 @@ cat << EOF
 
   Output:
   - crn_cloud_collection_summary.<date_str>.tsv
-  - subject_dataset_membership.<date_str>.tsv (excludes cohorts)
-  - sample_dataset_membership.<date_str>.tsv (excludes cohorts)
-  - brain_donor_dataset_membership.<date_str>.tsv (excludes cohorts)
-  - subject_diagnosis_membership.<date_str>.tsv
+  - crn_cloud_collection_summary.subject_dataset_membership.<date_str>.tsv (excludes cohorts)
+  - crn_cloud_collection_summary.sample_dataset_membership.<date_str>.tsv (excludes cohorts)
+  - crn_cloud_collection_summary.brain_donor_dataset_membership.<date_str>.tsv (excludes cohorts)
+  - crn_cloud_collection_summary.subject_diagnosis_membership.<date_str>.tsv
 
   Usage: $0 [OPTIONS]
 
@@ -213,13 +213,13 @@ if [[ -n "${PREVIOUS_CRN_SUMMARY_TSV:-}" ]]; then
     echo "Appending to existing file: $output_file"
 else
     output_file="crn_cloud_collection_summary.$date_str.tsv"
-    subject_membership_file="subject_dataset_membership.$date_str.tsv"
-    brain_donor_membership_file="brain_donor_dataset_membership.$date_str.tsv"
+    subject_membership_file="crn_cloud_collection_summary.subject_dataset_membership.$date_str.tsv"
+    brain_donor_membership_file="crn_cloud_collection_summary.brain_donor_dataset_membership.$date_str.tsv"
     echo -e "subject_id\tpublisher_slug" > "$subject_membership_file"
     echo -e "asap_subject_id\tpublisher_slug" > "$brain_donor_membership_file"
-    subject_diagnosis_membership_file="subject_diagnosis_membership.$date_str.tsv"
+    subject_diagnosis_membership_file="crn_cloud_collection_summary.subject_diagnosis_membership.$date_str.tsv"
     echo -e "asap_subject_id\tprimary_diagnosis\tpublisher_slug" > "$subject_diagnosis_membership_file"
-    sample_membership_file="sample_dataset_membership.$date_str.tsv"
+    sample_membership_file="crn_cloud_collection_summary.sample_dataset_membership.$date_str.tsv"
     echo -e "asap_sample_id\tpublisher_slug" > "$sample_membership_file"
     echo -e "publisher_slug\tgcp_raw_bucket\tgcp_raw_bucket_size\tgcp_curated_bucket\tgcp_curated_bucket_size\tteam_name\tn_samples\tn_subjects\tn_brain_samples\tn_brain_regions\tn_brain_donors\tn_subjects_healthy_control\tn_subjects_idiopathic_pd\tn_subjects_alzheimers_disease\tn_subjects_frontotemporal_dementia\tn_subjects_corticobasal_syndrome\tn_subjects_dementia_with_lewy_bodies\tn_subjects_dopa_responsive_dystonia\tn_subjects_essential_tremor\tn_subjects_hemiparkinson_hemiatrophy_syndrome\tn_subjects_juvenile_autosomal_recessive_parkinsonism\tn_subjects_motor_neuron_disease_with_parkinsonism\tn_subjects_multiple_system_atrophy\tn_subjects_neuroleptic_induced_parkinsonism\tn_subjects_normal_pressure_hydrocephalus\tn_subjects_progressive_supranuclear_palsy\tn_subjects_psychogenic_parkinsonism\tn_subjects_vascular_parkinsonism\tn_subjects_no_pd_nor_other_neurological_disorder\tn_subjects_spinocerebellar_ataxia_sca\tn_subjects_prodromal_non_motor_pd\tn_subjects_prodromal_motor_pd\tn_subjects_crohns_disease\tn_subjects_crohns_disease_remission\tn_subjects_other_neurological_disorder\tn_subjects_other_non_neurological_disease_or_condition\tcondition_counts" > "$output_file"
 fi
@@ -236,15 +236,18 @@ _SAMPLE_IDS_FILE=$(mktemp /tmp/sample_ids.XXXXXX)
 trap 'rm -f "$_DIAG_LABELS_FILE" "$_HUMAN_IDS_FILE" "$_MOUSE_IDS_FILE" "$_CELL_IDS_FILE" "$_BRAIN_DONOR_IDS_FILE" "$_SAMPLE_IDS_FILE"' EXIT
 
 while IFS= read -r slug; do
+    # Skip blank lines (and the trailing newline-only "row" that read produces)
+    [[ -z "$slug" ]] && continue
+
     underscored_slug="${slug//-/_}"
 
     # Split slug into parts
     IFS='-' read -r -a parts <<< "$slug"
 
-    if [[ "${parts[0]}" == "prod" && "${parts[1]}" == "team" ]]; then
-        team_name="${parts[2]}"
-    elif [[ "${parts[0]}" == "prod" ]]; then
-        team_name="${parts[1]}"
+    if [[ "${parts[0]:-}" == "prod" && "${parts[1]:-}" == "team" ]]; then
+        team_name="${parts[2]:-}"
+    elif [[ "${parts[0]:-}" == "prod" ]]; then
+        team_name="${parts[1]:-}"
     else
         echo "Cannot parse team name for slug: $slug" >&2
         continue
@@ -266,7 +269,7 @@ while IFS= read -r slug; do
     # Cohort slugs have their own gs://asap-raw-cohort-* buckets — derive directly
     # from the slug rather than reading gcp_uri from the DATA table (which points
     # to individual team buckets, not the cohort bucket).
-    if [[ "${parts[1]}" == "cohort" ]]; then
+    if [[ "${parts[1]:-}" == "cohort" ]]; then
         gcp_raw_bucket=$(echo "$slug" | sed 's;prod-;gs://asap-raw-;g')
         if ! gcloud storage buckets describe "$gcp_raw_bucket" >/dev/null 2>&1; then
             echo "[WARNING] Cohort bucket does NOT exist: [$gcp_raw_bucket]; skipping" >&2
@@ -325,40 +328,74 @@ while IFS= read -r slug; do
     fi
 
     # Collect subject IDs for global deduplication.
-    # Try each ID type in order — first match wins for this dataset.
-    # For each type, check the dedicated table first, then SUBJECT as fallback.
-    if [[ "${parts[1]}" != "cohort" ]]; then
+    # Classify origin by bucket name FIRST (because some sample tables use
+    # `asap_subject_id` as a generic column populated with mouse IDs for
+    # mouse studies — column name doesn't reliably indicate organism).
+    # Then try ID columns in an origin-appropriate priority order.
+    if [[ "${parts[1]:-}" != "cohort" ]]; then
+        # Origin from bucket name (mirrors the awk classifier in calculate_breakdown)
+        if [[ "$gcp_raw_bucket" == *human* ]] || [[ "$gcp_raw_bucket" == *pmdbs* ]]; then
+            _bucket_origin="human"
+            _dest_file="$_HUMAN_IDS_FILE"
+            _id_cols=("asap_subject_id")
+            _src_tables=("${team_name}_sample" "${team_name}_subject")
+        elif [[ "$gcp_raw_bucket" == *mouse* ]] || [[ "$gcp_raw_bucket" == *sulzer-fecal-metagenome-fp-spf* ]]; then
+            _bucket_origin="mouse"
+            _dest_file="$_MOUSE_IDS_FILE"
+            # Mouse SAMPLE tables in some teams use asap_subject_id with mouse values;
+            # try asap_mouse_id first (true mouse table) then asap_subject_id (sample table)
+            _id_cols=("asap_mouse_id" "asap_subject_id")
+            _src_tables=("${team_name}_mouse" "${team_name}_sample" "${team_name}_subject")
+        elif [[ "$gcp_raw_bucket" == *cell* ]] || [[ "$gcp_raw_bucket" == *invitro* ]] || [[ "$gcp_raw_bucket" == *ipsc* ]] || [[ "$gcp_raw_bucket" == *mef* ]]; then
+            _bucket_origin="cell"
+            _dest_file="$_CELL_IDS_FILE"
+            _id_cols=("asap_cell_id" "asap_subject_id")
+            _src_tables=("${team_name}_cell" "${team_name}_sample" "${team_name}_subject")
+        else
+            _bucket_origin="other"
+            _dest_file=""
+            _id_cols=()
+            _src_tables=()
+        fi
+
         _collected=false
-        for _id_spec in "asap_subject_id:human:${team_name}_sample:${team_name}_subject" \
-                        "asap_mouse_id:mouse:${team_name}_sample:${team_name}_mouse" \
-                        "asap_cell_id:cell:${team_name}_sample:${team_name}_cell"; do
-            _id_col=$(echo "$_id_spec" | cut -d: -f1)
-            _origin=$(echo  "$_id_spec" | cut -d: -f2)
-            _tables=$(echo  "$_id_spec" | cut -d: -f3-)
-            if [[ "$_id_col" == "asap_subject_id" ]]; then _dest_file="$_HUMAN_IDS_FILE"
-            elif [[ "$_id_col" == "asap_mouse_id" ]]; then _dest_file="$_MOUSE_IDS_FILE"
-            else _dest_file="$_CELL_IDS_FILE"; fi
-            IFS=: read -ra _src_tables <<< "$_tables"
-            for _src_table in "${_src_tables[@]}"; do
-                if ! echo "$collection_tables" | grep -qi "$_src_table"; then continue; fi
-                dnastack collections query -c "$slug" \
-                    "SELECT DISTINCT $_id_col FROM \"collections\".\"$underscored_slug\".\"${_src_table}\"
-                    WHERE $_id_col IS NOT NULL" \
-                    -o csv 2>/dev/null | tail -n +2 | tr -d '\r,"' | grep -v '^$' > /tmp/_ids_tmp.txt 2>/dev/null || true
-                if [[ -s /tmp/_ids_tmp.txt ]]; then
-                    cat /tmp/_ids_tmp.txt >> "$_dest_file"
-                    while IFS= read -r _id; do
-                        printf "%s\t%s\n" "$_id" "$slug" >> "$subject_membership_file"
-                    done < /tmp/_ids_tmp.txt
-                    _collected=true
-                    break 2
-                fi
+        if [[ -n "$_dest_file" ]]; then
+            for _id_col in "${_id_cols[@]}"; do
+                for _src_table in "${_src_tables[@]}"; do
+                    if ! echo "$collection_tables" | grep -qi "$_src_table"; then continue; fi
+                    # Verify the column actually exists in this table before querying
+                    if ! dnastack collections query -c "$slug" \
+                        "SELECT column_name FROM collections.information_schema.columns
+                         WHERE table_schema = '$underscored_slug'
+                           AND table_name = '${_src_table}'
+                           AND column_name = '${_id_col}'
+                         LIMIT 1" \
+                        -o csv 2>/dev/null | tail -n +2 | grep -q "$_id_col"; then
+                        continue
+                    fi
+                    dnastack collections query -c "$slug" \
+                        "SELECT DISTINCT $_id_col FROM \"collections\".\"$underscored_slug\".\"${_src_table}\"
+                        WHERE $_id_col IS NOT NULL" \
+                        -o csv 2>/dev/null | tail -n +2 | tr -d '\r,"' | grep -v '^$' > /tmp/_ids_tmp.txt 2>/dev/null || true
+                    if [[ -s /tmp/_ids_tmp.txt ]]; then
+                        cat /tmp/_ids_tmp.txt >> "$_dest_file"
+                        while IFS= read -r _id; do
+                            printf "%s\t%s\n" "$_id" "$slug" >> "$subject_membership_file"
+                        done < /tmp/_ids_tmp.txt
+                        _collected=true
+                        echo "  Collected $(wc -l < /tmp/_ids_tmp.txt | tr -d '[:space:]') $_bucket_origin IDs from ${_src_table}.${_id_col}"
+                        break 2
+                    fi
+                done
             done
-        done
+            if ! "$_collected"; then
+                echo "  [WARN] No $_bucket_origin IDs collected for $slug"
+            fi
+        fi
     fi
 
     # Collect sample IDs for global deduplication
-    if [[ "${parts[1]}" != "cohort" ]]; then
+    if [[ "${parts[1]:-}" != "cohort" ]]; then
         if echo "$collection_tables" | grep -qi "${team_name}_sample"; then
             dnastack collections query -c "$slug" \
                 "SELECT DISTINCT asap_sample_id FROM \"collections\".\"$underscored_slug\".\"${team_name}_sample\"
@@ -620,18 +657,26 @@ calculate_breakdown() {
         # Data assay/modality grouping logic
         if (bucket ~ /sc-rnaseq/ || bucket ~ /sn-rnaseq/) {
             grp["sc_sn"] += count
+        } else if (bucket ~ /sc-atacseq/ || bucket ~ /sn-atacseq/) {
+            grp["sc_sn_atac"] += count
         } else if (bucket ~ /bulk-rnaseq/) {
             grp["bulk"] += count
         } else if (bucket ~ /spatial/) {
             grp["spatial"] += count
-        } else if (bucket ~ /ms-p/) {
+        } else if (bucket ~ /-ms-p-/ || bucket ~ /-ms-p$/) {
             grp["ms_p"] += count
-        } else if (bucket ~ /parsebio/) {
-            grp["parsebio"] += count
+        } else if (bucket ~ /-ms-mb-/ || bucket ~ /-ms-mb$/) {
+            grp["ms_mb"] += count
+        } else if (bucket ~ /-ms-l-/ || bucket ~ /-ms-l$/) {
+            grp["ms_l"] += count
         } else if (bucket ~ /multimodal/ || bucket ~ /multiome/ || bucket ~ /multiomics/) {
-            grp["multimodal"] += count
+            grp["multiome"] += count
         } else if (bucket ~ /metagenome/) {
             grp["metagenomics"] += count
+        } else if (bucket ~ /wgs/) {
+            grp["wgs"] += count
+        } else if (bucket ~ /genetics/ || bucket ~ /genotyp/ || bucket ~ /gwas/) {
+            grp["genetics"] += count
         } else {
             grp["other"] += count
             other_buckets[bucket] = 1
@@ -655,14 +700,18 @@ calculate_breakdown() {
         print ""
 
         print "=== BREAKDOWN BY DATA TYPE ==="
-        printf "sc/sn RNAseq: %d\n", grp["sc_sn"]
-        printf "bulk RNAseq:  %d\n", grp["bulk"]
-        printf "spatial:      %d\n", grp["spatial"]
-        printf "proteomics:   %d\n", grp["ms_p"]
-        printf "parsebio:     %d\n", grp["parsebio"]
-        printf "multimodal:   %d\n", grp["multimodal"]
-        printf "metagenomics: %d\n", grp["metagenomics"]
-        printf "other:        %d\n", grp["other"]
+        printf "sc/sn RNAseq:  %d\n", grp["sc_sn"]
+        printf "sc/sn ATACseq: %d\n", grp["sc_sn_atac"]
+        printf "sc/sn Multiome:%d\n", grp["multiome"]
+        printf "bulk RNAseq:   %d\n", grp["bulk"]
+        printf "spatial:       %d\n", grp["spatial"]
+        printf "proteomics:    %d\n", grp["ms_p"]
+        printf "metabolomics:  %d\n", grp["ms_mb"]
+        printf "lipidomics:    %d\n", grp["ms_l"]
+        printf "genetics:      %d\n", grp["genetics"]
+        printf "wgs:           %d\n", grp["wgs"]
+        printf "metagenomics:  %d\n", grp["metagenomics"]
+        printf "other:         %d\n", grp["other"]
         print ""
 
         print "=== BUCKETS IN \"OTHER\" DATA MODALITY GROUP ==="
