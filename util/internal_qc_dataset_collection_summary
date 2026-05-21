@@ -17,6 +17,7 @@ cat << EOF
   - internal_qc_dataset_collection_summary.sample_dataset_membership.<date_str>.tsv
   - internal_qc_dataset_collection_summary.brain_donor_dataset_membership.<date_str>.tsv
   - internal_qc_dataset_collection_summary.subject_diagnosis_membership.<date_str>.tsv
+  - internal_qc_dataset_collection_summary.sample_region_dataset_membership.<date_str>.tsv (one row per sample with brain region info)
 
   Usage: $0 [OPTIONS]
 
@@ -48,10 +49,12 @@ subject_membership_file="internal_qc_dataset_collection_summary.subject_dataset_
 sample_membership_file="internal_qc_dataset_collection_summary.sample_dataset_membership.$date_str.tsv"
 brain_donor_membership_file="internal_qc_dataset_collection_summary.brain_donor_dataset_membership.$date_str.tsv"
 subject_diagnosis_membership_file="internal_qc_dataset_collection_summary.subject_diagnosis_membership.$date_str.tsv"
+sample_region_membership_file="internal_qc_dataset_collection_summary.sample_region_dataset_membership.$date_str.tsv"
 echo -e "subject_id\tpublisher_slug"      > "$subject_membership_file"
 echo -e "asap_sample_id\tpublisher_slug"  > "$sample_membership_file"
 echo -e "asap_subject_id\tpublisher_slug" > "$brain_donor_membership_file"
 echo -e "asap_subject_id\tprimary_diagnosis\tpublisher_slug" > "$subject_diagnosis_membership_file"
+echo -e "subject_id\tasap_sample_id\tregion_level_1\tregion_level_2\tpublisher_slug" > "$sample_region_membership_file"
 
 # Normalize a CSV so that multi-line quoted fields are collapsed to a single line.
 # Embedded newlines (CR/LF) inside quoted fields are replaced with spaces.
@@ -229,6 +232,86 @@ while IFS= read -r bucket; do
         get_unique_column_values "$sample_csv" "sample_id" \
             | awk -v slug="$publisher_slug" 'NF { print $0 "\t" slug }' \
             >> "$sample_membership_file"
+
+        # Sample region membership: one row per sample with brain region info.
+        # Source priority:
+        #   1. SAMPLE.region_level_1 / region_level_2 (CDE 4.x)
+        #   2. PMDBS.brain_region (legacy CDE; populates region_level_1 only)
+        # Samples with both levels empty after both lookups are skipped.
+        pmdbs_csv_for_region=""
+        if [[ -n "$sample_csv_dir" ]] && gcloud storage ls "$sample_csv_dir/PMDBS.csv" &>/dev/null; then
+            pmdbs_csv_for_region=$(gcloud storage cat "$sample_csv_dir/PMDBS.csv" | normalize_csv)
+        fi
+        region_rows_written=$(python3 -c '
+import csv, io, sys
+slug = sys.argv[1]; out = sys.argv[2]
+sample_text = sys.argv[3]; pmdbs_text = sys.argv[4]
+
+NA = {"", "na", "n/a", "none", "null", "nan"}
+def clean(v):
+    s = (v or "").strip().strip("\"")
+    return "" if s.lower() in NA else s
+
+def read_csv(text):
+    if not text: return [], {}
+    reader = csv.DictReader(io.StringIO(text))
+    fields = reader.fieldnames or []
+    norm = {f.strip().strip("\"").lstrip("﻿"): f for f in fields}
+    return list(reader), norm
+
+# SAMPLE pass: sample_id -> (subject_id, rl1, rl2)
+sample_rows, sn = read_csv(sample_text)
+sid_key  = sn.get("sample_id")
+subj_key = sn.get("subject_id")
+rl1_key  = sn.get("region_level_1")
+rl2_key  = sn.get("region_level_2")
+sample_map = {}
+if sid_key:
+    for r in sample_rows:
+        sid     = clean(r.get(sid_key))
+        subj_id = clean(r.get(subj_key)) if subj_key else ""
+        rl1     = clean(r.get(rl1_key)) if rl1_key else ""
+        rl2     = clean(r.get(rl2_key)) if rl2_key else ""
+        if sid:
+            sample_map[sid] = (subj_id, rl1, rl2)
+
+# PMDBS fallback: only fills where SAMPLE had no region info.
+# PMDBS may also carry region_level_1/2 in newer CDE — prefer those over brain_region.
+pmdbs_rows, pn = read_csv(pmdbs_text)
+psid_key  = pn.get("sample_id")
+psubj_key = pn.get("subject_id")
+br_key    = pn.get("brain_region")
+prl1_key  = pn.get("region_level_1")
+prl2_key  = pn.get("region_level_2")
+if psid_key and (br_key or prl1_key or prl2_key):
+    for r in pmdbs_rows:
+        sid = clean(r.get(psid_key))
+        if not sid:
+            continue
+        rl1 = clean(r.get(prl1_key)) if prl1_key else ""
+        rl2 = clean(r.get(prl2_key)) if prl2_key else ""
+        if not rl1 and br_key:
+            rl1 = clean(r.get(br_key))
+        if not rl1 and not rl2:
+            continue
+        ex_subj, ex_rl1, ex_rl2 = sample_map.get(sid, ("", "", ""))
+        if not ex_rl1 and not ex_rl2:
+            subj_id = ex_subj or (clean(r.get(psubj_key)) if psubj_key else "")
+            sample_map[sid] = (subj_id, rl1, rl2)
+
+# Emit rows where at least one region is populated
+n = 0
+with open(out, "a") as fh:
+    for sid, (subj_id, rl1, rl2) in sample_map.items():
+        if not rl1 and not rl2:
+            continue
+        cleaned = [v.replace("\t", " ").replace("\n", " ").replace("\r", " ")
+                   for v in (subj_id, sid, rl1, rl2, slug)]
+        fh.write("\t".join(cleaned) + "\n")
+        n += 1
+print(n)
+' "$publisher_slug" "$sample_region_membership_file" "$sample_csv" "$pmdbs_csv_for_region" 2>/dev/null || true)
+        echo "  Wrote ${region_rows_written:-0} sample-region rows"
 
         # Brain sample / donor logic mirrors CRN cloud script:
         #   1. Brain samples (independent of CLINPATH):
@@ -741,3 +824,4 @@ echo "Saved subject membership to [$(pwd)/$subject_membership_file]"
 echo "Saved sample membership to [$(pwd)/$sample_membership_file]"
 echo "Saved brain donor membership to [$(pwd)/$brain_donor_membership_file]"
 echo "Saved subject diagnosis membership to [$(pwd)/$subject_diagnosis_membership_file]"
+echo "Saved sample region membership to [$(pwd)/$sample_region_membership_file]"

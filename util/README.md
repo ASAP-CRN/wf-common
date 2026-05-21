@@ -281,6 +281,7 @@ Queries the [CRN Cloud](https://cloud.parkinsonsroadmap.org) via the DNAstack CL
 - `crn_cloud_collection_summary.sample_dataset_membership.<date>.tsv` — one row per sample-dataset pair (excludes cohorts)
 - `crn_cloud_collection_summary.brain_donor_dataset_membership.<date>.tsv` — one row per brain donor-dataset pair (excludes cohorts)
 - `crn_cloud_collection_summary.subject_diagnosis_membership.<date>.tsv` — one row per subject-diagnosis-dataset pair, human datasets only (CLINPATH → SUBJECT → SAMPLE `condition_id` priority order)
+- `crn_cloud_collection_summary.sample_region_dataset_membership.<date>.tsv` — one row per sample-dataset pair with brain region info (excludes cohorts; columns: `subject_id`, `asap_sample_id`, `region_level_1`, `region_level_2`, `publisher_slug`). Source priority: `SAMPLE.region_level_1` / `region_level_2` → `PMDBS.brain_region` (legacy CDE, populates `region_level_1` only). Samples without any region info are not emitted.
 
 | Column | Description |
 |--------|-------------|
@@ -335,6 +336,7 @@ Scans GCP directly for `asap-raw-team-*` buckets labelled `internal-qc-data` and
 - `internal_qc_dataset_collection_summary.sample_dataset_membership.<date>.tsv` — one row per sample-dataset pair
 - `internal_qc_dataset_collection_summary.brain_donor_dataset_membership.<date>.tsv` — one row per brain donor-dataset pair
 - `internal_qc_dataset_collection_summary.subject_diagnosis_membership.<date>.tsv` — one row per subject-diagnosis-dataset pair, human datasets only
+- `internal_qc_dataset_collection_summary.sample_region_dataset_membership.<date>.tsv` — one row per sample-dataset pair with brain region info (columns: `subject_id`, `asap_sample_id`, `region_level_1`, `region_level_2`, `publisher_slug`). Source priority: `SAMPLE.csv` `region_level_1` / `region_level_2` → `PMDBS.csv` `region_level_1` / `region_level_2` → `PMDBS.csv` `brain_region` (legacy CDE). Samples without any region info are not emitted.
 
 | Column | Description |
 |--------|-------------|
@@ -377,10 +379,12 @@ Generates pivot tables of unique subject/sample counts and subject diagnosis cou
 - `<prefix>.subject_dataset_membership.<date>.tsv`
 - `<prefix>.sample_dataset_membership.<date>.tsv`
 - `<prefix>.subject_diagnosis_membership.<date>.tsv`
+- `<prefix>.sample_region_dataset_membership.<date>.tsv` (optional; auto-discovered from the subject-membership path if omitted)
 
 **Output**:
 - `dataset_summary_table.<timestamp>.tsv` — table of unique subjects/samples by organism × tissue type × assay
 - `subject_diagnosis_table.<timestamp>.tsv` — table of unique subject diagnosis counts, human datasets only
+- `dataset_region_table.<timestamp>.tsv` — long-format table, one row per (dataset, `region_level_1`, `region_level_2`) with distinct `subject_count` and `sample_count`. Cohort slugs are excluded. Produced only when the sample-region membership file is present.
 
 **Usage:**
 ```bash
@@ -388,7 +392,8 @@ python3 generate_dataset_summary_table \
     <prefix>.<date>.tsv \
     <prefix>.subject_dataset_membership.<date>.tsv \
     <prefix>.sample_dataset_membership.<date>.tsv \
-    <prefix>.subject_diagnosis_membership.<date>.tsv
+    <prefix>.subject_diagnosis_membership.<date>.tsv \
+    [<prefix>.sample_region_dataset_membership.<date>.tsv]
 ```
 
 **Notes:**

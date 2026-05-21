@@ -17,6 +17,7 @@ promote_staging_data_script.log
 brain_bank*.tsv
 dataset_summary_table*.tsv
 subject_diagnosis_table*.tsv
+dataset_region_table*.tsv
 
 # Credentials
 *credentials.json
