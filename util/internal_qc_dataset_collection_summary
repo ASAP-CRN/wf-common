@@ -42,7 +42,7 @@ done
 
 date_str=$(date +"%Y-%m-%d")
 output_file="internal_qc_dataset_collection_summary.$date_str.tsv"
-echo -e "publisher_slug\tteam\tgcp_raw_bucket\tgcp_raw_bucket_size\tsample_count\tsubject_count" > "$output_file"
+echo -e "publisher_slug\tteam\tgcp_raw_bucket\tgcp_raw_bucket_size\tn_subjects_unique\tn_samples_unique\tn_samples_total" > "$output_file"
 
 # Membership files (match CRN script's headers so the Python summary tool can read both)
 subject_membership_file="internal_qc_dataset_collection_summary.subject_dataset_membership.$date_str.tsv"
@@ -102,6 +102,44 @@ get_unique_column_count() {
             if (v ~ /[^[:space:]]/) print v
         }
     ' <<< "$csv_content" | sort -u | wc -l | tr -d '[:space:]'
+}
+
+# Like get_unique_column_count but without the dedup step — counts every
+# non-empty occurrence of the column value. Used for "_total" counts so
+# replicate rows with the same sample_id (or subject_id) each contribute.
+get_total_column_count() {
+    local csv_content="$1"
+    local column_name="$2"
+
+    local col_no
+    col_no=$(awk -F',' -v col="$column_name" '
+        NR==1 {
+            for (i=1; i<=NF; i++) {
+                f=$i; gsub(/^"|"$|\r/, "", f)
+                if (f == col) { print i; exit }
+            }
+            exit
+        }
+    ' <<< "$csv_content")
+
+    if [[ -z "$col_no" ]]; then
+        echo ""
+        return 0
+    fi
+
+    awk -F',' -v c="$col_no" '
+        NR>1 {
+            v=$c; gsub(/^"|"$|\r/, "", v)
+            if (v ~ /[^[:space:]]/) print v
+        }
+    ' <<< "$csv_content" | wc -l | tr -d '[:space:]'
+}
+
+# Count raw data rows in a CSV (skipping the header). Used for n_samples_total
+# = total row count of SAMPLE.csv, which captures replicates of the same sample.
+get_total_row_count() {
+    local csv_content="$1"
+    awk 'NR>1 && /[^[:space:]]/ { n++ } END { print n+0 }' <<< "$csv_content"
 }
 
 # Extract distinct, non-empty values from a named column in a CSV string.
@@ -180,8 +218,9 @@ while IFS= read -r bucket; do
     publisher_slug="prod-${bucket#asap-raw-}"
 
     echo "Trying to get # of samples and subjects"
-    sample_count="NA"
-    subject_count="NA"
+    n_subjects_unique="NA"
+    n_samples_unique="NA"
+    n_samples_total="NA"
     sample_csv=""
     sample_csv_dir=""
     # First try: metadata/release/SAMPLE.csv
@@ -189,8 +228,6 @@ while IFS= read -r bucket; do
         echo "  Found metadata/release/SAMPLE.csv"
         sample_csv=$(gcloud storage cat "$gcp_raw_bucket/metadata/release/SAMPLE.csv" | normalize_csv)
         sample_csv_dir="$gcp_raw_bucket/metadata/release"
-        sample_count=$(get_unique_column_count "$sample_csv" "sample_id")
-        subject_count=$(get_unique_column_count "$sample_csv" "subject_id")
     else
     # Second try: search metadata/ for any SAMPLE.csv
         echo "  metadata/release/SAMPLE.csv not found, searching metadata folder for SAMPLE.csv..."
@@ -200,11 +237,23 @@ while IFS= read -r bucket; do
             echo "  Found SAMPLE.csv at: $sample_csv_loc"
             sample_csv=$(gcloud storage cat "$sample_csv_loc" | normalize_csv)
             sample_csv_dir="${sample_csv_loc%/SAMPLE.csv}"
-            sample_count=$(get_unique_column_count "$sample_csv" "sample_id")
-            subject_count=$(get_unique_column_count "$sample_csv" "subject_id")
         else
             echo "  No SAMPLE.csv found in metadata/ path"
         fi
+    fi
+
+    # Unique + total counts from SAMPLE.csv. "Unique" deduplicates by sample_id /
+    # subject_id; n_samples_total is the raw row count of SAMPLE.csv, which
+    # captures replicate rows of the same sample.
+    if [[ -n "$sample_csv" ]]; then
+        n_subjects_unique=$(get_unique_column_count "$sample_csv" "subject_id")
+        n_samples_unique=$(get_unique_column_count "$sample_csv" "sample_id")
+        n_samples_total=$(get_total_row_count "$sample_csv")
+        # Defensive: if any helper returned an empty string, fall back to NA
+        [[ -z "$n_subjects_unique" ]] && n_subjects_unique="NA"
+        [[ -z "$n_samples_unique"  ]] && n_samples_unique="NA"
+        [[ -z "$n_samples_total"   ]] && n_samples_total="NA"
+        echo "  unique subjects=$n_subjects_unique unique samples=$n_samples_unique total samples=$n_samples_total"
     fi
 
     # Collect IDs for global deduplication (only when SAMPLE.csv was found)
@@ -548,7 +597,7 @@ print(n)
         gcp_raw_bucket_size=$(gcloud storage du -s "$gcp_raw_bucket" | grep -oE '^[0-9]+')
     fi
 
-    echo -e "${publisher_slug}\t${team}\t${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${sample_count}\t${subject_count}" >> "$output_file"
+    echo -e "${publisher_slug}\t${team}\t${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${n_subjects_unique}\t${n_samples_unique}\t${n_samples_total}" >> "$output_file"
 done <<< "$RAW_BUCKETS"
 
 # Clean up
@@ -561,7 +610,9 @@ calculate_breakdown() {
     echo "Calculating the ${count_type} breakdown"
     awk -F'\t' -v count_type="$count_type" '
     NR==1 {
-        count_col_name = count_type "_count"
+        # "sample"  -> n_samples_unique
+        # "subject" -> n_subjects_unique
+        count_col_name = (count_type == "sample") ? "n_samples_unique" : "n_subjects_unique"
         for (i=1; i<=NF; i++) {
             if ($i == count_col_name) count_col = i
             if ($i == "gcp_raw_bucket") bucket_col = i
@@ -789,8 +840,8 @@ awk -F'\t' -v n_human_unique="$n_human_unique" -v n_mouse_unique="$n_mouse_uniqu
             -v n_cell_unique="$n_cell_unique"   -v n_total_unique="$n_total_unique" '
 NR==1 {
     for (i=1; i<=NF; i++) {
-        if ($i == "subject_count")  subj_col = i
-        if ($i == "gcp_raw_bucket") bucket_col = i
+        if ($i == "n_subjects_unique") subj_col = i
+        if ($i == "gcp_raw_bucket")    bucket_col = i
     }
     next
 }

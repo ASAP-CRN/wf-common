@@ -292,7 +292,9 @@ Queries the [CRN Cloud](https://cloud.parkinsonsroadmap.org) via the DNAstack CL
 | `gcp_curated_bucket_size` | Curated bucket size in bytes |
 | `team_name` | Contributing team name parsed from slug |
 | `n_samples` | Distinct `asap_sample_id` + `modality` count from ASSAY table; falls back to `COUNT(DISTINCT asap_sample_id)` from SAMPLE |
-| `n_subjects` | Subject count from SUBJECT, MOUSE, or CELL table (whichever applies); falls back to `COUNT(DISTINCT subject_id)` from SAMPLE |
+| `n_subjects_unique` | `COUNT(DISTINCT <subject-id-col>)` from team SAMPLE table where `<subject-id-col>` is `asap_subject_id`, `asap_mouse_id`, `asap_cell_id`, or `subject_id` (probed in that order); deduplicated subject count |
+| `n_samples_unique` | `COUNT(DISTINCT asap_sample_id)` from team SAMPLE table (deduplicated samples) |
+| `n_samples_total` | `COUNT(*)` of team SAMPLE table — raw row count, captures replicates of the same `asap_sample_id` |
 | `n_brain_samples` | Brain sample count from PMDBS table, or from `tissue` column in SAMPLE if no PMDBS table |
 | `n_brain_regions` | Distinct brain regions in PMDBS table |
 | `n_brain_donors` | Distinct donors in CLINPATH table |
@@ -344,8 +346,9 @@ Scans GCP directly for `asap-raw-team-*` buckets labelled `internal-qc-data` and
 | `team` | Team name parsed from bucket name |
 | `gcp_raw_bucket` | GCS raw bucket URI |
 | `gcp_raw_bucket_size` | Raw bucket size in bytes |
-| `sample_count` | Distinct `sample_id` count from `SAMPLE.csv` |
-| `subject_count` | Distinct `subject_id` count from `SAMPLE.csv` |
+| `n_subjects_unique` | Distinct `subject_id` count from `SAMPLE.csv` (deduplicated subjects) |
+| `n_samples_unique` | Distinct `sample_id` count from `SAMPLE.csv` (deduplicated samples) |
+| `n_samples_total` | Raw row count of `SAMPLE.csv` (header excluded) — captures replicates of the same `sample_id` |
 | `n_brain_samples` | Brain sample count from `PMDBS.csv` if present, else count of rows in `SAMPLE.csv` where `tissue ~ /brain/i` |
 | `n_brain_donors` | Distinct donors in `CLINPATH.csv` that also appear in `PMDBS.csv` (or `SAMPLE.region_level_1` if PMDBS not present) |
 | `n_subjects_<diagnosis>` | Per-diagnosis subject counts pulled from `CLINPATH.csv` (priority order: `primary_diagnosis` → `last_diagnosis` → `path_autopsy_dx_main` → `path_autopsy_second_dx`; any column with numeric-only values is skipped) |

@@ -224,7 +224,7 @@ else
     echo -e "asap_sample_id\tpublisher_slug" > "$sample_membership_file"
     sample_region_membership_file="crn_cloud_collection_summary.sample_region_dataset_membership.$date_str.tsv"
     echo -e "subject_id\tasap_sample_id\tregion_level_1\tregion_level_2\tpublisher_slug" > "$sample_region_membership_file"
-    echo -e "publisher_slug\tgcp_raw_bucket\tgcp_raw_bucket_size\tgcp_curated_bucket\tgcp_curated_bucket_size\tteam_name\tn_samples\tn_subjects\tn_brain_samples\tn_brain_regions\tn_brain_donors\tn_subjects_healthy_control\tn_subjects_idiopathic_pd\tn_subjects_alzheimers_disease\tn_subjects_frontotemporal_dementia\tn_subjects_corticobasal_syndrome\tn_subjects_dementia_with_lewy_bodies\tn_subjects_dopa_responsive_dystonia\tn_subjects_essential_tremor\tn_subjects_hemiparkinson_hemiatrophy_syndrome\tn_subjects_juvenile_autosomal_recessive_parkinsonism\tn_subjects_motor_neuron_disease_with_parkinsonism\tn_subjects_multiple_system_atrophy\tn_subjects_neuroleptic_induced_parkinsonism\tn_subjects_normal_pressure_hydrocephalus\tn_subjects_progressive_supranuclear_palsy\tn_subjects_psychogenic_parkinsonism\tn_subjects_vascular_parkinsonism\tn_subjects_no_pd_nor_other_neurological_disorder\tn_subjects_spinocerebellar_ataxia_sca\tn_subjects_prodromal_non_motor_pd\tn_subjects_prodromal_motor_pd\tn_subjects_crohns_disease\tn_subjects_crohns_disease_remission\tn_subjects_other_neurological_disorder\tn_subjects_other_non_neurological_disease_or_condition\tcondition_counts" > "$output_file"
+    echo -e "publisher_slug\tgcp_raw_bucket\tgcp_raw_bucket_size\tgcp_curated_bucket\tgcp_curated_bucket_size\tteam_name\tn_samples\tn_subjects_unique\tn_samples_unique\tn_samples_total\tn_brain_samples\tn_brain_regions\tn_brain_donors\tn_subjects_healthy_control\tn_subjects_idiopathic_pd\tn_subjects_alzheimers_disease\tn_subjects_frontotemporal_dementia\tn_subjects_corticobasal_syndrome\tn_subjects_dementia_with_lewy_bodies\tn_subjects_dopa_responsive_dystonia\tn_subjects_essential_tremor\tn_subjects_hemiparkinson_hemiatrophy_syndrome\tn_subjects_juvenile_autosomal_recessive_parkinsonism\tn_subjects_motor_neuron_disease_with_parkinsonism\tn_subjects_multiple_system_atrophy\tn_subjects_neuroleptic_induced_parkinsonism\tn_subjects_normal_pressure_hydrocephalus\tn_subjects_progressive_supranuclear_palsy\tn_subjects_psychogenic_parkinsonism\tn_subjects_vascular_parkinsonism\tn_subjects_no_pd_nor_other_neurological_disorder\tn_subjects_spinocerebellar_ataxia_sca\tn_subjects_prodromal_non_motor_pd\tn_subjects_prodromal_motor_pd\tn_subjects_crohns_disease\tn_subjects_crohns_disease_remission\tn_subjects_other_neurological_disorder\tn_subjects_other_non_neurological_disease_or_condition\tcondition_counts" > "$output_file"
 fi
 
 unique_teams=""
@@ -303,31 +303,56 @@ while IFS= read -r slug; do
             | tr -d '[:space:]')
     fi
 
-    # Count subjects from SUBJECT table using whichever ID column exists
-    echo "Getting # of subjects from SUBJECT table..."
-    if echo "$collection_tables" | grep -qi "${team_name}_subject"; then
-        subject_id_col=$(dnastack collections query -c "$slug" \
-            "SELECT column_name FROM collections.information_schema.columns
-            WHERE table_schema = '$underscored_slug'
-              AND table_name = '${team_name}_subject'
-              AND (column_name = 'asap_subject_id' OR column_name = 'asap_mouse_id' OR column_name = 'asap_cell_id')
-            LIMIT 1" \
-            -o csv | tail -n +2 | tr -d '[:space:],"')
-        if [[ -n "$subject_id_col" ]]; then
-            subject_count=$(query_collection "$slug" \
-                "SELECT COUNT($subject_id_col) FROM \"collections\".\"$underscored_slug\".\"${team_name}_subject\"" \
+    # Sample-table-based unique + total counts. "Unique" deduplicates by
+    # subject/sample ID; "total" is the raw row count, which captures
+    # replicates of the same sample (same sample_id, multiple rows).
+    # The subject ID column in SAMPLE varies by organism: asap_subject_id
+    # (human), asap_mouse_id (mouse), asap_cell_id (cell-line). Some older
+    # tables only have the generic subject_id. Probe to find the right one.
+    # Cohorts don't have their own SAMPLE table — set NA for those.
+    n_subjects_unique="NA"
+    n_samples_unique="NA"
+    n_samples_total="NA"
+    if [[ "${parts[1]:-}" != "cohort" ]] && echo "$collection_tables" | grep -qi "${team_name}_sample"; then
+        echo "Getting unique + total counts from SAMPLE table..."
+
+        # Probe which subject-ID column exists in the SAMPLE table
+        sample_subject_col=""
+        for _cand in asap_subject_id asap_mouse_id asap_cell_id subject_id; do
+            if dnastack collections query -c "$slug" \
+                "SELECT column_name FROM collections.information_schema.columns
+                 WHERE table_schema = '$underscored_slug'
+                   AND table_name = '${team_name}_sample'
+                   AND column_name = '${_cand}'
+                 LIMIT 1" \
+                -o csv 2>/dev/null | tail -n +2 | grep -q "$_cand"; then
+                sample_subject_col="$_cand"
+                break
+            fi
+        done
+
+        if [[ -n "$sample_subject_col" ]]; then
+            n_subjects_unique=$(query_collection "$slug" \
+                "SELECT COUNT(DISTINCT $sample_subject_col) FROM \"collections\".\"$underscored_slug\".\"${team_name}_sample\" WHERE $sample_subject_col IS NOT NULL" \
                 | tr -d '[:space:]')
         else
-            echo "  No recognized subject ID column found in ${team_name}_subject, falling back to SAMPLE table" >&2
-            subject_count=$(query_collection "$slug" \
-                "SELECT COUNT(DISTINCT subject_id) FROM \"collections\".\"$underscored_slug\".\"${team_name}_sample\"" \
-                | tr -d '[:space:]')
+            echo "  [WARN] No subject ID column found in ${team_name}_sample; leaving n_subjects_unique as NA"
         fi
-    else
-        echo "  No SUBJECT table found, falling back to SAMPLE table" >&2
-        subject_count=$(query_collection "$slug" \
-            "SELECT COUNT(DISTINCT subject_id) FROM \"collections\".\"$underscored_slug\".\"${team_name}_sample\"" \
+
+        # asap_sample_id is CDE-required and assumed present in SAMPLE
+        # (matches the existing fallback used elsewhere in this script)
+        n_samples_unique=$(query_collection "$slug" \
+            "SELECT COUNT(DISTINCT asap_sample_id) FROM \"collections\".\"$underscored_slug\".\"${team_name}_sample\" WHERE asap_sample_id IS NOT NULL" \
             | tr -d '[:space:]')
+        n_samples_total=$(query_collection "$slug" \
+            "SELECT COUNT(*) FROM \"collections\".\"$underscored_slug\".\"${team_name}_sample\"" \
+            | tr -d '[:space:]')
+
+        # Defensive: if any query returned an empty string, fall back to NA
+        [[ -z "$n_subjects_unique" ]] && n_subjects_unique="NA"
+        [[ -z "$n_samples_unique"  ]] && n_samples_unique="NA"
+        [[ -z "$n_samples_total"   ]] && n_samples_total="NA"
+        echo "  subject_col=${sample_subject_col:-none} unique subjects=$n_subjects_unique unique samples=$n_samples_unique total samples=$n_samples_total"
     fi
 
     # Collect subject IDs for global deduplication.
@@ -728,10 +753,11 @@ print(n)
     if [[ -n "${PREVIOUS_CRN_SUMMARY_TSV:-}" ]]; then
         printf "\n" >> "$output_file"
     fi
-    printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t" \
+    printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t" \
         "$slug" "$gcp_raw_bucket" "$gcp_raw_bucket_size" \
         "$gcp_prod_bucket" "$gcp_prod_bucket_size" \
-        "$team_name" "$sample_count" "$subject_count" \
+        "$team_name" "$sample_count" \
+        "$n_subjects_unique" "$n_samples_unique" "$n_samples_total" \
         "$brain_sample_count" "$brain_region_count" "$brain_donor_count" >> "$output_file"
     printf "%s\t%s\n" "$primary_diagnosis_counts" "$condition_counts" >> "$output_file"
 done <<< "$ALL_DATASETS_TO_PROCESS"
@@ -750,7 +776,7 @@ calculate_breakdown() {
     echo "Calculating the ${count_type} breakdown"
     awk -F'\t' -v count_type="$count_type" '
     NR==1 {
-        count_col_name = (count_type == "sample") ? "n_samples" : "n_subjects"
+        count_col_name = (count_type == "sample") ? "n_samples" : "n_subjects_unique"
         for (i=1; i<=NF; i++) {
             if ($i == count_col_name) count_col = i
             if ($i == "gcp_raw_bucket") bucket_col = i
@@ -950,8 +976,8 @@ awk -F'\t' -v n_human_unique="$n_human_unique" -v n_mouse_unique="$n_mouse_uniqu
             -v n_cell_unique="$n_cell_unique"   -v n_total_unique="$n_total_unique" '
 NR==1 {
     for (i=1; i<=NF; i++) {
-        if ($i == "n_subjects")     subj_col = i
-        if ($i == "gcp_raw_bucket") bucket_col = i
+        if ($i == "n_subjects_unique") subj_col = i
+        if ($i == "gcp_raw_bucket")    bucket_col = i
     }
     next
 }
@@ -1001,7 +1027,8 @@ echo "=== DISEASE CATEGORY (PRIMARY DIAGNOSIS) SUMMARY ==="
 awk -F'\t' '
 NR==1 {
     for (i=1; i<=NF; i++) {
-        if ($i ~ /^n_subjects_[a-z]/) dx_cols[i] = $i
+        # Exclude n_subjects_unique (it is a count column, not a diagnosis column)
+        if ($i ~ /^n_subjects_[a-z]/ && $i != "n_subjects_unique") dx_cols[i] = $i
         if ($i == "condition_counts") cond_col = i
     }
     next
