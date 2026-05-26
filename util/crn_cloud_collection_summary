@@ -91,7 +91,7 @@ get_bucket_from_slug() {
     echo "$bucket"
 }
 
-# From ASAP_CDE: https://docs.google.com/spreadsheets/d/1c0z5KvRELdT2AtQAH2Dus8kwAyyLrR0CROhKOjpU4Vc/edit?gid=43504703#gid=43504703
+# From ASAP_CDE v4.5: https://docs.google.com/spreadsheets/d/1c0z5KvRELdT2AtQAH2Dus8kwAyyLrR0CROhKOjpU4Vc/edit?gid=1821771235#gid=1821771235
 # Fixed ordered list of known primary_diagnosis values (display name -> column name).
 DIAGNOSIS_COLS=(
     "Healthy Control"
