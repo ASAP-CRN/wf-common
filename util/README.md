@@ -281,6 +281,7 @@ Queries the [CRN Cloud](https://cloud.parkinsonsroadmap.org) via the DNAstack CL
 - `crn_cloud_collection_summary.sample_dataset_membership.<date>.tsv` — one row per sample-dataset pair (excludes cohorts)
 - `crn_cloud_collection_summary.brain_donor_dataset_membership.<date>.tsv` — one row per brain donor-dataset pair (excludes cohorts)
 - `crn_cloud_collection_summary.subject_diagnosis_membership.<date>.tsv` — one row per subject-diagnosis-dataset pair, human datasets only (CLINPATH → SUBJECT → SAMPLE `condition_id` priority order)
+- `crn_cloud_collection_summary.sample_region_dataset_membership.<date>.tsv` — one row per sample-dataset pair with brain region info (excludes cohorts; columns: `subject_id`, `asap_sample_id`, `region_level_1`, `region_level_2`, `publisher_slug`). Source priority: `SAMPLE.region_level_1` / `region_level_2` → `PMDBS.brain_region` (legacy CDE, populates `region_level_1` only). Samples without any region info are not emitted.
 
 | Column | Description |
 |--------|-------------|
@@ -291,7 +292,9 @@ Queries the [CRN Cloud](https://cloud.parkinsonsroadmap.org) via the DNAstack CL
 | `gcp_curated_bucket_size` | Curated bucket size in bytes |
 | `team_name` | Contributing team name parsed from slug |
 | `n_samples` | Distinct `asap_sample_id` + `modality` count from ASSAY table; falls back to `COUNT(DISTINCT asap_sample_id)` from SAMPLE |
-| `n_subjects` | Subject count from SUBJECT, MOUSE, or CELL table (whichever applies); falls back to `COUNT(DISTINCT subject_id)` from SAMPLE |
+| `n_subjects_unique` | `COUNT(DISTINCT <subject-id-col>)` from team SAMPLE table where `<subject-id-col>` is `asap_subject_id`, `asap_mouse_id`, `asap_cell_id`, or `subject_id` (probed in that order); deduplicated subject count |
+| `n_samples_unique` | `COUNT(DISTINCT asap_sample_id)` from team SAMPLE table (deduplicated samples) |
+| `n_samples_total` | `COUNT(*)` of team SAMPLE table — raw row count, captures replicates of the same `asap_sample_id` |
 | `n_brain_samples` | Brain sample count from PMDBS table, or from `tissue` column in SAMPLE if no PMDBS table |
 | `n_brain_regions` | Distinct brain regions in PMDBS table |
 | `n_brain_donors` | Distinct donors in CLINPATH table |
@@ -335,6 +338,7 @@ Scans GCP directly for `asap-raw-team-*` buckets labelled `internal-qc-data` and
 - `internal_qc_dataset_collection_summary.sample_dataset_membership.<date>.tsv` — one row per sample-dataset pair
 - `internal_qc_dataset_collection_summary.brain_donor_dataset_membership.<date>.tsv` — one row per brain donor-dataset pair
 - `internal_qc_dataset_collection_summary.subject_diagnosis_membership.<date>.tsv` — one row per subject-diagnosis-dataset pair, human datasets only
+- `internal_qc_dataset_collection_summary.sample_region_dataset_membership.<date>.tsv` — one row per sample-dataset pair with brain region info (columns: `subject_id`, `asap_sample_id`, `region_level_1`, `region_level_2`, `publisher_slug`). Source priority: `SAMPLE.csv` `region_level_1` / `region_level_2` → `PMDBS.csv` `region_level_1` / `region_level_2` → `PMDBS.csv` `brain_region` (legacy CDE). Samples without any region info are not emitted.
 
 | Column | Description |
 |--------|-------------|
@@ -342,8 +346,9 @@ Scans GCP directly for `asap-raw-team-*` buckets labelled `internal-qc-data` and
 | `team` | Team name parsed from bucket name |
 | `gcp_raw_bucket` | GCS raw bucket URI |
 | `gcp_raw_bucket_size` | Raw bucket size in bytes |
-| `sample_count` | Distinct `sample_id` count from `SAMPLE.csv` |
-| `subject_count` | Distinct `subject_id` count from `SAMPLE.csv` |
+| `n_subjects_unique` | Distinct `subject_id` count from `SAMPLE.csv` (deduplicated subjects) |
+| `n_samples_unique` | Distinct `sample_id` count from `SAMPLE.csv` (deduplicated samples) |
+| `n_samples_total` | Raw row count of `SAMPLE.csv` (header excluded) — captures replicates of the same `sample_id` |
 | `n_brain_samples` | Brain sample count from `PMDBS.csv` if present, else count of rows in `SAMPLE.csv` where `tissue ~ /brain/i` |
 | `n_brain_donors` | Distinct donors in `CLINPATH.csv` that also appear in `PMDBS.csv` (or `SAMPLE.region_level_1` if PMDBS not present) |
 | `n_subjects_<diagnosis>` | Per-diagnosis subject counts pulled from `CLINPATH.csv` (priority order: `primary_diagnosis` → `last_diagnosis` → `path_autopsy_dx_main` → `path_autopsy_second_dx`; any column with numeric-only values is skipped) |
@@ -377,10 +382,12 @@ Generates pivot tables of unique subject/sample counts and subject diagnosis cou
 - `<prefix>.subject_dataset_membership.<date>.tsv`
 - `<prefix>.sample_dataset_membership.<date>.tsv`
 - `<prefix>.subject_diagnosis_membership.<date>.tsv`
+- `<prefix>.sample_region_dataset_membership.<date>.tsv` (optional; auto-discovered from the subject-membership path if omitted)
 
 **Output**:
 - `dataset_summary_table.<timestamp>.tsv` — table of unique subjects/samples by organism × tissue type × assay
 - `subject_diagnosis_table.<timestamp>.tsv` — table of unique subject diagnosis counts, human datasets only
+- `dataset_region_table.<timestamp>.tsv` — long-format table, one row per (dataset, `region_level_1`, `region_level_2`) with distinct `subject_count` and `sample_count`. Cohort slugs are excluded. Produced only when the sample-region membership file is present.
 
 **Usage:**
 ```bash
@@ -388,7 +395,8 @@ python3 generate_dataset_summary_table \
     <prefix>.<date>.tsv \
     <prefix>.subject_dataset_membership.<date>.tsv \
     <prefix>.sample_dataset_membership.<date>.tsv \
-    <prefix>.subject_diagnosis_membership.<date>.tsv
+    <prefix>.subject_diagnosis_membership.<date>.tsv \
+    [<prefix>.sample_region_dataset_membership.<date>.tsv]
 ```
 
 **Notes:**

@@ -17,6 +17,7 @@ cat << EOF
   - internal_qc_dataset_collection_summary.sample_dataset_membership.<date_str>.tsv
   - internal_qc_dataset_collection_summary.brain_donor_dataset_membership.<date_str>.tsv
   - internal_qc_dataset_collection_summary.subject_diagnosis_membership.<date_str>.tsv
+  - internal_qc_dataset_collection_summary.sample_region_dataset_membership.<date_str>.tsv (one row per sample with brain region info)
 
   Usage: $0 [OPTIONS]
 
@@ -41,17 +42,19 @@ done
 
 date_str=$(date +"%Y-%m-%d")
 output_file="internal_qc_dataset_collection_summary.$date_str.tsv"
-echo -e "publisher_slug\tteam\tgcp_raw_bucket\tgcp_raw_bucket_size\tsample_count\tsubject_count" > "$output_file"
+echo -e "publisher_slug\tteam\tgcp_raw_bucket\tgcp_raw_bucket_size\tn_subjects_unique\tn_samples_unique\tn_samples_total" > "$output_file"
 
 # Membership files (match CRN script's headers so the Python summary tool can read both)
 subject_membership_file="internal_qc_dataset_collection_summary.subject_dataset_membership.$date_str.tsv"
 sample_membership_file="internal_qc_dataset_collection_summary.sample_dataset_membership.$date_str.tsv"
 brain_donor_membership_file="internal_qc_dataset_collection_summary.brain_donor_dataset_membership.$date_str.tsv"
 subject_diagnosis_membership_file="internal_qc_dataset_collection_summary.subject_diagnosis_membership.$date_str.tsv"
+sample_region_membership_file="internal_qc_dataset_collection_summary.sample_region_dataset_membership.$date_str.tsv"
 echo -e "subject_id\tpublisher_slug"      > "$subject_membership_file"
 echo -e "asap_sample_id\tpublisher_slug"  > "$sample_membership_file"
 echo -e "asap_subject_id\tpublisher_slug" > "$brain_donor_membership_file"
 echo -e "asap_subject_id\tprimary_diagnosis\tpublisher_slug" > "$subject_diagnosis_membership_file"
+echo -e "subject_id\tasap_sample_id\tregion_level_1\tregion_level_2\tpublisher_slug" > "$sample_region_membership_file"
 
 # Normalize a CSV so that multi-line quoted fields are collapsed to a single line.
 # Embedded newlines (CR/LF) inside quoted fields are replaced with spaces.
@@ -99,6 +102,44 @@ get_unique_column_count() {
             if (v ~ /[^[:space:]]/) print v
         }
     ' <<< "$csv_content" | sort -u | wc -l | tr -d '[:space:]'
+}
+
+# Like get_unique_column_count but without the dedup step — counts every
+# non-empty occurrence of the column value. Used for "_total" counts so
+# replicate rows with the same sample_id (or subject_id) each contribute.
+get_total_column_count() {
+    local csv_content="$1"
+    local column_name="$2"
+
+    local col_no
+    col_no=$(awk -F',' -v col="$column_name" '
+        NR==1 {
+            for (i=1; i<=NF; i++) {
+                f=$i; gsub(/^"|"$|\r/, "", f)
+                if (f == col) { print i; exit }
+            }
+            exit
+        }
+    ' <<< "$csv_content")
+
+    if [[ -z "$col_no" ]]; then
+        echo ""
+        return 0
+    fi
+
+    awk -F',' -v c="$col_no" '
+        NR>1 {
+            v=$c; gsub(/^"|"$|\r/, "", v)
+            if (v ~ /[^[:space:]]/) print v
+        }
+    ' <<< "$csv_content" | wc -l | tr -d '[:space:]'
+}
+
+# Count raw data rows in a CSV (skipping the header). Used for n_samples_total
+# = total row count of SAMPLE.csv, which captures replicates of the same sample.
+get_total_row_count() {
+    local csv_content="$1"
+    awk 'NR>1 && /[^[:space:]]/ { n++ } END { print n+0 }' <<< "$csv_content"
 }
 
 # Extract distinct, non-empty values from a named column in a CSV string.
@@ -177,8 +218,9 @@ while IFS= read -r bucket; do
     publisher_slug="prod-${bucket#asap-raw-}"
 
     echo "Trying to get # of samples and subjects"
-    sample_count="NA"
-    subject_count="NA"
+    n_subjects_unique="NA"
+    n_samples_unique="NA"
+    n_samples_total="NA"
     sample_csv=""
     sample_csv_dir=""
     # First try: metadata/release/SAMPLE.csv
@@ -186,8 +228,6 @@ while IFS= read -r bucket; do
         echo "  Found metadata/release/SAMPLE.csv"
         sample_csv=$(gcloud storage cat "$gcp_raw_bucket/metadata/release/SAMPLE.csv" | normalize_csv)
         sample_csv_dir="$gcp_raw_bucket/metadata/release"
-        sample_count=$(get_unique_column_count "$sample_csv" "sample_id")
-        subject_count=$(get_unique_column_count "$sample_csv" "subject_id")
     else
     # Second try: search metadata/ for any SAMPLE.csv
         echo "  metadata/release/SAMPLE.csv not found, searching metadata folder for SAMPLE.csv..."
@@ -197,11 +237,23 @@ while IFS= read -r bucket; do
             echo "  Found SAMPLE.csv at: $sample_csv_loc"
             sample_csv=$(gcloud storage cat "$sample_csv_loc" | normalize_csv)
             sample_csv_dir="${sample_csv_loc%/SAMPLE.csv}"
-            sample_count=$(get_unique_column_count "$sample_csv" "sample_id")
-            subject_count=$(get_unique_column_count "$sample_csv" "subject_id")
         else
             echo "  No SAMPLE.csv found in metadata/ path"
         fi
+    fi
+
+    # Unique + total counts from SAMPLE.csv. "Unique" deduplicates by sample_id /
+    # subject_id; n_samples_total is the raw row count of SAMPLE.csv, which
+    # captures replicate rows of the same sample.
+    if [[ -n "$sample_csv" ]]; then
+        n_subjects_unique=$(get_unique_column_count "$sample_csv" "subject_id")
+        n_samples_unique=$(get_unique_column_count "$sample_csv" "sample_id")
+        n_samples_total=$(get_total_row_count "$sample_csv")
+        # Defensive: if any helper returned an empty string, fall back to NA
+        [[ -z "$n_subjects_unique" ]] && n_subjects_unique="NA"
+        [[ -z "$n_samples_unique"  ]] && n_samples_unique="NA"
+        [[ -z "$n_samples_total"   ]] && n_samples_total="NA"
+        echo "  unique subjects=$n_subjects_unique unique samples=$n_samples_unique total samples=$n_samples_total"
     fi
 
     # Collect IDs for global deduplication (only when SAMPLE.csv was found)
@@ -229,6 +281,86 @@ while IFS= read -r bucket; do
         get_unique_column_values "$sample_csv" "sample_id" \
             | awk -v slug="$publisher_slug" 'NF { print $0 "\t" slug }' \
             >> "$sample_membership_file"
+
+        # Sample region membership: one row per sample with brain region info.
+        # Source priority:
+        #   1. SAMPLE.region_level_1 / region_level_2 (CDE 4.x)
+        #   2. PMDBS.brain_region (legacy CDE; populates region_level_1 only)
+        # Samples with both levels empty after both lookups are skipped.
+        pmdbs_csv_for_region=""
+        if [[ -n "$sample_csv_dir" ]] && gcloud storage ls "$sample_csv_dir/PMDBS.csv" &>/dev/null; then
+            pmdbs_csv_for_region=$(gcloud storage cat "$sample_csv_dir/PMDBS.csv" | normalize_csv)
+        fi
+        region_rows_written=$(python3 -c '
+import csv, io, sys
+slug = sys.argv[1]; out = sys.argv[2]
+sample_text = sys.argv[3]; pmdbs_text = sys.argv[4]
+
+NA = {"", "na", "n/a", "none", "null", "nan"}
+def clean(v):
+    s = (v or "").strip().strip("\"")
+    return "" if s.lower() in NA else s
+
+def read_csv(text):
+    if not text: return [], {}
+    reader = csv.DictReader(io.StringIO(text))
+    fields = reader.fieldnames or []
+    norm = {f.strip().strip("\"").lstrip("﻿"): f for f in fields}
+    return list(reader), norm
+
+# SAMPLE pass: sample_id -> (subject_id, rl1, rl2)
+sample_rows, sn = read_csv(sample_text)
+sid_key  = sn.get("sample_id")
+subj_key = sn.get("subject_id")
+rl1_key  = sn.get("region_level_1")
+rl2_key  = sn.get("region_level_2")
+sample_map = {}
+if sid_key:
+    for r in sample_rows:
+        sid     = clean(r.get(sid_key))
+        subj_id = clean(r.get(subj_key)) if subj_key else ""
+        rl1     = clean(r.get(rl1_key)) if rl1_key else ""
+        rl2     = clean(r.get(rl2_key)) if rl2_key else ""
+        if sid:
+            sample_map[sid] = (subj_id, rl1, rl2)
+
+# PMDBS fallback: only fills where SAMPLE had no region info.
+# PMDBS may also carry region_level_1/2 in newer CDE — prefer those over brain_region.
+pmdbs_rows, pn = read_csv(pmdbs_text)
+psid_key  = pn.get("sample_id")
+psubj_key = pn.get("subject_id")
+br_key    = pn.get("brain_region")
+prl1_key  = pn.get("region_level_1")
+prl2_key  = pn.get("region_level_2")
+if psid_key and (br_key or prl1_key or prl2_key):
+    for r in pmdbs_rows:
+        sid = clean(r.get(psid_key))
+        if not sid:
+            continue
+        rl1 = clean(r.get(prl1_key)) if prl1_key else ""
+        rl2 = clean(r.get(prl2_key)) if prl2_key else ""
+        if not rl1 and br_key:
+            rl1 = clean(r.get(br_key))
+        if not rl1 and not rl2:
+            continue
+        ex_subj, ex_rl1, ex_rl2 = sample_map.get(sid, ("", "", ""))
+        if not ex_rl1 and not ex_rl2:
+            subj_id = ex_subj or (clean(r.get(psubj_key)) if psubj_key else "")
+            sample_map[sid] = (subj_id, rl1, rl2)
+
+# Emit rows where at least one region is populated
+n = 0
+with open(out, "a") as fh:
+    for sid, (subj_id, rl1, rl2) in sample_map.items():
+        if not rl1 and not rl2:
+            continue
+        cleaned = [v.replace("\t", " ").replace("\n", " ").replace("\r", " ")
+                   for v in (subj_id, sid, rl1, rl2, slug)]
+        fh.write("\t".join(cleaned) + "\n")
+        n += 1
+print(n)
+' "$publisher_slug" "$sample_region_membership_file" "$sample_csv" "$pmdbs_csv_for_region" 2>/dev/null || true)
+        echo "  Wrote ${region_rows_written:-0} sample-region rows"
 
         # Brain sample / donor logic mirrors CRN cloud script:
         #   1. Brain samples (independent of CLINPATH):
@@ -465,7 +597,7 @@ print(n)
         gcp_raw_bucket_size=$(gcloud storage du -s "$gcp_raw_bucket" | grep -oE '^[0-9]+')
     fi
 
-    echo -e "${publisher_slug}\t${team}\t${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${sample_count}\t${subject_count}" >> "$output_file"
+    echo -e "${publisher_slug}\t${team}\t${gcp_raw_bucket}\t${gcp_raw_bucket_size}\t${n_subjects_unique}\t${n_samples_unique}\t${n_samples_total}" >> "$output_file"
 done <<< "$RAW_BUCKETS"
 
 # Clean up
@@ -478,7 +610,9 @@ calculate_breakdown() {
     echo "Calculating the ${count_type} breakdown"
     awk -F'\t' -v count_type="$count_type" '
     NR==1 {
-        count_col_name = count_type "_count"
+        # "sample"  -> n_samples_unique
+        # "subject" -> n_subjects_unique
+        count_col_name = (count_type == "sample") ? "n_samples_unique" : "n_subjects_unique"
         for (i=1; i<=NF; i++) {
             if ($i == count_col_name) count_col = i
             if ($i == "gcp_raw_bucket") bucket_col = i
@@ -706,8 +840,8 @@ awk -F'\t' -v n_human_unique="$n_human_unique" -v n_mouse_unique="$n_mouse_uniqu
             -v n_cell_unique="$n_cell_unique"   -v n_total_unique="$n_total_unique" '
 NR==1 {
     for (i=1; i<=NF; i++) {
-        if ($i == "subject_count")  subj_col = i
-        if ($i == "gcp_raw_bucket") bucket_col = i
+        if ($i == "n_subjects_unique") subj_col = i
+        if ($i == "gcp_raw_bucket")    bucket_col = i
     }
     next
 }
@@ -741,3 +875,4 @@ echo "Saved subject membership to [$(pwd)/$subject_membership_file]"
 echo "Saved sample membership to [$(pwd)/$sample_membership_file]"
 echo "Saved brain donor membership to [$(pwd)/$brain_donor_membership_file]"
 echo "Saved subject diagnosis membership to [$(pwd)/$subject_diagnosis_membership_file]"
+echo "Saved sample region membership to [$(pwd)/$sample_region_membership_file]"

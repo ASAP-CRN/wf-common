@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 """
-Generate a pivot table of unique subject/sample counts by organism x tissue type x assay.
+Generate pivot tables of unique subject/sample counts by organism x tissue type x assay,
+and a long-format dataset-region breakdown.
 
 Usage:
     python3 generate_dataset_summary_table \
         <summary_tsv> \
         <subject_membership_tsv> \
         <sample_membership_tsv> \
-        <subject_diagnosis_membership_tsv>
+        <subject_diagnosis_membership_tsv> \
+        [<sample_region_membership_tsv>]
+
+If <sample_region_membership_tsv> is omitted, the script auto-discovers it by replacing
+"subject_dataset_membership" with "sample_region_dataset_membership" in the
+<sample_membership_tsv>'s filename and using that path if it exists.
 
 Works with output from either:
   - crn_cloud_collection_summary (production datasets in Releases)
@@ -79,6 +85,14 @@ def main():
     subj_mem_path   = sys.argv[2]
     sample_mem_path = sys.argv[3]
     diag_mem_path   = sys.argv[4]
+    # 5th arg is optional; auto-discover from the subject_membership path if omitted.
+    if len(sys.argv) >= 6 and sys.argv[5]:
+        region_mem_path = sys.argv[5]
+    else:
+        candidate = subj_mem_path.replace(
+            "subject_dataset_membership", "sample_region_dataset_membership"
+        )
+        region_mem_path = candidate if os.path.exists(candidate) else None
 
     print("Loading files...")
     crn_df    = pd.read_csv(tsv_path, sep="\t")
@@ -232,6 +246,46 @@ def main():
             row_vals = [diag_lookup.get((s, assay_), "") for o, s in COL_KEYS if o == "Human"]
             f.write(assay_ + "\t" + "\t".join(v.replace("\n", " / ") for v in row_vals) + "\n")
     print(f"Saved diagnosis table to {out_diag_tsv}")
+
+    # ---------------------------------------------------------------------------
+    # Dataset-region table — one row per (dataset, region_level_1, region_level_2)
+    # with distinct subject and sample counts. Long format, not pivoted, so it's
+    # easy to filter and re-pivot downstream.
+    # ---------------------------------------------------------------------------
+    if region_mem_path:
+        print("\nBuilding dataset-region table...")
+        region_df = pd.read_csv(region_mem_path, sep="\t", dtype=str).fillna("")
+        # Exclude cohort slugs (cohorts aggregate across teams — match the other tables)
+        region_df = region_df[~region_df["publisher_slug"].str.contains("cohort", na=False)].copy()
+        print(f"  rows loaded: {len(region_df)}")
+
+        if region_df.empty:
+            print("  (no rows in region membership file — skipping)")
+        else:
+            # Strip prod- prefix for the "dataset" display column
+            region_df["dataset"] = region_df["publisher_slug"].str.replace(r"^prod-", "", regex=True)
+
+            # Aggregate: distinct subjects and samples per (dataset, rl1, rl2)
+            grouped = (region_df
+                       .groupby(["dataset", "region_level_1", "region_level_2"], dropna=False)
+                       .agg(subject_count=("subject_id",
+                                           lambda s: s[s.astype(bool)].nunique()),
+                            sample_count=("asap_sample_id",
+                                          lambda s: s[s.astype(bool)].nunique()))
+                       .reset_index()
+                       .sort_values(["dataset", "region_level_1", "region_level_2"])
+                       .reset_index(drop=True))
+
+            out_region_tsv = f"dataset_region_table.{date_str}.tsv"
+            grouped.to_csv(out_region_tsv, sep="\t", index=False)
+
+            print(f"\n{'='*100}")
+            print("DATASET-REGION TABLE  (one row per dataset × region; distinct subjects / samples)")
+            print(f"{'='*100}")
+            print(grouped.to_string(index=False))
+            print(f"\nSaved dataset-region table to {out_region_tsv}")
+    else:
+        print("\nNo sample_region_dataset_membership file found — skipping dataset-region table.")
 
 
 if __name__ == "__main__":
