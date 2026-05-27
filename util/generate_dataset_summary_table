@@ -11,7 +11,7 @@ Usage:
         <subject_diagnosis_membership_tsv> \
         [<sample_region_membership_tsv>]
 
-If the 5th argument is omitted, the script auto-discovers it by replacing
+If <sample_region_membership_tsv> is omitted, the script auto-discovers it by replacing
 "subject_dataset_membership" with "sample_region_dataset_membership" in the
 3rd argument's filename and using that path if it exists.
 
