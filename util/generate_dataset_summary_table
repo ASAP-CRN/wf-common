@@ -13,7 +13,7 @@ Usage:
 
 If <sample_region_membership_tsv> is omitted, the script auto-discovers it by replacing
 "subject_dataset_membership" with "sample_region_dataset_membership" in the
-3rd argument's filename and using that path if it exists.
+<sample_membership_tsv>'s filename and using that path if it exists.
 
 Works with output from either:
   - crn_cloud_collection_summary (production datasets in Releases)
