@@ -1,14 +1,26 @@
 #!/usr/bin/env python3
 
-# Download metadata submitted by contributors from the raw bucket to a local dataset
-# directory to prepare for QC.
-# Defaults to dry run unless -p flag is added!
-# Usage: python3 download_raw_bucket_metadata_to_local -d team-jakobsson-pmdbs-bulk-rnaseq
-# NOTE on assumptions made:
-# 1.   You have cloned asap-crn-cloud-dataset-metadata and its root is at the
-# ---- same level as wf-common
-# 2.   The raw bucket exists and has metadata in the metadata/ subdirectory
-# 3.   The local dataset directory exists (ideally created by initialization script)
+"""
+Download metadata from the raw bucket to a local dataset directory to prepare for QC.
+- If an initial submission structure is detected (i.e., metadata/<TABLES>.csv directly),
+  will download to metadata/original/.
+- If the post-QC structure is detected (i.e., metadata/ has subdirectories like original/, cde/, release/),
+  will sync the entire metadata/ directory to local.
+
+Also downloads file_metadata/ and DOI/ if they exist in the bucket.
+
+Defaults to dry run unless -p flag is added
+
+Usage:
+    python3 wf-common/util/download_raw_bucket_metadata_to_local -d team-smith-sn-rnaseq [optional params]
+
+NOTE on assumptions made:
+1.   You have cloned asap-crn-cloud-dataset-metadata and its root is at the
+     same level as wf-common
+2.   The raw bucket exists and has metadata in the metadata/ subdirectory
+3.   The local dataset directory exists (ideally created by initialization script)
+"""
+
 
 import argparse
 import logging
@@ -96,7 +108,7 @@ def main(args):
         list_dirs(file_metadata_bucket) # Check if directory exists
         file_metadata_dir.mkdir(parents=True, exist_ok=True)
         logging.info(f"Downloading file_metadata/ from [{file_metadata_bucket}] to {file_metadata_dir}")
-       
+    
         gsync(
             source_path=file_metadata_bucket, 
             destination_path=file_metadata_dir, 
@@ -109,7 +121,7 @@ def main(args):
         list_dirs(doi_bucket)
         doi_dir.mkdir(parents=True, exist_ok=True)
         logging.info(f"Downloading DOI/ from [{doi_bucket}] to {doi_dir}")
-       
+    
         gsync(
             source_path=doi_bucket, 
             destination_path=doi_dir, 
@@ -120,17 +132,16 @@ def main(args):
 
 
 if __name__ == "__main__":
-    
     parser = argparse.ArgumentParser(
-        description="Download metadata from raw bucket to local metadata/original/ directory"
+        description=__doc__,
+        formatter_class=argparse.RawTextHelpFormatter,
     )
-    
     parser.add_argument(
         "-d",
         "--dataset-id",
         type=str,
         required=True,
-        help="Dataset ID in bucket name (e.g., team-jakobsson-pmdbs-sn-rnaseq)."
+        help="Dataset ID in bucket name (e.g., team-smith-sc-rnaseq)."
     )
     parser.add_argument(
         "-p",
