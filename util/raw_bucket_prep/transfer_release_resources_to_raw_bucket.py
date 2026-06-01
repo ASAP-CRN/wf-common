@@ -28,10 +28,17 @@ Authors: Javier Diaz
 import argparse
 import logging
 from pathlib import Path
+<<<<<<< HEAD
 
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))
 from gcloud_ops import gcopy
+=======
+# --- resolve shared/ modules from new subfolder location ---
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "shared"))
+from common import gcopy
+>>>>>>> 9935f53 (A mix of Claude and my changes to restructure util dir)
 import os, sys
 from collections import defaultdict
 import json

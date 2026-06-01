@@ -27,8 +27,13 @@ import sys
 import os
 import pandas as pd
 
+<<<<<<< HEAD
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))
 from release_ops import (
+=======
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "shared"))
+from common import (
+>>>>>>> 9935f53 (A mix of Claude and my changes to restructure util dir)
     get_releases_df,
     ASSAY_ORDER,
     HUMAN_SOURCES_ORDER,

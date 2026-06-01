@@ -7,6 +7,7 @@ import logging
 import subprocess
 from datetime import datetime, timezone
 from google.cloud import storage
+<<<<<<< HEAD
 
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))
@@ -26,6 +27,26 @@ from data_integrity import (
     md5_check,
     non_empty_check,
     associated_metadata_check,
+=======
+# --- resolve shared/ modules from new subfolder location ---
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "shared"))
+from common import (
+	unembargoed_dev_buckets_and_workflow_version_outputs,
+	list_teams,
+	list_dirs,
+	list_gs_files,
+	read_manifest_files,
+	md5_check,
+	non_empty_check,
+	associated_metadata_check,
+	gcopy,
+	gmove,
+	gsync,
+	remove_internal_qc_label,
+	change_gg_storage_admin_to_read_write,
+	add_verily_read_access,
+>>>>>>> 9935f53 (A mix of Claude and my changes to restructure util dir)
 )
 from markdown_generator import generate_markdown_report
 
