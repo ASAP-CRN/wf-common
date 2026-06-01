@@ -6,6 +6,9 @@
 
 import argparse
 import logging
+# --- resolve shared/ modules from new subfolder location ---
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "shared"))
 from common import strip_team_prefix
 from bucket_validation_utils import (
     validate_raw_bucket_structure, 

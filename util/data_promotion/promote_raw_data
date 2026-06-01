@@ -6,6 +6,9 @@ import re
 import logging
 import subprocess
 from google.cloud import storage
+# --- resolve shared/ modules from new subfolder location ---
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "shared"))
 from common import (
 	releases_df,
 	completed_platforming_raw_buckets,

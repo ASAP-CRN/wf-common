@@ -28,6 +28,9 @@ Authors: Javier Diaz
 import argparse
 import logging
 from pathlib import Path
+# --- resolve shared/ modules from new subfolder location ---
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "shared"))
 from common import gcopy
 import os, sys
 from collections import defaultdict
