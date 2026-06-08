@@ -464,7 +464,7 @@ Walks both CRN curated (`asap-curated-team-*`) and internal QC raw (`asap-raw-te
 | `sample_id` | Sample identifier from `SAMPLE.csv` |
 | `biobank_name` | Brain bank name from `SUBJECT.csv` |
 | `publisher_slug` | Dataset slug name, synthesized from bucket name as `prod-team-...` |
-| `source` | `crn` (from curated bucket) or `internal_qc` (from raw bucket) |
+| `source` | `curated` (from curated bucket) or `raw` (from raw bucket) |
 
 **Usage:**
 ```bash
@@ -473,7 +473,7 @@ Walks both CRN curated (`asap-curated-team-*`) and internal QC raw (`asap-raw-te
 OPTIONS
   -h          Display this message and exit
   -l FILE     Restrict to datasets listed in FILE (one slug per line, without the asap-{raw,curated}- prefix)
-  -s SRC      Which source(s) to scan: crn, internal_qc, or both (default: both)
+  -s SRC      Which source(s) to scan: curated, raw, or both (default: both)
 ```
 
 **Notes:**
@@ -502,7 +502,7 @@ Generates two brain-bank-centric TSVs from the `brain_bank_membership.<date>.tsv
 | `brain_bank` | Brain bank name as it appears in `biobank_name` |
 | `team` | Team name parsed from the dataset slug |
 | `data_type` | Assay category derived from the slug (sc/snRNA-seq, Spatial Transcriptomics, etc.) |
-| `in_crn` / `in_internal_qc` | Whether this (bank, team, data_type) cell has any rows from each source |
+| `in_curated` / `in_raw` | Whether this (bank, team, data_type) cell has any rows from each source |
 | `n_samples` | Distinct sample count for this cell |
 | `n_subjects` | Distinct subject count for this cell |
 | `n_subjects_multi_modality` | Subjects in this cell that also appear in ≥1 other data type for the same (bank, team) |
