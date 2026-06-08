@@ -19,7 +19,7 @@
 <text x="599.0" y="129.8" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">generate_dataset_</text>
 <text x="599.0" y="145.8" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">summary_table</text>
 <text x="599.0" y="161.8" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="9.5" font-weight="400" fill="#ffffff">Pivot &amp; dedup by</text>
-<text x="599.0" y="175.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="9.5" font-weight="400" fill="#ffffff">organism × tissue × assay</text>
+<text x="599.0" y="175.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="9.5" font-weight="400" fill="#ffffff">organism × sample source × assay</text>
 <text x="599.0" y="188.8" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="9.5" font-weight="400" fill="#ffffff">(Releases Sheet via gspread)</text>
 <rect x="734" y="102" width="206" height="104" rx="14" ry="14" fill="#9fc5e8" filter="url(#sh)"/>
 <text x="837.0" y="137.0" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#1a1a1a">Summary tables</text>

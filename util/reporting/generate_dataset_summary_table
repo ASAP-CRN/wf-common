@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate pivot tables of unique subject/sample counts by organism x tissue type x assay,
+Generate pivot tables of unique subject/sample counts by organism x sample source x assay,
 and a long-format dataset-region breakdown.
 
 Usage:

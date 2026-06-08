@@ -58,7 +58,7 @@ completed_platforming_raw_buckets = (
 ##### SLUG CLASSIFIERS AND ORDERED CATEGORY LISTS ####################
 ######################################################################
 # Used by generate_dataset_summary_table and generate_brain_bank_summary
-# to categorize datasets by assay type, organism, and tissue source when
+# to categorize datasets by assay type, organism, and sample source when
 # the Releases Sheet metadata isn't available (e.g., internal QC datasets).
 
 # Ordered list of assay/data-type categories. Matches the column order in
@@ -191,7 +191,7 @@ def classify_organism(value):
 
 
 def classify_source(value, organism=""):
-	"""Map a tissue-source value (slug or Releases-Sheet `sample_source`) to an
+	"""Map a sample-source value (slug or Releases-Sheet `sample_source`) to an
 	entry in HUMAN_SOURCES_ORDER / MOUSE_SOURCES_ORDER. Returns None if no
 	pattern matches.
 
