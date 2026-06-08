@@ -56,11 +56,11 @@ def main(args):
     
     dataset_dir = metadata_root / "datasets" / dataset_name
     metadata_dir = dataset_dir / "metadata"
-    file_metadata_dir = dataset_dir / "file_metadata"
+    file_metadata_dir = dataset_dir / "file_metadata" / "release" / release_version
     doi_dir = dataset_dir / "DOI"
     
     metadata_bucket = f"{bucket_name}/metadata"
-    file_metadata_bucket = f"{bucket_name}/file_metadata"
+    file_metadata_bucket = f"{bucket_name}/file_metadata/release/{release_version}"
     doi_bucket = f"{bucket_name}/DOI"
     
     check_bucket_exists(bucket_name)
