@@ -23,12 +23,8 @@ from collections import defaultdict
 
 import pandas as pd
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "shared"))
-from common import (
-    ASSAY_ORDER,
-    classify_assay,
-    team_from_slug,
-)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))
+from release_ops import ASSAY_ORDER, classify_assay, team_from_slug
 
 
 def classify_data_type(slug):

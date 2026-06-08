@@ -27,8 +27,8 @@ import sys
 import os
 import pandas as pd
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "shared"))
-from common import (
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))
+from release_ops import (
     get_releases_df,
     ASSAY_ORDER,
     HUMAN_SOURCES_ORDER,

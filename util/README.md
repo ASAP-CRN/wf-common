@@ -4,12 +4,13 @@
 
 ```
 util/
-├── shared/                  # shared helpers imported by other scripts
-│   ├── common.py
+├── common/                  # shared helpers imported by other scripts
+│   ├── gcloud_ops.py            # gcloud/storage CLI wrappers + bucket IAM/label ops
+│   ├── release_ops.py           # Releases-Sheet loading, release constants, slug classifiers
+│   ├── data_integrity.py        # manifest / MD5 / blob checks for staging→prod
 │   ├── bucket_validation_utils.py
 │   └── markdown_generator.py
 ├── raw_bucket_prep/         # prepare a dataset raw bucket for QC & release
-│   ├── validate_raw_bucket_structure.py
 │   ├── download_raw_bucket_metadata_to_local
 │   ├── transfer_qc_metadata_to_raw_bucket
 │   └── transfer_release_resources_to_raw_bucket.py
@@ -30,20 +31,21 @@ util/
 └── requirements.txt
 ```
 
-> Scripts in `raw_bucket_prep/`, `data_promotion/`, and `reporting/` import shared helpers from `shared/` via a small `sys.path` bootstrap, so they still run directly from their subfolder.
+> Scripts in `raw_bucket_prep/`, `data_promotion/`, and `reporting/` import shared helpers from `common/` (`gcloud_ops`, `release_ops`, `data_integrity`) via a small `sys.path` bootstrap, so they still run directly from their subfolder.
 
 
 | Script | Description | Context | Example usage |
 | :- | :- | :- | :- |
-| [`common.py`](./shared/common.py) | Common lists and functions used across scripts. | Ability to reuse common lists and functions. | NA |
-| [`bucket_validation_utils.py`](./shared/bucket_validation_utils.py) | Functions to validate raw bucket and local metadata structure and contents before transferring data. | Checks preceding data transfers. | NA |
+| [`gcloud_ops.py`](./common/gcloud_ops.py) | Elementary `gcloud storage` CLI wrappers (copy/move/remove/rsync/list), bucket IAM and label operations, and bucket/dataset name-parsing helpers. | Centralizes the low-level Cloud Storage calls reused across the promotion and transfer scripts. | NA |
+| [`release_ops.py`](./common/release_ops.py) | Loads the live Releases Google Sheet (SSOT), derives release/bucket constants, and provides slug-based assay/organism/source classifiers. | Single source of truth for release metadata and dataset classification when Sheet data isn't available. | NA |
+| [`data_integrity.py`](./common/data_integrity.py) | Manifest reading and MD5 / non-empty / associated-metadata checks, plus staging-vs-curated blob name and hash comparisons. | Used to validate data integrity when promoting staging data to production. | NA |
+| [`bucket_validation_utils.py`](./common/bucket_validation_utils.py) | Functions to validate raw bucket and local metadata structure and contents before transferring data. | Checks preceding data transfers. | NA |
 | [`generate_inputs`](./workflow_inputs/generate_inputs) | Generate inputs JSON for WDL pipelines. | Ability to generate the inputs JSON for WDL pipelines given a project TSV (sample information), inputs JSON template, workflow name, and cohort dataset ID. | `./generate_inputs --project-tsv lee.metadata.tsv --inputs-template inputs.json --workflow-name pmdbs_sc_rnaseq_analysis --release-version v4.0.0 --cohort-dataset-id cohort-pmdbs-sc-rnaseq` |
-| [`validate_raw_bucket_structure.py`](./raw_bucket_prep/validate_raw_bucket_structure.py) | Ensure that the raw bucket has the appropriate directories after contributor upload. | Contributions require at least the `metadata/` directory and minimal metadata .CSVs, and this will further check for additional optional contributed directories. | `python3 validate_raw_bucket_structure.py -d team-jakobsson-pmdbs-bulk-rnaseq` |
-| [`download_raw_bucket_metadata_to_local`](./raw_bucket_prep/download_raw_bucket_metadata_to_local) | Sync raw bucket metadata to the local metadata directory. | Once authors have contributed their metadata to the raw bucket, this script downloads this data locally so that QC can be performed. | `./download_raw_bucket_metadata_to_local -d team-jakobsson-pmdbs-bulk-rnaseq` |
+| [`download_raw_bucket_metadata_to_local`](./raw_bucket_prep/download_raw_bucket_metadata_to_local) | Validate the raw bucket structure, then sync raw bucket metadata to the local metadata directory. | Once authors have contributed their metadata to the raw bucket, this script first validates the bucket structure/metadata and then downloads the data locally so that QC can be performed. Pass `-V/--validate-only` to run just the structure/metadata checks without downloading (this replaces the former standalone `validate_raw_bucket_structure.py`). | `./download_raw_bucket_metadata_to_local -d team-jakobsson-pmdbs-bulk-rnaseq` (add `--validate-only` to check only) |
 | [`transfer_qc_metadata_to_raw_bucket`](./raw_bucket_prep/transfer_qc_metadata_to_raw_bucket) | Sync local metadata directory to the raw bucket. | After receiving author-contributed metadata from a raw bucket, QC/processing steps must be done locally. This script is run after QC is complete, so that the locally changed metadata directories are sync'd to the raw bucket. If any later changes are made to the metadata, this script will need to be re-run to ensure that the raw bucket contains the most up to date copies of the QC'd metadata. | `./transfer_qc_metadata_to_raw_bucket -d team-jakobsson-pmdbs-bulk-rnaseq -v v4.0.0`|
 | [`promote_raw_data`](./data_promotion/promote_raw_data) | Transfer QC'ed metadata, CRN Team contributed artifacts, and other CRN Team contributed data (e.g., spatial) from raw data buckets to staging (for Urgent/Minor releases) *or* production buckets (for Minor/Major releases). | Ability to transfer QC'ed metadata and CRN Team contributed data from raw buckets to staging/production buckets. This script is run for all releases: Urgent, Minor, and Major. It also removes the `internal-qc-data` label from the released raw buckets for Urgent/Minor releases. The rationale behind moving this type of data to production buckets (i.e., CURATED) for Urgent/Minor releases is because there are no pipeline/curated outputs, so the staging buckets are not used. The rationale behind moving this type of data to staging buckets (i.e., DEV/UAT) for Minor/Major releases is because there are pipeline/curated outputs, so the [`promote_staging_data`](./data_promotion/promote_staging_data) is used and will eventually copy the data over to production buckets. Minor releases are applicable to both here because sometimes datasets are only platformed in a Minor release, but there are other times where datasets are run through *existing* pipelines. **Note: this script must be run before [`promote_staging_data`](./data_promotion/promote_staging_data).** | `./promote_raw_data --type-of-release urgent --all-datasets --release-version v4.0.0` |
 | [`promote_staging_data`](./data_promotion/promote_staging_data) | Promote staging data to production data buckets and apply the appropriate permissions. | Ability to run data integrity tests when trying to promote data from staging (i.e., DEV/UAT) to production buckets (i.e., CURATED). This script is only run for Minor and Major releases. It also applies the appropriate permissions to the buckets (e.g., adding Verily's ASAP Cloud Readers to released raw buckets) and removes the `internal-qc-data` label from the released raw buckets. The buckets/datasets are detected based on the workflow name provided and the workflow/pipeline version that's used to store current curated outputs in raw workflow_execution bucket. This dict, `unembargoed_dev_buckets_and_workflow_version_outputs`, is in `common.py` | `./promote_staging_data -w pmdbs_sc_rnaseq --release-version v4.0.0 --collection-version v3.1.0` |
-| [`markdown_generator.py`](./shared/markdown_generator.py) | Functions that generate a Markdown report. | This script is used in the [`promote_staging_data`](./data_promotion/promote_staging_data) script to generate a Markdown report that contains data integrity results when trying to promote data from staging (i.e., DEV/UAT) to production buckets (i.e., CURATED). | NA |
+| [`markdown_generator.py`](./common/markdown_generator.py) | Functions that generate a Markdown report. | This script is used in the [`promote_staging_data`](./data_promotion/promote_staging_data) script to generate a Markdown report that contains data integrity results when trying to promote data from staging (i.e., DEV/UAT) to production buckets (i.e., CURATED). | NA |
 | [`crn_cloud_collection_summary`](./reporting/crn_cloud_collection_summary) | Track the ASAP raw/curated buckets, size, sample breakdown, and subject breakdown in the CRN Cloud. | See [CRN Cloud Statistics](#crn-cloud-statistics) below for more details. | `./crn_cloud_collection_summary` |
 | [`internal_qc_dataset_collection_summary`](./reporting/internal_qc_dataset_collection_summary) | Track datasets in internal QC by getting their ASAP raw buckets, size, sample, and subject breakdown in GCP. | See [CRN Cloud Statistics](#crn-cloud-statistics) below for more details. | `./internal_qc_dataset_collection_summary` |
 | [`generate_dataset_summary_table`](./reporting/generate_dataset_summary_table) | Generate pivot tables of unique subject/sample counts and subject diagnosis counts by organism × tissue type × assay from CRN Cloud or internal QC summary outputs. | Run after `crn_cloud_collection_summary` or `internal_qc_dataset_collection_summary` to produce summary tables for reporting. Auto-detects input source from the filename and prefixes outputs accordingly. Reads dataset metadata from the Google Releases Sheet via `get_releases_df()` when available; falls back to slug-name classification otherwise. | `python3 generate_dataset_summary_table <prefix>.<date>.tsv <prefix>.subject_dataset_membership.<date>.tsv <prefix>.sample_dataset_membership.<date>.tsv <prefix>.subject_diagnosis_membership.<date>.tsv` |
@@ -70,23 +72,19 @@ See documentation in the [asap-crn-cloud-dataset-metadata](https://github.com/AS
 
 ## Workflow Steps
 
-### 1. Validate Bucket Structure
-
-**Script:** [`validate_raw_bucket_structure.py`](./raw_bucket_prep/validate_raw_bucket_structure.py)
-
-Validates that the raw bucket has the required directory structure and metadata files after contributor upload.
-
-```bash
-python3 validate_raw_bucket_structure.py -d team-jakobsson-pmdbs-bulk-rnaseq
-```
-
-### 2. Download Metadata Locally
+### 1. Download Metadata Locally (validates bucket structure first)
 
 **Script:** [`download_raw_bucket_metadata_to_local`](./raw_bucket_prep/download_raw_bucket_metadata_to_local)
 
-Downloads metadata from the raw bucket to your local workspace for QC. Handles both initial submissions (loose CSV files) and post-QC structures (organized directories).
+Validates the raw bucket structure and metadata, then downloads the metadata from the raw bucket to your local workspace for QC. Handles both initial submissions (loose CSV files) and post-QC structures (organized directories).
+
+To run only the structure/metadata validation without downloading (the former standalone `validate_raw_bucket_structure.py`, now removed), pass `-V/--validate-only`:
 
 ```bash
+# validate only — no download
+./download_raw_bucket_metadata_to_local -d team-jakobsson-pmdbs-bulk-rnaseq --validate-only
+
+# validate + download
 ./download_raw_bucket_metadata_to_local -d team-jakobsson-pmdbs-bulk-rnaseq
 ```
 
@@ -96,7 +94,7 @@ Downloads metadata from the raw bucket to your local workspace for QC. Handles b
 - **Re-sync:** Downloads entire `metadata/` tree plus `file_metadata/` and `DOI/` if present
 - **Optional:** Also downloads `file_metadata/` and `DOI/` if present in bucket
 
-### 3. Perform QC Locally
+### 2. Perform QC Locally
 
 Quality control is performed locally in the [asap-crn-cloud-dataset-metadata](https://github.com/ASAP-CRN/asap-crn-cloud-dataset-metadata) repository.
 
@@ -110,7 +108,7 @@ metadata/
 └── latest/       # Copy of the latest release version
 ```
 
-### 4. Transfer QC'd Metadata Back to Bucket
+### 3. Transfer QC'd Metadata Back to Bucket
 
 **Script:** [`transfer_qc_metadata_to_raw_bucket`](./raw_bucket_prep/transfer_qc_metadata_to_raw_bucket)
 
@@ -128,7 +126,7 @@ Syncs the local metadata directory (including all QC'd subdirectories) back to t
 
 **Note:** Use `-p` flag to execute (defaults to dry-run for safety).
 
-### 5. Build release-resources
+### 4. Build release-resources
 
 Build Publisher collection cards text and figures using:
 **Script:** `make_release.py` in the [asap-crn-cloud-dataset-metadata](https://github.com/ASAP-CRN/asap-crn-cloud-dataset-metadata) repository.
@@ -151,7 +149,7 @@ release-resources/
            └─ text/
 ```
 
-### 6. Transfer release-resources to Dataset Raw Buckets
+### 5. Transfer release-resources to Dataset Raw Buckets
 
 **Script:** [`transfer_release_resources_to_raw_bucket.py`](./raw_bucket_prep/transfer_release_resources_to_raw_bucket.py)
 
