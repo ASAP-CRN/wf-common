@@ -6,7 +6,6 @@ import re
 import logging
 import subprocess
 from google.cloud import storage
-<<<<<<< HEAD
 
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))
@@ -24,23 +23,6 @@ from gcloud_ops import (
     remove_internal_qc_label,
     change_gg_storage_admin_to_read_write,
     add_verily_read_access,
-=======
-# --- resolve shared/ modules from new subfolder location ---
-import os, sys
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "shared"))
-from common import (
-	releases_df,
-	completed_platforming_raw_buckets,
-	unembargoed_dev_buckets_and_workflow_version_outputs,
-	embargoed_dev_buckets,
-	list_dirs,
-	gremove,
-	gsync,
-	gsync_del,
-	remove_internal_qc_label,
-	change_gg_storage_admin_to_read_write,
-	add_verily_read_access,
->>>>>>> 9935f53 (A mix of Claude and my changes to restructure util dir)
 )
 
 
