@@ -28,7 +28,10 @@ Authors: Javier Diaz
 import argparse
 import logging
 from pathlib import Path
-from common import gcopy
+
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))
+from gcloud_ops import gcopy
 import os, sys
 from collections import defaultdict
 import json
@@ -51,7 +54,7 @@ from bucket_validation_utils import (
     validate_local_release_resources_structure
 )
 
-from common import strip_team_prefix
+from gcloud_ops import strip_team_prefix
 
 logging.basicConfig(
 	level=logging.INFO,

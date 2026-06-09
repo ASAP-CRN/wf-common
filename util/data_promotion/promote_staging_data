@@ -7,21 +7,25 @@ import logging
 import subprocess
 from datetime import datetime, timezone
 from google.cloud import storage
-from common import (
-	unembargoed_dev_buckets_and_workflow_version_outputs,
-	list_teams,
-	list_dirs,
-	list_gs_files,
-	read_manifest_files,
-	md5_check,
-	non_empty_check,
-	associated_metadata_check,
-	gcopy,
-	gmove,
-	gsync,
-	remove_internal_qc_label,
-	change_gg_storage_admin_to_read_write,
-	add_verily_read_access,
+
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))
+from release_ops import unembargoed_dev_buckets_and_workflow_version_outputs, list_teams
+from gcloud_ops import (
+    list_dirs,
+    gcopy,
+    gmove,
+    gsync,
+    remove_internal_qc_label,
+    change_gg_storage_admin_to_read_write,
+    add_verily_read_access,
+)
+from data_integrity import (
+    list_gs_files,
+    read_manifest_files,
+    md5_check,
+    non_empty_check,
+    associated_metadata_check,
 )
 from markdown_generator import generate_markdown_report
 

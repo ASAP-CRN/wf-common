@@ -4,6 +4,8 @@
 # directory to prepare for QC.
 # Defaults to dry run unless -p flag is added!
 # Usage: python3 download_raw_bucket_metadata_to_local -d team-jakobsson-pmdbs-bulk-rnaseq
+# Use -V/--validate-only to just check the raw bucket structure/metadata and exit
+# (no download); this replaces the former standalone validate_raw_bucket_structure.py.
 # NOTE on assumptions made:
 # 1.   You have cloned asap-crn-cloud-dataset-metadata and its root is at the
 # ---- same level as wf-common
@@ -14,7 +16,10 @@ import argparse
 import logging
 import subprocess
 from pathlib import Path
-from common import gsync, strip_team_prefix, list_dirs
+
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))
+from gcloud_ops import gsync, strip_team_prefix, list_dirs
 from bucket_validation_utils import (
     check_local_metadata_repo_exists,
     check_dataset_dir_exists,
@@ -50,7 +55,19 @@ def main(args):
     metadata_bucket = f"{bucket_name}/metadata"
     file_metadata_bucket = f"{bucket_name}/file_metadata"
     doi_bucket = f"{bucket_name}/DOI"
-    
+
+    # --validate-only: run just the raw-bucket structure/metadata checks and exit.
+    # Useful as a standalone pre-check before contributors' data is downloaded for QC.
+    if args.validate_only:
+        logging.info(f"Validating raw bucket structure for: {bucket_name}")
+        validate_raw_bucket_structure(bucket_name)
+        files_valid = check_original_metadata_files_in_bucket(bucket_name)
+        if files_valid:
+            logging.info(f"Raw bucket validation successful: {bucket_name}")
+        else:
+            logging.warning("Raw bucket validation completed with warnings")
+        return
+
     # Validation checks
     check_local_metadata_repo_exists(metadata_root)
     check_dataset_dir_exists(dataset_dir)
@@ -138,6 +155,13 @@ if __name__ == "__main__":
         action="store_true",
         required=False,
         help="Promote data (default is dry run)."
+    )
+    parser.add_argument(
+        "-V",
+        "--validate-only",
+        action="store_true",
+        required=False,
+        help="Only validate the raw bucket structure and metadata, then exit (no download)."
     )
 
     args = parser.parse_args()

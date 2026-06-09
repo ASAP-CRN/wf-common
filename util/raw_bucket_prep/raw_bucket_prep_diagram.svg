@@ -1,0 +1,82 @@
+<svg version="1.1" viewBox="0.0 0.0 960.0 540.0" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" fill="none">
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#b7b7b7"/></marker><filter id="sh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#000000" flood-opacity="0.18"/></filter></defs>
+<rect x="0" y="0" width="960" height="540" fill="#ffffff"/>
+<text x="480" y="40" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="24" font-weight="700" fill="#0b5394">Contributor Data Workflow</text>
+<text x="480" y="63" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="13" fill="#1a1a1a">raw_bucket_prep/ — prepare a dataset raw bucket for QC and release</text>
+<<<<<<< HEAD
+<rect x="18" y="100" width="276" height="94" rx="14" ry="14" fill="#3d85c6" filter="url(#sh)"/>
+<circle cx="38" cy="120" r="13" fill="#ffffff" opacity="0.9"/><text x="38" y="124" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="13" font-weight="700" fill="#3d85c6">1</text>
+<text x="156.0" y="121.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">download_raw_bucket_</text>
+<text x="156.0" y="137.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">metadata_to_local</text>
+<text x="156.0" y="153.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">Validate bucket structure,</text>
+<text x="156.0" y="167.8" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">then sync metadata/ → local</text>
+<text x="156.0" y="182.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">(-V/--validate-only to check only)</text>
+<rect x="342" y="100" width="276" height="94" rx="14" ry="14" fill="#b7b7b7" filter="url(#sh)"/>
+<circle cx="362" cy="120" r="13" fill="#ffffff" opacity="0.9"/><text x="362" y="124" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="13" font-weight="700" fill="#b7b7b7">2</text>
+<text x="480.0" y="136.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">QC locally (external)</text>
+<text x="480.0" y="152.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">in asap-crn-cloud-</text>
+<text x="480.0" y="167.0" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">dataset-metadata repo</text>
+<rect x="666" y="100" width="276" height="94" rx="14" ry="14" fill="#3d85c6" filter="url(#sh)"/>
+<circle cx="686" cy="120" r="13" fill="#ffffff" opacity="0.9"/><text x="686" y="124" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="13" font-weight="700" fill="#3d85c6">3</text>
+<text x="804.0" y="128.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">transfer_qc_metadata_</text>
+<text x="804.0" y="144.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">to_raw_bucket</text>
+<text x="804.0" y="160.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">Sync QC'd metadata/</text>
+<text x="804.0" y="175.0" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">local → raw bucket</text>
+<path d="M294 147.0 L342 147.0" stroke="#b7b7b7" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M618 147.0 L666 147.0" stroke="#b7b7b7" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M804.0 194 L804.0 300" stroke="#b7b7b7" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="666" y="300" width="276" height="94" rx="14" ry="14" fill="#b7b7b7" filter="url(#sh)"/>
+<circle cx="686" cy="320" r="13" fill="#ffffff" opacity="0.9"/><text x="686" y="324" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="13" font-weight="700" fill="#b7b7b7">4</text>
+<text x="804.0" y="336.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">Build release-resources (external)</text>
+<text x="804.0" y="352.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">make_release.py: cards,</text>
+<text x="804.0" y="367.0" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">figures, release_stats</text>
+<rect x="342" y="300" width="276" height="94" rx="14" ry="14" fill="#3d85c6" filter="url(#sh)"/>
+<circle cx="362" cy="320" r="13" fill="#ffffff" opacity="0.9"/><text x="362" y="324" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="13" font-weight="700" fill="#3d85c6">5</text>
+<text x="480.0" y="328.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">transfer_release_resources_</text>
+<text x="480.0" y="344.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">to_raw_bucket.py</text>
+<text x="480.0" y="360.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">Sync release-resources/</text>
+<text x="480.0" y="375.0" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">local → raw bucket</text>
+<path d="M666 347.0 L618 347.0" stroke="#b7b7b7" stroke-width="3" marker-end="url(#arrow)"/>
+<text x="156.0" y="341.0" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" fill="#1a1a1a">Most scripts default to a</text>
+<text x="156.0" y="359.0" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" fill="#1a1a1a">dry run — add -p to execute.</text>
+<rect x="230" y="459" width="16" height="16" rx="3" fill="#3d85c6"/><text x="252" y="471" font-family='Arial, Helvetica, sans-serif' font-size="11" fill="#1a1a1a">Bucket validation / transfer</text>
+<rect x="443.20000000000005" y="459" width="16" height="16" rx="3" fill="#b7b7b7"/><text x="465.20000000000005" y="471" font-family='Arial, Helvetica, sans-serif' font-size="11" fill="#1a1a1a">External step</text>
+=======
+<rect x="18" y="100" width="276" height="92" rx="14" ry="14" fill="#0b5394" filter="url(#sh)"/>
+<text x="156.0" y="135.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">validate_raw_bucket_structure.py</text>
+<text x="156.0" y="151.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">Check required dirs &amp; core</text>
+<text x="156.0" y="166.0" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">metadata in the raw bucket</text>
+<rect x="342" y="100" width="276" height="92" rx="14" ry="14" fill="#3d85c6" filter="url(#sh)"/>
+<text x="480.0" y="127.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">download_raw_bucket_</text>
+<text x="480.0" y="143.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">metadata_to_local</text>
+<text x="480.0" y="159.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">Sync metadata/ from raw</text>
+<text x="480.0" y="174.0" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">bucket → local, for QC</text>
+<rect x="666" y="100" width="276" height="92" rx="14" ry="14" fill="#b7b7b7" filter="url(#sh)"/>
+<text x="804.0" y="135.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">QC locally (external)</text>
+<text x="804.0" y="151.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">in asap-crn-cloud-</text>
+<text x="804.0" y="166.0" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">dataset-metadata repo</text>
+<path d="M294 146.0 L342 146.0" stroke="#b7b7b7" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M618 146.0 L666 146.0" stroke="#b7b7b7" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M804.0 192 L804.0 300" stroke="#b7b7b7" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="666" y="300" width="276" height="92" rx="14" ry="14" fill="#3d85c6" filter="url(#sh)"/>
+<text x="804.0" y="327.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">transfer_qc_metadata_</text>
+<text x="804.0" y="343.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">to_raw_bucket</text>
+<text x="804.0" y="359.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">Sync QC'd metadata/</text>
+<text x="804.0" y="374.0" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">local → raw bucket</text>
+<rect x="342" y="300" width="276" height="92" rx="14" ry="14" fill="#b7b7b7" filter="url(#sh)"/>
+<text x="480.0" y="335.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">Build release-resources (external)</text>
+<text x="480.0" y="351.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">make_release.py: cards,</text>
+<text x="480.0" y="366.0" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">figures, release_stats</text>
+<rect x="18" y="300" width="276" height="92" rx="14" ry="14" fill="#3d85c6" filter="url(#sh)"/>
+<text x="156.0" y="327.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">transfer_release_resources_</text>
+<text x="156.0" y="343.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">to_raw_bucket.py</text>
+<text x="156.0" y="359.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">Sync release-resources/</text>
+<text x="156.0" y="374.0" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">local → raw bucket</text>
+<path d="M666 346.0 L618 346.0" stroke="#b7b7b7" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M342 346.0 L294 346.0" stroke="#b7b7b7" stroke-width="3" marker-end="url(#arrow)"/>
+<text x="480" y="438" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" fill="#1a1a1a">Most scripts default to a dry run — add -p to execute transfers.</text>
+<rect x="210" y="467" width="16" height="16" rx="3" fill="#3d85c6"/><text x="232" y="479" font-family='Arial, Helvetica, sans-serif' font-size="11" fill="#1a1a1a">Bucket validation / transfer</text>
+<rect x="423.20000000000005" y="467" width="16" height="16" rx="3" fill="#0b5394"/><text x="445.20000000000005" y="479" font-family='Arial, Helvetica, sans-serif' font-size="11" fill="#1a1a1a">Raw bucket check</text>
+<rect x="559.6" y="467" width="16" height="16" rx="3" fill="#b7b7b7"/><text x="581.6" y="479" font-family='Arial, Helvetica, sans-serif' font-size="11" fill="#1a1a1a">External step</text>
+>>>>>>> 9935f53 (A mix of Claude and my changes to restructure util dir)
+</svg>

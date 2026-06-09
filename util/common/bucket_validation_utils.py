@@ -6,7 +6,7 @@
 import logging
 import subprocess
 from pathlib import Path
-from common import list_dirs
+from gcloud_ops import list_dirs
 
 logging.basicConfig(
     level=logging.INFO,

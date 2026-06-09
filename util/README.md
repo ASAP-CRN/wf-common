@@ -1,29 +1,64 @@
 # util scripts
 
-| Script | Description | Context | Example usage |
-| :- | :- | :- | :- |
-| [`common.py`](./common.py) | Common lists and functions used across scripts. | Ability to reuse common lists and functions. | NA |
-| [`bucket_validation_utils.py`](./bucket_validation_utils.py) | Functions to validate raw bucket and local metadata structure and contents before transferring data. | Checks preceding data transfers. | NA |
-| [`generate_inputs`](./generate_inputs) | Generate inputs JSON for WDL pipelines. | Ability to generate the inputs JSON for WDL pipelines given a project TSV (sample information), inputs JSON template, workflow name, and cohort dataset ID. | `./generate_inputs --project-tsv lee.metadata.tsv --inputs-template inputs.json --workflow-name pmdbs_sc_rnaseq_analysis --release-version v4.0.0 --cohort-dataset-id cohort-pmdbs-sc-rnaseq` |
-| [`validate_raw_bucket_structure.py`](./validate_raw_bucket_structure.py) | Ensure that the raw bucket has the appropriate directories after contributor upload. | Contributions require at least the `metadata/` directory and minimal metadata .CSVs, and this will further check for additional optional contributed directories. | `python3 validate_raw_bucket_structure.py -d team-jakobsson-pmdbs-bulk-rnaseq` |
-| [`download_raw_bucket_metadata_to_local`](./download_raw_bucket_metadata_to_local) | Sync raw bucket metadata to the local metadata directory. | Once authors have contributed their metadata to the raw bucket, this script downloads this data locally so that QC can be performed. | `./download_raw_bucket_metadata_to_local -d team-jakobsson-pmdbs-bulk-rnaseq` |
-| [`transfer_qc_metadata_to_raw_bucket`](./transfer_qc_metadata_to_raw_bucket) | Sync local metadata directory to the raw bucket. | After receiving author-contributed metadata from a raw bucket, QC/processing steps must be done locally. This script is run after QC is complete, so that the locally changed metadata directories are sync'd to the raw bucket. If any later changes are made to the metadata, this script will need to be re-run to ensure that the raw bucket contains the most up to date copies of the QC'd metadata. | `./transfer_qc_metadata_to_raw_bucket -d team-jakobsson-pmdbs-bulk-rnaseq -v v4.0.0`|
-| [`promote_raw_data`](./promote_raw_data) | Transfer QC'ed metadata, CRN Team contributed artifacts, and other CRN Team contributed data (e.g., spatial) from raw data buckets to staging (for Urgent/Minor releases) *or* production buckets (for Minor/Major releases). | Ability to transfer QC'ed metadata and CRN Team contributed data from raw buckets to staging/production buckets. This script is run for all releases: Urgent, Minor, and Major. It also removes the `internal-qc-data` label from the released raw buckets for Urgent/Minor releases. The rationale behind moving this type of data to production buckets (i.e., CURATED) for Urgent/Minor releases is because there are no pipeline/curated outputs, so the staging buckets are not used. The rationale behind moving this type of data to staging buckets (i.e., DEV/UAT) for Minor/Major releases is because there are pipeline/curated outputs, so the [`promote_staging_data`](./promote_staging_data) is used and will eventually copy the data over to production buckets. Minor releases are applicable to both here because sometimes datasets are only platformed in a Minor release, but there are other times where datasets are run through *existing* pipelines. **Note: this script must be run before [`promote_staging_data`](./promote_staging_data).** | `./promote_raw_data --type-of-release urgent --all-datasets --release-version v4.0.0` |
-| [`promote_staging_data`](./promote_staging_data) | Promote staging data to production data buckets and apply the appropriate permissions. | Ability to run data integrity tests when trying to promote data from staging (i.e., DEV/UAT) to production buckets (i.e., CURATED). This script is only run for Minor and Major releases. It also applies the appropriate permissions to the buckets (e.g., adding Verily's ASAP Cloud Readers to released raw buckets) and removes the `internal-qc-data` label from the released raw buckets. The buckets/datasets are detected based on the workflow name provided and the workflow/pipeline version that's used to store current curated outputs in raw workflow_execution bucket. This dict, `unembargoed_dev_buckets_and_workflow_version_outputs`, is in `common.py` | `./promote_staging_data -w pmdbs_sc_rnaseq --release-version v4.0.0 --collection-version v3.1.0` |
-| [`markdown_generator.py`](./markdown_generator.py) | Functions that generate a Markdown report. | This script is used in the [`promote_staging_data`](./promote_staging_data) script to generate a Markdown report that contains data integrity results when trying to promote data from staging (i.e., DEV/UAT) to production buckets (i.e., CURATED). | NA |
-| [`crn_cloud_collection_summary`](./crn_cloud_collection_summary) | Track the ASAP raw/curated buckets, size, sample breakdown, and subject breakdown in the CRN Cloud. | See [CRN Cloud Statistics](#crn-cloud-statistics) below for more details. | `./crn_cloud_collection_summary` |
-| [`internal_qc_dataset_collection_summary`](./internal_qc_dataset_collection_summary) | Track datasets in internal QC by getting their ASAP raw buckets, size, sample, and subject breakdown in GCP. | See [CRN Cloud Statistics](#crn-cloud-statistics) below for more details. | `./internal_qc_dataset_collection_summary` |
-| [`generate_dataset_summary_table`](./generate_dataset_summary_table) | Generate pivot tables of unique subject/sample counts and subject diagnosis counts by organism × tissue type × assay from CRN Cloud or internal QC summary outputs. | Run after `crn_cloud_collection_summary` or `internal_qc_dataset_collection_summary` to produce summary tables for reporting. Auto-detects input source from the filename and prefixes outputs accordingly. Reads dataset metadata from the Google Releases Sheet via `get_releases_df()` when available; falls back to slug-name classification otherwise. | `python3 generate_dataset_summary_table <prefix>.<date>.tsv <prefix>.subject_dataset_membership.<date>.tsv <prefix>.sample_dataset_membership.<date>.tsv <prefix>.subject_diagnosis_membership.<date>.tsv` |
-| [`extract_brain_bank_data`](./extract_brain_bank_data) | Extract brain bank (`biobank_name`) metadata for every PMDBS sample across CRN curated and/or internal QC raw buckets. | Walks `asap-curated-team-*` and `asap-raw-team-*` buckets, reads `SUBJECT.csv` + `SAMPLE.csv`, joins on `subject_id`, and emits one row per sample with its associated brain bank. Tracks attempted datasets and flags those skipped in both curated and internal QC. | `./extract_brain_bank_data` |
-| [`generate_brain_bank_summary`](./generate_brain_bank_summary) | Generate brain-bank-centric summary tables (matrix + long format) from the brain bank membership TSV. | Run after `extract_brain_bank_data` to produce brain-bank-focused summaries useful for identifying well-characterized samples vs. data gaps across data types. | `python3 generate_brain_bank_summary brain_bank_membership.<date>.tsv` |
-| [`transfer_release_resources_to_raw_bucket.py`](./transfer_release_resources_to_raw_bucket.py) | Sync local release-resources config/, release_stats/ and publisher_cards/ to dataset ASAP raw buckets. | After producing Publisher card text and summary figures, this script syncs locally stored files (presumably living at asap-crn-cloud-dataset-metadata/) into each dataset gs:// raw bucket. If any later changes are made to the release-resources, this script will need to be re-run to ensure that the raw bucket contains the most up to date copies. | `./transfer_release_resources_to_raw_bucket.py -i /path/to/release_<release_version>.json -p` |
-| [`clean_wdl_raw_buckets`](./clean_wdl_raw_buckets) | Clean up script for GCP raw bucket workflow execution timestamp cohort analysis and downstream folders. | Removes outdated timestamp folder contents across all raw buckets in the cohort analysis and downstream folders while preserving versions. | `./clean_wdl_raw_buckets -p` |
+## Repository layout
+
+```
+util/
+├── common/                  # shared helpers imported by other scripts
+│   ├── gcloud_ops.py            # gcloud/storage CLI wrappers + bucket IAM/label ops
+│   ├── release_ops.py           # Releases-Sheet loading, release constants, slug classifiers
+│   ├── data_integrity.py        # manifest / MD5 / blob checks for staging→prod
+│   ├── bucket_validation_utils.py
+│   └── markdown_generator.py
+├── raw_bucket_prep/         # prepare a dataset raw bucket for QC & release
+│   ├── download_raw_bucket_metadata_to_local
+│   ├── transfer_qc_metadata_to_raw_bucket
+│   └── transfer_release_resources_to_raw_bucket.py
+├── data_promotion/          # promote raw → staging → curated buckets
+│   ├── promote_raw_data
+│   ├── promote_staging_data
+│   ├── clean_wdl_raw_buckets
+│   ├── data_promotion_diagram.svg
+│   └── archive/transfer_raw_data        # deprecated
+├── reporting/               # collection summaries & dataset stat tables
+│   ├── crn_cloud_collection_summary
+│   ├── internal_qc_dataset_collection_summary
+│   ├── generate_dataset_summary_table
+│   ├── extract_brain_bank_data
+│   └── generate_brain_bank_summary
+├── workflow_inputs/
+│   └── generate_inputs
+└── requirements.txt
+```
+
+> Scripts in `raw_bucket_prep/`, `data_promotion/`, and `reporting/` import shared helpers from `common/` (`gcloud_ops`, `release_ops`, `data_integrity`) via a small `sys.path` bootstrap, so they still run directly from their subfolder.
+
+
+| Script | Folder | Description | Context | Example usage |
+| :- | :- | :- | :- | :- |
+| [`gcloud_ops.py`](./common/gcloud_ops.py) | `common/` | Elementary `gcloud storage` CLI wrappers (copy/move/remove/rsync/list), bucket IAM and label operations, and bucket/dataset name-parsing helpers. | Centralizes the low-level Cloud Storage calls reused across the promotion and transfer scripts. | NA |
+| [`release_ops.py`](./common/release_ops.py) | `common/` | Loads the live Releases Google Sheet (SSOT), derives release/bucket constants, and provides slug-based assay/organism/source classifiers. | Single source of truth for release metadata and dataset classification when Sheet data isn't available. | NA |
+| [`data_integrity.py`](./common/data_integrity.py) | `common/` | Manifest reading and MD5 / non-empty / associated-metadata checks, plus staging-vs-curated blob name and hash comparisons. | Used to validate data integrity when promoting staging data to production. | NA |
+| [`bucket_validation_utils.py`](./common/bucket_validation_utils.py) | `common/` | Functions to validate raw bucket and local metadata structure and contents before transferring data. | Checks preceding data transfers. | NA |
+| [`generate_inputs`](./workflow_inputs/generate_inputs) | `workflow_inputs/` | Generate inputs JSON for WDL pipelines. | Ability to generate the inputs JSON for WDL pipelines given a project TSV (sample information), inputs JSON template, workflow name, and cohort dataset ID. | `./generate_inputs --project-tsv lee.metadata.tsv --inputs-template inputs.json --workflow-name pmdbs_sc_rnaseq_analysis --release-version v4.0.0 --cohort-dataset-id cohort-pmdbs-sc-rnaseq` |
+| [`download_raw_bucket_metadata_to_local`](./raw_bucket_prep/download_raw_bucket_metadata_to_local) | `raw_bucket_prep/` | Validate the raw bucket structure, then sync raw bucket metadata to the local metadata directory. | Once authors have contributed their metadata to the raw bucket, this script first validates the bucket structure/metadata and then downloads the data locally so that QC can be performed. Pass `-V/--validate-only` to run just the structure/metadata checks without downloading (this replaces the former standalone `validate_raw_bucket_structure.py`). | `./download_raw_bucket_metadata_to_local -d team-jakobsson-pmdbs-bulk-rnaseq` (add `--validate-only` to check only) |
+| [`transfer_qc_metadata_to_raw_bucket`](./raw_bucket_prep/transfer_qc_metadata_to_raw_bucket) | `raw_bucket_prep/` | Sync local metadata directory to the raw bucket. | After receiving author-contributed metadata from a raw bucket, QC/processing steps must be done locally. This script is run after QC is complete, so that the locally changed metadata directories are sync'd to the raw bucket. If any later changes are made to the metadata, this script will need to be re-run to ensure that the raw bucket contains the most up to date copies of the QC'd metadata. | `./transfer_qc_metadata_to_raw_bucket -d team-jakobsson-pmdbs-bulk-rnaseq -v v4.0.0`|
+| [`promote_raw_data`](./data_promotion/promote_raw_data) | `data_promotion/` | Transfer QC'ed metadata, CRN Team contributed artifacts, and other CRN Team contributed data (e.g., spatial) from raw data buckets to staging (for Urgent/Minor releases) *or* production buckets (for Minor/Major releases). | Ability to transfer QC'ed metadata and CRN Team contributed data from raw buckets to staging/production buckets. This script is run for all releases: Urgent, Minor, and Major. It also removes the `internal-qc-data` label from the released raw buckets for Urgent/Minor releases. The rationale behind moving this type of data to production buckets (i.e., CURATED) for Urgent/Minor releases is because there are no pipeline/curated outputs, so the staging buckets are not used. The rationale behind moving this type of data to staging buckets (i.e., DEV/UAT) for Minor/Major releases is because there are pipeline/curated outputs, so the [`promote_staging_data`](./data_promotion/promote_staging_data) is used and will eventually copy the data over to production buckets. Minor releases are applicable to both here because sometimes datasets are only platformed in a Minor release, but there are other times where datasets are run through *existing* pipelines. **Note: this script must be run before [`promote_staging_data`](./data_promotion/promote_staging_data).** | `./promote_raw_data --type-of-release urgent --all-datasets --release-version v4.0.0` |
+| [`promote_staging_data`](./data_promotion/promote_staging_data) | `data_promotion/` | Promote staging data to production data buckets and apply the appropriate permissions. | Ability to run data integrity tests when trying to promote data from staging (i.e., DEV/UAT) to production buckets (i.e., CURATED). This script is only run for Minor and Major releases. It also applies the appropriate permissions to the buckets (e.g., adding Verily's ASAP Cloud Readers to released raw buckets) and removes the `internal-qc-data` label from the released raw buckets. The buckets/datasets are detected based on the workflow name provided and the workflow/pipeline version that's used to store current curated outputs in raw workflow_execution bucket. This dict, `unembargoed_dev_buckets_and_workflow_version_outputs`, is in `release_ops.py` | `./promote_staging_data -w pmdbs_sc_rnaseq --release-version v4.0.0 --collection-version v3.1.0` |
+| [`markdown_generator.py`](./common/markdown_generator.py) | `common/` | Functions that generate a Markdown report. | This script is used in the [`promote_staging_data`](./data_promotion/promote_staging_data) script to generate a Markdown report that contains data integrity results when trying to promote data from staging (i.e., DEV/UAT) to production buckets (i.e., CURATED). | NA |
+| [`crn_cloud_collection_summary`](./reporting/crn_cloud_collection_summary) | `reporting/` | Track the ASAP raw/curated buckets, size, sample breakdown, and subject breakdown in the CRN Cloud. | See [CRN Cloud Statistics](#crn-cloud-statistics) below for more details. | `./crn_cloud_collection_summary` |
+| [`internal_qc_dataset_collection_summary`](./reporting/internal_qc_dataset_collection_summary) | `reporting/` | Track datasets in internal QC by getting their ASAP raw buckets, size, sample, and subject breakdown in GCP. | See [CRN Cloud Statistics](#crn-cloud-statistics) below for more details. | `./internal_qc_dataset_collection_summary` |
+| [`generate_dataset_summary_table`](./reporting/generate_dataset_summary_table) | `reporting/` | Generate pivot tables of unique subject/sample counts and subject diagnosis counts by organism × sample source × assay from CRN Cloud or internal QC summary outputs. | Run after `crn_cloud_collection_summary` or `internal_qc_dataset_collection_summary` to produce summary tables for reporting. Auto-detects input source from the filename and prefixes outputs accordingly. Reads dataset metadata from the Google Releases Sheet via `get_releases_df()` when available; falls back to slug-name classification otherwise. | `python3 generate_dataset_summary_table <prefix>.<date>.tsv <prefix>.subject_dataset_membership.<date>.tsv <prefix>.sample_dataset_membership.<date>.tsv <prefix>.subject_diagnosis_membership.<date>.tsv` |
+| [`extract_brain_bank_data`](./reporting/extract_brain_bank_data) | `reporting/` | Extract brain bank (`biobank_name`) metadata for every PMDBS sample across CRN curated and/or internal QC raw buckets. | Walks `asap-curated-team-*` and `asap-raw-team-*` buckets, reads `SUBJECT.csv` + `SAMPLE.csv`, joins on `subject_id`, and emits one row per sample with its associated brain bank. Tracks attempted datasets and flags those skipped in both curated and internal QC. | `./extract_brain_bank_data` |
+| [`generate_brain_bank_summary`](./reporting/generate_brain_bank_summary) | `reporting/` | Generate brain-bank-centric summary tables (matrix + long format) from the brain bank membership TSV. | Run after `extract_brain_bank_data` to produce brain-bank-focused summaries useful for identifying well-characterized samples vs. data gaps across data types. | `python3 generate_brain_bank_summary brain_bank_membership.<date>.tsv` |
+| [`transfer_release_resources_to_raw_bucket.py`](./raw_bucket_prep/transfer_release_resources_to_raw_bucket.py) | `raw_bucket_prep/` | Sync local release-resources config/, release_stats/ and publisher_cards/ to dataset ASAP raw buckets. | After producing Publisher card text and summary figures, this script syncs locally stored files (presumably living at asap-crn-cloud-dataset-metadata/) into each dataset gs:// raw bucket. If any later changes are made to the release-resources, this script will need to be re-run to ensure that the raw bucket contains the most up to date copies. | `./transfer_release_resources_to_raw_bucket.py -i /path/to/release_<release_version>.json -p` |
+| [`clean_wdl_raw_buckets`](./data_promotion/clean_wdl_raw_buckets) | `data_promotion/` | Clean up script for GCP raw bucket workflow execution timestamp cohort analysis and downstream folders. | Removes outdated timestamp folder contents across all raw buckets in the cohort analysis and downstream folders while preserving versions. | `./clean_wdl_raw_buckets -p` |
 
 ## Deprecated util scripts
 
-| Script | Description | Context |
-| :- | :- | :- |
-| [`transfer_raw_data`](./archive/transfer_raw_data) | Transfer data in generic raw buckets to dataset-specific raw buckets (e.g., `gs://asap-raw-data-team-lee` vs. `gs://asap-dev-team-lee-pmdbs-sn-rnaseq`. | Originally, "generic" raw buckets were created because we only had one data type (i.e., sc RNAseq). Later on, we started implementing new data types (e.g., bulk RNAseq, spatial transcriptomics, etc.) and restructured the bucket naming and organization. Therefore, this script is used to move raw data from the generic raw buckets to data-specific raw buckets. It is not applicable to new datasets where we collaborate with the CRN Teams to determine the dataset name. |
+| Script | Folder | Description | Context |
+| :- | :- | :- | :- |
+| [`transfer_raw_data`](./data_promotion/archive/transfer_raw_data) | `data_promotion/archive/` | Transfer data in generic raw buckets to dataset-specific raw buckets (e.g., `gs://asap-raw-data-team-lee` vs. `gs://asap-dev-team-lee-pmdbs-sn-rnaseq`. | Originally, "generic" raw buckets were created because we only had one data type (i.e., sc RNAseq). Later on, we started implementing new data types (e.g., bulk RNAseq, spatial transcriptomics, etc.) and restructured the bucket naming and organization. Therefore, this script is used to move raw data from the generic raw buckets to data-specific raw buckets. It is not applicable to new datasets where we collaborate with the CRN Teams to determine the dataset name. |
 
 # Contributor Data Workflow
 
@@ -31,25 +66,25 @@ This section describes the workflow for processing contributor submissions, from
 
 See documentation in the [asap-crn-cloud-dataset-metadata](https://github.com/ASAP-CRN/asap-crn-cloud-dataset-metadata/blob/main/README.md) repo for more granular information on the steps pertaining to releasing a contributed dataset.
 
+**Contributor data workflow diagram:**
+
+![Contributor data workflow diagram](./raw_bucket_prep/raw_bucket_prep_diagram.svg "raw_bucket_prep workflow")
+
 ## Workflow Steps
 
-### 1. Validate Bucket Structure
+### 1. Download Metadata Locally (validates bucket structure first)
 
-**Script:** [`validate_raw_bucket_structure.py`](./validate_raw_bucket_structure.py)
+**Script:** [`download_raw_bucket_metadata_to_local`](./raw_bucket_prep/download_raw_bucket_metadata_to_local)
 
-Validates that the raw bucket has the required directory structure and metadata files after contributor upload.
+Validates the raw bucket structure and metadata, then downloads the metadata from the raw bucket to your local workspace for QC. Handles both initial submissions (loose CSV files) and post-QC structures (organized directories).
 
-```bash
-python3 validate_raw_bucket_structure.py -d team-jakobsson-pmdbs-bulk-rnaseq
-```
-
-### 2. Download Metadata Locally
-
-**Script:** [`download_raw_bucket_metadata_to_local`](./download_raw_bucket_metadata_to_local)
-
-Downloads metadata from the raw bucket to your local workspace for QC. Handles both initial submissions (loose CSV files) and post-QC structures (organized directories).
+To run only the structure/metadata validation without downloading (the former standalone `validate_raw_bucket_structure.py`, now removed), pass `-V/--validate-only`:
 
 ```bash
+# validate only — no download
+./download_raw_bucket_metadata_to_local -d team-jakobsson-pmdbs-bulk-rnaseq --validate-only
+
+# validate + download
 ./download_raw_bucket_metadata_to_local -d team-jakobsson-pmdbs-bulk-rnaseq
 ```
 
@@ -59,7 +94,7 @@ Downloads metadata from the raw bucket to your local workspace for QC. Handles b
 - **Re-sync:** Downloads entire `metadata/` tree plus `file_metadata/` and `DOI/` if present
 - **Optional:** Also downloads `file_metadata/` and `DOI/` if present in bucket
 
-### 3. Perform QC Locally
+### 2. Perform QC Locally
 
 Quality control is performed locally in the [asap-crn-cloud-dataset-metadata](https://github.com/ASAP-CRN/asap-crn-cloud-dataset-metadata) repository.
 
@@ -73,9 +108,9 @@ metadata/
 └── latest/       # Copy of the latest release version
 ```
 
-### 4. Transfer QC'd Metadata Back to Bucket
+### 3. Transfer QC'd Metadata Back to Bucket
 
-**Script:** [`transfer_qc_metadata_to_raw_bucket`](./transfer_qc_metadata_to_raw_bucket)
+**Script:** [`transfer_qc_metadata_to_raw_bucket`](./raw_bucket_prep/transfer_qc_metadata_to_raw_bucket)
 
 Syncs the local metadata directory (including all QC'd subdirectories) back to the raw bucket.
 
@@ -91,7 +126,7 @@ Syncs the local metadata directory (including all QC'd subdirectories) back to t
 
 **Note:** Use `-p` flag to execute (defaults to dry-run for safety).
 
-### 5. Build release-resources
+### 4. Build release-resources
 
 Build Publisher collection cards text and figures using:
 **Script:** `make_release.py` in the [asap-crn-cloud-dataset-metadata](https://github.com/ASAP-CRN/asap-crn-cloud-dataset-metadata) repository.
@@ -114,9 +149,9 @@ release-resources/
            └─ text/
 ```
 
-### 6. Transfer release-resources to Dataset Raw Buckets
+### 5. Transfer release-resources to Dataset Raw Buckets
 
-**Script:** [`transfer_release_resources_to_raw_bucket.py`](./transfer_release_resources_to_raw_bucket.py)
+**Script:** [`transfer_release_resources_to_raw_bucket.py`](./raw_bucket_prep/transfer_release_resources_to_raw_bucket.py)
 
 Syncs the local release-resources directory (including all QC'd subdirectories) back to the raw bucket.
 
@@ -210,13 +245,13 @@ metadata/
 
 | Data Release Scenario | Script Used |
 | :- | :- |
-| Urgent | <ul><li>[`transfer_qc_metadata_to_raw_bucket`](./transfer_qc_metadata_to_raw_bucket)</li><li>[`promote_raw_data`](./promote_raw_data)</li></ul> |
-| Minor | <ul><li>[`transfer_qc_metadata_to_raw_bucket`](./transfer_qc_metadata_to_raw_bucket)</li><li>[`promote_raw_data`](./promote_raw_data)</li><li>[`promote_staging_data`](./promote_staging_data)</li></ul> |
-| Major | <ul><li>[`transfer_qc_metadata_to_raw_bucket`](./transfer_qc_metadata_to_raw_bucket)</li><li>[`promote_raw_data`](./promote_raw_data)</li><li>[`promote_staging_data`](./promote_staging_data)</li></ul> |
+| Urgent | <ul><li>[`transfer_qc_metadata_to_raw_bucket`](./raw_bucket_prep/transfer_qc_metadata_to_raw_bucket)</li><li>[`promote_raw_data`](./data_promotion/promote_raw_data)</li></ul> |
+| Minor | <ul><li>[`transfer_qc_metadata_to_raw_bucket`](./raw_bucket_prep/transfer_qc_metadata_to_raw_bucket)</li><li>[`promote_raw_data`](./data_promotion/promote_raw_data)</li><li>[`promote_staging_data`](./data_promotion/promote_staging_data)</li></ul> |
+| Major | <ul><li>[`transfer_qc_metadata_to_raw_bucket`](./raw_bucket_prep/transfer_qc_metadata_to_raw_bucket)</li><li>[`promote_raw_data`](./data_promotion/promote_raw_data)</li><li>[`promote_staging_data`](./data_promotion/promote_staging_data)</li></ul> |
 
 **Scripts used in different Data Release Scenarios diagram:**
 
-![Scripts used in different Data Release Scenarios diagram](./data_promotion_diagram.svg "Data promotion diagram")
+![Scripts used in different Data Release Scenarios diagram](./data_promotion/data_promotion_diagram.svg "Data promotion diagram")
 
 Note: Previous Minor Releases did not contain pipeline/curated outputs (SOW 2); however, moving forward there will be outputs (SOW 3 - onwards) [06/12/2025]. Minor Releases apply to both diagrams, as some datasets may include either pipeline/curated outputs depending on the data assay/modality. If a dataset was previously released in an Urgent or Minor Release and is later scheduled for a Major Release, the curated buckets will be overwritten with the most recent version of the data.
 
@@ -268,6 +303,10 @@ gcloud iam service-accounts keys create ~/.config/gspread/credentials.json \
 # CRN Cloud Statistics
 
 Utility scripts for tracking ASAP dataset statistics across the CRN Cloud and internal GCP infrastructure. Reports on bucket sizes, sample/subject counts, brain bank coverage, and breakdowns by data assay/modality and biological origin.
+
+**Reporting pipeline diagram:**
+
+![CRN Cloud reporting pipeline diagram](./reporting/reporting_diagram.svg "reporting pipeline")
 
 ## Scripts
 
@@ -375,7 +414,7 @@ OPTIONS
 
 ### `generate_dataset_summary_table`
 
-Generates pivot tables of unique subject/sample counts and subject diagnosis counts by organism × tissue type × assay. Reads dataset metadata (organism, sample source, assay) from the Google Releases Sheet via `get_releases_df()` when available, falling back to slug-name pattern matching for datasets not in the Sheet. Joins with the membership files output by `crn_cloud_collection_summary` or `internal_qc_dataset_collection_summary` to deduplicate subjects and samples globally across datasets.
+Generates pivot tables of unique subject/sample counts and subject diagnosis counts by organism × sample source × assay. Reads dataset metadata (organism, sample source, assay) from the Google Releases Sheet via `get_releases_df()` when available, falling back to slug-name pattern matching for datasets not in the Sheet. Joins with the membership files output by `crn_cloud_collection_summary` or `internal_qc_dataset_collection_summary` to deduplicate subjects and samples globally across datasets.
 
 **Input files** (outputs of `crn_cloud_collection_summary` or `internal_qc_dataset_collection_summary` used as <prefix> here):
 - `<prefix>.<date>.tsv`
@@ -385,7 +424,7 @@ Generates pivot tables of unique subject/sample counts and subject diagnosis cou
 - `<prefix>.sample_region_dataset_membership.<date>.tsv` (optional; auto-discovered from the subject-membership path if omitted)
 
 **Output**:
-- `dataset_summary_table.<timestamp>.tsv` — table of unique subjects/samples by organism × tissue type × assay
+- `dataset_summary_table.<timestamp>.tsv` — table of unique subjects/samples by organism × sample source × assay
 - `subject_diagnosis_table.<timestamp>.tsv` — table of unique subject diagnosis counts, human datasets only
 - `dataset_region_table.<timestamp>.tsv` — long-format table, one row per (dataset, `region_level_1`, `region_level_2`) with distinct `subject_count` and `sample_count`. Cohort slugs are excluded. Produced only when the sample-region membership file is present.
 
@@ -402,7 +441,7 @@ python3 generate_dataset_summary_table \
 **Notes:**
 - Cohort slugs are excluded from all tables
 - Output filenames are prefixed based on the input filename: `crn_cloud_*` → `crn_*`, `internal_qc_*` → `internal_qc_*`, anything else → no prefix
-- Tissue type classification uses `sample_source` and `organism` from the Releases Sheet when available; datasets not present in the Releases Sheet (typical for internal QC) fall back to slug-name pattern matching
+- Sample source classification uses `sample_source` and `organism` from the Releases Sheet when available; datasets not present in the Releases Sheet (typical for internal QC) fall back to slug-name pattern matching
 - Datasets with non-standard `sample_source` / `organism` values are flagged as warnings
 - `prod-team-scherzer-pmdbs-genetics` is hard-coded as Human / Brain tissue / Genetics due to a non-standard `assay` value in the sheet
 - Mass-spec data type patterns are kept mutually exclusive: `ms-p` → Proteomics, `ms-mb` → Metabolomics, `ms-l` → Lipidomics (the slug classifier requires the pattern to appear with a separator, so `ms-p` won't accidentally match `ms-mb`)
@@ -425,7 +464,7 @@ Walks both CRN curated (`asap-curated-team-*`) and internal QC raw (`asap-raw-te
 | `sample_id` | Sample identifier from `SAMPLE.csv` |
 | `biobank_name` | Brain bank name from `SUBJECT.csv` |
 | `publisher_slug` | Dataset slug name, synthesized from bucket name as `prod-team-...` |
-| `source` | `crn` (from curated bucket) or `internal_qc` (from raw bucket) |
+| `source` | `curated` (from curated bucket) or `raw` (from raw bucket) |
 
 **Usage:**
 ```bash
@@ -434,7 +473,7 @@ Walks both CRN curated (`asap-curated-team-*`) and internal QC raw (`asap-raw-te
 OPTIONS
   -h          Display this message and exit
   -l FILE     Restrict to datasets listed in FILE (one slug per line, without the asap-{raw,curated}- prefix)
-  -s SRC      Which source(s) to scan: crn, internal_qc, or both (default: both)
+  -s SRC      Which source(s) to scan: curated, raw, or both (default: both)
 ```
 
 **Notes:**
@@ -463,7 +502,7 @@ Generates two brain-bank-centric TSVs from the `brain_bank_membership.<date>.tsv
 | `brain_bank` | Brain bank name as it appears in `biobank_name` |
 | `team` | Team name parsed from the dataset slug |
 | `data_type` | Assay category derived from the slug (sc/snRNA-seq, Spatial Transcriptomics, etc.) |
-| `in_crn` / `in_internal_qc` | Whether this (bank, team, data_type) cell has any rows from each source |
+| `in_curated` / `in_raw` | Whether this (bank, team, data_type) cell has any rows from each source |
 | `n_samples` | Distinct sample count for this cell |
 | `n_subjects` | Distinct subject count for this cell |
 | `n_subjects_multi_modality` | Subjects in this cell that also appear in ≥1 other data type for the same (bank, team) |

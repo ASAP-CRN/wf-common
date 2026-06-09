@@ -18,10 +18,10 @@ import sys
 import re
 from collections import defaultdict
 
-from common import (
-    gremove,
-    unembargoed_dev_buckets_and_workflow_version_outputs,
-)
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))
+from gcloud_ops import gremove
+from release_ops import unembargoed_dev_buckets_and_workflow_version_outputs
 
 
 FILTERED_TERMS = ["gcloud storage rm", "Removing"]

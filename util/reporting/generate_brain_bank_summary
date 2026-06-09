@@ -20,15 +20,10 @@ import sys
 import os
 from datetime import datetime
 from collections import defaultdict
-
 import pandas as pd
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import (
-    ASSAY_ORDER,
-    classify_assay,
-    team_from_slug,
-)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))
+from release_ops import ASSAY_ORDER, classify_assay, team_from_slug
 
 
 def classify_data_type(slug):
@@ -161,8 +156,8 @@ def main():
             "brain_bank":  bank,
             "team":        team,
             "data_type":   dtype,
-            "in_crn":          "Yes" if "crn"         in a["sources"] else "No",
-            "in_internal_qc":  "Yes" if "internal_qc" in a["sources"] else "No",
+            "in_curated":      "Yes" if "curated"     in a["sources"] else "No",
+            "in_raw":          "Yes" if "raw"         in a["sources"] else "No",
             "n_samples":   len(a["sample_ids"]),
             "n_subjects":  n_subjects,
             "n_subjects_multi_modality": multi_modality_count(bank, team, dtype, a["subject_ids"]),

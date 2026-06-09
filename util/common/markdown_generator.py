@@ -3,10 +3,7 @@
 import subprocess
 from datetime import datetime
 from packaging import version
-from common import (
-	compare_blob_names,
-	compare_md5_hashes,
-)
+from data_integrity import compare_blob_names, compare_md5_hashes
 
 
 def get_combined_manifest_loc(path):

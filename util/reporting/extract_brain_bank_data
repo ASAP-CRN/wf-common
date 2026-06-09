@@ -7,10 +7,10 @@
 #
 # Output: brain_bank_membership.<date_str>.tsv
 #   columns: subject_id, sample_id, biobank_name, publisher_slug, source
-#   where `source` is "crn" or "internal_qc"
+#   where `source` is "curated" or "raw"
 #
 # Usage:
-#   ./extract_brain_bank_data [-l datasets.txt] [-s crn|internal_qc|both]
+#   ./extract_brain_bank_data [-l datasets.txt] [-s curated|raw|both]
 #
 # Options:
 #   -l FILE   Restrict to datasets listed in FILE (one slug per line,
@@ -35,8 +35,8 @@ while getopts "l:s:h" OPTION; do
 done
 
 case "$SOURCES" in
-    crn|internal_qc|both) ;;
-    *) echo "Invalid -s value: $SOURCES (expected crn|internal_qc|both)" >&2; exit 1 ;;
+    curated|raw|both) ;;
+    *) echo "Invalid -s value: $SOURCES (expected curated|raw|both)" >&2; exit 1 ;;
 esac
 
 date_str=$(date +"%Y-%m-%d")
@@ -205,7 +205,7 @@ process_source() {
     if [[ -n "$DATASETS" ]]; then
         # User-provided dataset list — prepend the correct prefix
         local prefix
-        if [[ "$source_label" == "crn" ]]; then prefix="asap-curated-"
+        if [[ "$source_label" == "curated" ]]; then prefix="asap-curated-"
         else                                    prefix="asap-raw-"; fi
         all_buckets=$(sed "s;^;${prefix};g" "$DATASETS")
     else
@@ -214,8 +214,8 @@ process_source() {
             --filter="name:${bucket_filter}")
     fi
 
-    # For internal_qc, additionally filter to those labeled "internal-qc-data"
-    if [[ "$source_label" == "internal_qc" ]]; then
+    # For raw, additionally filter to those labeled "internal-qc-data"
+    if [[ "$source_label" == "raw" ]]; then
         local filtered=""
         while IFS= read -r bucket; do
             [[ -z "$bucket" ]] && continue
@@ -233,14 +233,14 @@ process_source() {
     done <<< "$all_buckets"
 }
 
-if [[ "$SOURCES" == "crn" || "$SOURCES" == "both" ]]; then
+if [[ "$SOURCES" == "curated" || "$SOURCES" == "both" ]]; then
     echo "=== Scanning CRN curated buckets ==="
-    process_source "crn" "asap-curated-team*"
+    process_source "curated" "asap-curated-team*"
 fi
 
-if [[ "$SOURCES" == "internal_qc" || "$SOURCES" == "both" ]]; then
+if [[ "$SOURCES" == "raw" || "$SOURCES" == "both" ]]; then
     echo "=== Scanning internal QC raw buckets ==="
-    process_source "internal_qc" "asap-raw-team*"
+    process_source "raw" "asap-raw-team*"
 fi
 
 # Summary — broken down by source (curated CRN vs. internal QC) plus combined totals
@@ -261,8 +261,8 @@ print_source_summary() {
         "$label" "${n_rows:-0}" "${n_subjects:-0}" "${n_samples:-0}" "${n_banks:-0}" "${n_slugs:-0}"
 }
 
-print_source_summary "CRN curated:"     "crn"
-print_source_summary "Internal QC:"     "internal_qc"
+print_source_summary "CRN curated:"     "curated"
+print_source_summary "Internal QC:"     "raw"
 
 # Combined totals (subjects/samples/banks deduplicated across both sources)
 total_rows=$(tail -n +2 "$output_file" | wc -l | tr -d '[:space:]')
@@ -307,8 +307,8 @@ if [[ -s "$_ATTEMPTED_FILE" ]]; then
         echo "============================================================"
 
         # Datasets skipped in BOTH — strip source column and intersect
-        crn_only=$(awk -F'\t' '$1 == "crn"         {print $2}' "$skipped_file" | sort -u)
-        iqc_only=$(awk -F'\t' '$1 == "internal_qc" {print $2}' "$skipped_file" | sort -u)
+        crn_only=$(awk -F'\t' '$1 == "curated"         {print $2}' "$skipped_file" | sort -u)
+        iqc_only=$(awk -F'\t' '$1 == "raw" {print $2}' "$skipped_file" | sort -u)
         if [[ -n "$crn_only" ]] && [[ -n "$iqc_only" ]]; then
             both=$(comm -12 <(echo "$crn_only") <(echo "$iqc_only"))
             if [[ -n "$both" ]]; then

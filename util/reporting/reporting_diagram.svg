@@ -1,0 +1,62 @@
+<svg version="1.1" viewBox="0.0 0.0 960.0 540.0" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" fill="none">
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#b7b7b7"/></marker><filter id="sh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#000000" flood-opacity="0.18"/></filter></defs>
+<rect x="0" y="0" width="960" height="540" fill="#ffffff"/>
+<text x="480" y="40" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="24" font-weight="700" fill="#0b5394">CRN Cloud Statistics</text>
+<text x="480" y="63" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="13" fill="#1a1a1a">reporting/ — collect dataset stats and build summary tables</text>
+<rect x="20" y="94" width="206" height="66" rx="14" ry="14" fill="#0b5394" filter="url(#sh)"/>
+<text x="123.0" y="124.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">crn_cloud_collection_summary</text>
+<text x="123.0" y="140.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="9.5" font-weight="400" fill="#ffffff">source: CRN Cloud (dnastack)</text>
+<rect x="20" y="172" width="206" height="66" rx="14" ry="14" fill="#0b5394" filter="url(#sh)"/>
+<text x="123.0" y="194.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">internal_qc_dataset_</text>
+<text x="123.0" y="210.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">collection_summary</text>
+<text x="123.0" y="226.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="9.5" font-weight="400" fill="#ffffff">source: asap-raw-team-* buckets</text>
+<rect x="258" y="102" width="206" height="104" rx="14" ry="14" fill="#9fc5e8" filter="url(#sh)"/>
+<text x="361.0" y="136.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#1a1a1a">membership TSVs</text>
+<text x="361.0" y="152.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#1a1a1a">subject / sample /</text>
+<text x="361.0" y="166.8" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#1a1a1a">diagnosis / region</text>
+<text x="361.0" y="181.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#1a1a1a">(+ bucket sizes)</text>
+<rect x="496" y="102" width="206" height="104" rx="14" ry="14" fill="#3d85c6" filter="url(#sh)"/>
+<text x="599.0" y="129.8" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">generate_dataset_</text>
+<text x="599.0" y="145.8" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">summary_table</text>
+<text x="599.0" y="161.8" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="9.5" font-weight="400" fill="#ffffff">Pivot &amp; dedup by</text>
+<<<<<<< HEAD
+<text x="599.0" y="175.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="9.5" font-weight="400" fill="#ffffff">organism × sample source × assay</text>
+=======
+<text x="599.0" y="175.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="9.5" font-weight="400" fill="#ffffff">organism × tissue × assay</text>
+>>>>>>> 9935f53 (A mix of Claude and my changes to restructure util dir)
+<text x="599.0" y="188.8" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="9.5" font-weight="400" fill="#ffffff">(Releases Sheet via gspread)</text>
+<rect x="734" y="102" width="206" height="104" rx="14" ry="14" fill="#9fc5e8" filter="url(#sh)"/>
+<text x="837.0" y="137.0" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#1a1a1a">Summary tables</text>
+<text x="837.0" y="153.0" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10" font-weight="400" fill="#1a1a1a">dataset_summary_table</text>
+<text x="837.0" y="167.0" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10" font-weight="400" fill="#1a1a1a">subject_diagnosis_table</text>
+<text x="837.0" y="181.0" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10" font-weight="400" fill="#1a1a1a">dataset_region_table</text>
+<path d="M226 127.0 L258 146.0" stroke="#b7b7b7" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M226 205.0 L258 162.0" stroke="#b7b7b7" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M464 154.0 L496 154.0" stroke="#b7b7b7" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M702 154.0 L734 154.0" stroke="#b7b7b7" stroke-width="3" marker-end="url(#arrow)"/>
+<line x1="20" y1="324" x2="940" y2="324" stroke="#b7b7b7" stroke-width="1" stroke-dasharray="4 4"/>
+<text x="20" y="346" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#0b5394">Brain-bank reporting</text>
+<rect x="20" y="360" width="206" height="82" rx="14" ry="14" fill="#0b5394" filter="url(#sh)"/>
+<text x="123.0" y="383.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">extract_brain_bank_data</text>
+<text x="123.0" y="399.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">Walk curated + raw buckets,</text>
+<text x="123.0" y="413.8" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">join SUBJECT + SAMPLE</text>
+<text x="123.0" y="428.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">on subject_id</text>
+<rect x="258" y="360" width="206" height="82" rx="14" ry="14" fill="#9fc5e8" filter="url(#sh)"/>
+<text x="361.0" y="390.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#1a1a1a">brain_bank_membership.tsv</text>
+<text x="361.0" y="406.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#1a1a1a">one row per</text>
+<text x="361.0" y="421.0" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#1a1a1a">sample-dataset pair</text>
+<rect x="496" y="360" width="206" height="82" rx="14" ry="14" fill="#3d85c6" filter="url(#sh)"/>
+<text x="599.0" y="390.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">generate_brain_bank_summary</text>
+<text x="599.0" y="406.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">Bank × data-type matrix</text>
+<text x="599.0" y="421.0" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#ffffff">+ multi-modality counts</text>
+<rect x="734" y="360" width="206" height="82" rx="14" ry="14" fill="#9fc5e8" filter="url(#sh)"/>
+<text x="837.0" y="390.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#1a1a1a">Brain-bank tables</text>
+<text x="837.0" y="406.5" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#1a1a1a">brain_bank_summary</text>
+<text x="837.0" y="421.0" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="10.5" font-weight="400" fill="#1a1a1a">_matrix.tsv / _long.tsv</text>
+<path d="M226 401.0 L258 401.0" stroke="#b7b7b7" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M464 401.0 L496 401.0" stroke="#b7b7b7" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M702 401.0 L734 401.0" stroke="#b7b7b7" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="320" y="465" width="16" height="16" rx="3" fill="#3d85c6"/><text x="342" y="477" font-family='Arial, Helvetica, sans-serif' font-size="11" fill="#1a1a1a">Script</text>
+<rect x="392.4" y="465" width="16" height="16" rx="3" fill="#0b5394"/><text x="414.4" y="477" font-family='Arial, Helvetica, sans-serif' font-size="11" fill="#1a1a1a">GCP/CRN source</text>
+<rect x="516.0" y="465" width="16" height="16" rx="3" fill="#9fc5e8"/><text x="538.0" y="477" font-family='Arial, Helvetica, sans-serif' font-size="11" fill="#1a1a1a">Output TSV</text>
+</svg>
