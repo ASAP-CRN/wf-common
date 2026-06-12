@@ -41,7 +41,7 @@ logging.basicConfig(
 	format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-repo_root = Path(__file__).resolve().parents[1]
+repo_root = Path(__file__).resolve().parents[2]
 metadata_root = repo_root.parent / "asap-crn-cloud-dataset-metadata"
 
 
