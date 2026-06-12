@@ -326,7 +326,10 @@ def validate_local_metadata_structure(
         if is_cohort:
             logging.info("Skipping original/ check for cohort dataset")
         else:
-            raise ValueError(f"metadata/original/ directory not found: {original_dir}")
+            raise ValueError(
+                f"metadata/original/ directory not found: {original_dir}. "
+                f"Restore it with: download_raw_bucket_metadata_to_local -d <dataset-id> -O -p"
+            )
     
     # CDE/ is not created for cohorts, only release/ metadata copies are made
     if is_cohort:
