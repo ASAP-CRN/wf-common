@@ -86,8 +86,14 @@ def main(args):
     check_dataset_dir_exists(dataset_dir)
     validate_raw_bucket_structure(bucket_name)
     
-    # Detect bucket structure: initial submission vs post-QC
-    structure_type = detect_raw_bucket_structure(bucket_name)
+    # Detect initial submission vs post-QC structure. Cohorts don't have an initial structure.
+    is_cohort = dataset_name.startswith("cohort")
+    if is_cohort:
+        if args.original_only:
+            raise SystemExit("--original-only is not valid for cohort datasets: cohorts do not have a metadata/original/ directory.")
+        structure_type = "complete"
+    else:
+        structure_type = detect_raw_bucket_structure(bucket_name)
     
     # Initial submission: download from raw bucket metadata/ to local metadata/original/
     if structure_type == "initial":
