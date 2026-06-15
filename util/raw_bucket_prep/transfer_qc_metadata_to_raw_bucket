@@ -11,7 +11,7 @@
 # after this transfer and must be manually deleted if they are no longer relevant.
 #
 # Usage: python3 transfer_qc_metadata_to_raw_bucket -d team-jakobsson-pmdbs-bulk-rnaseq -v v4.0.1 -p
-# 1. -p/--promote Defaults to dry run unless this flag is added to actually persform the upload
+# 1. -p/--promote Defaults to dry run unless this flag is added to actually perform the upload
 # 2. -v/--release_version of the dataset indicating QC is complete for the given version
 
 # Assumptions made:
