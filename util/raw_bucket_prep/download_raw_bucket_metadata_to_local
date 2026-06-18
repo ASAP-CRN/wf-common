@@ -1,16 +1,29 @@
 #!/usr/bin/env python3
 
-# Download metadata submitted by contributors from the raw bucket to a local dataset
-# directory to prepare for QC.
-# Defaults to dry run unless -p flag is added!
+# Download metadata from the raw bucket to a local dataset directory for QC.
+#
+# This script has different behaviors depending on the structure of the raw bucket:
+# 1. Initial submission structure (only metadata/* with .CSVs): downloads to local
+#    <dataset_id>/metadata/original/
+# 2. Post-QC structure (after transfer_qc_metadata_to_raw_bucket has been run):
+#    downloads the entire metadata/ tree to local <dataset_id>/metadata/, as well
+#    as file_metadata/ and DOI/, unless --original-only is specified, in which case
+#    it only downloads metadata/original/. 
+#
 # Usage: python3 download_raw_bucket_metadata_to_local -d team-jakobsson-pmdbs-bulk-rnaseq
-# Use -V/--validate-only to just check the raw bucket structure/metadata and exit
-# (no download); this replaces the former standalone validate_raw_bucket_structure.py.
-# NOTE on assumptions made:
-# 1.   You have cloned asap-crn-cloud-dataset-metadata and its root is at the
-# ---- same level as wf-common
-# 2.   The raw bucket exists and has metadata in the metadata/ subdirectory
-# 3.   The local dataset directory exists (ideally created by initialization script)
+# 1. -p/--promote Defaults to dry run unless this flag is added to actually perform the download
+# 2. -V/--validate-only to just check the raw bucket structure/metadata and exit
+#    (no download); this replaces the former standalone validate_raw_bucket_structure.py.
+# 3. -O/--original-only to only download metadata/original/ (post-QC structure) 
+#    instead of the full metadata/ tree. This is for scenarios where you want to 
+#    re-download just the original metadata from the bucket without overwriting 
+#    the QC'd cde/ and release/ directories locally.
+
+# Assumptions made:
+# 1. You have cloned asap-crn-cloud-dataset-metadata and its root is at the
+#    same level as wf-common
+# 2. The raw bucket exists and has metadata .CSVs in the open metadata/* subdirectory
+# 3. The local dataset directory exists (created by asap-crn-cloud-dataset-metadata/scripts/intiate_dataset.py) 
 
 import argparse
 import logging
@@ -28,13 +41,12 @@ from bucket_validation_utils import (
     detect_raw_bucket_structure
 )
 
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
  
-repo_root = Path(__file__).resolve().parents[1]
+repo_root = Path(__file__).resolve().parents[2]
 metadata_root = repo_root.parent / "asap-crn-cloud-dataset-metadata"
 
 
@@ -53,6 +65,7 @@ def main(args):
     
     bucket_name = f"gs://asap-raw-{dataset_id}"
     metadata_bucket = f"{bucket_name}/metadata"
+    original_metadata_bucket = f"{metadata_bucket}/original"
     file_metadata_bucket = f"{bucket_name}/file_metadata"
     doi_bucket = f"{bucket_name}/DOI"
 
@@ -73,11 +86,19 @@ def main(args):
     check_dataset_dir_exists(dataset_dir)
     validate_raw_bucket_structure(bucket_name)
     
-    # Detect bucket structure: initial submission vs post-QC
-    structure_type = detect_raw_bucket_structure(bucket_name)
+    # Detect initial submission vs post-QC structure. Cohorts don't have an initial structure.
+    is_cohort = dataset_name.startswith("cohort")
+    if is_cohort:
+        if args.original_only:
+            raise SystemExit("--original-only is not valid for cohort datasets: cohorts do not have a metadata/original/ directory.")
+        structure_type = "complete"
+    else:
+        structure_type = detect_raw_bucket_structure(bucket_name)
     
-    # Initial submission: download from metadata/ directly to metadata/original/
+    # Initial submission: download from raw bucket metadata/ to local metadata/original/
     if structure_type == "initial":
+        if args.original_only:
+            logging.info("--original-only has no effect on initial submission structure; downloading to original/ anyway")
         
         # Warns if CORE tables missing, errors only if no files found.
         files_valid = check_original_metadata_files_in_bucket(bucket_name)
@@ -96,44 +117,56 @@ def main(args):
             dry_run=dry_run
         )
     
-    # Post QC-structure: will sync the entire metadata/ tree    
+    # Post QC-structure: will sync the entire metadata/ tree or metadata/original if --original-only specified    
     elif structure_type == "complete":
-        logging.info(f"Downloading metadata from [{metadata_bucket}] to [{metadata_dir}]")
         
-        metadata_dir.mkdir(parents=True, exist_ok=True)
-        
-        gsync(
-            source_path=metadata_bucket, 
-            destination_path=metadata_dir, 
-            dry_run=dry_run
-        )
+        if args.original_only:
+            original_dir.mkdir(parents=True, exist_ok=True)
+            logging.info(f"Downloading original metadata only: [{original_metadata_bucket}] to {original_dir}")
+            
+            gsync(
+                source_path=original_metadata_bucket, 
+                destination_path=original_dir, 
+                dry_run=dry_run
+            )
+            
+        else:
+            metadata_dir.mkdir(parents=True, exist_ok=True)
+            logging.info(f"Downloading metadata from [{metadata_bucket}] to [{metadata_dir}]")
+            
+            gsync(
+                source_path=metadata_bucket, 
+                destination_path=metadata_dir, 
+                dry_run=dry_run
+            )
         
     # Optional: also sync the file_metadata/ and DOI/ directories if they exist
-    try:
-        list_dirs(file_metadata_bucket) # Check if directory exists
-        file_metadata_dir.mkdir(parents=True, exist_ok=True)
-        logging.info(f"Downloading file_metadata/ from [{file_metadata_bucket}] to {file_metadata_dir}")
+    if not args.original_only:
+        try:
+            list_dirs(file_metadata_bucket) # Check if directory exists
+            file_metadata_dir.mkdir(parents=True, exist_ok=True)
+            logging.info(f"Downloading file_metadata/ from [{file_metadata_bucket}] to {file_metadata_dir}")
        
-        gsync(
-            source_path=file_metadata_bucket, 
-            destination_path=file_metadata_dir, 
-            dry_run=dry_run
-        )
-    except subprocess.CalledProcessError:
-        pass # Directory does not exist, skip w/o log as not expected for initial submission
+            gsync(
+                source_path=file_metadata_bucket, 
+                destination_path=file_metadata_dir, 
+                dry_run=dry_run
+            )
+        except subprocess.CalledProcessError:
+            pass # Directory does not exist, skip w/o log as not expected for initial submission
     
-    try:
-        list_dirs(doi_bucket)
-        doi_dir.mkdir(parents=True, exist_ok=True)
-        logging.info(f"Downloading DOI/ from [{doi_bucket}] to {doi_dir}")
+        try:
+            list_dirs(doi_bucket)
+            doi_dir.mkdir(parents=True, exist_ok=True)
+            logging.info(f"Downloading DOI/ from [{doi_bucket}] to {doi_dir}")
        
-        gsync(
-            source_path=doi_bucket, 
-            destination_path=doi_dir, 
-            dry_run=dry_run
-        )
-    except subprocess.CalledProcessError:
-        pass
+            gsync(
+                source_path=doi_bucket, 
+                destination_path=doi_dir, 
+                dry_run=dry_run
+            )
+        except subprocess.CalledProcessError:
+            pass
 
 
 if __name__ == "__main__":
@@ -163,6 +196,14 @@ if __name__ == "__main__":
         required=False,
         help="Only validate the raw bucket structure and metadata, then exit (no download)."
     )
+    parser.add_argument(
+        "-O",
+        "--original-only",
+        action="store_true",
+        required=False,
+        help="Only download metadata/original/ from the bucket (post-QC structure only)"
+    )
+    
 
     args = parser.parse_args()
 
