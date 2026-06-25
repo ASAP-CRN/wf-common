@@ -12,9 +12,9 @@
 #
 # Usage: python3 download_raw_bucket_metadata_to_local -d team-jakobsson-pmdbs-bulk-rnaseq
 # 1. -p/--promote Defaults to dry run unless this flag is added to actually perform the download
-# 2. -V/--validate-only to just check the raw bucket structure/metadata and exit
+# 2. -v/--validate-only to just check the raw bucket structure/metadata and exit
 #    (no download); this replaces the former standalone validate_raw_bucket_structure.py.
-# 3. -O/--original-only to only download metadata/original/ (post-QC structure) 
+# 3. -o/--original-only to only download metadata/original/ (post-QC structure) 
 #    instead of the full metadata/ tree. This is for scenarios where you want to 
 #    re-download just the original metadata from the bucket without overwriting 
 #    the QC'd cde/ and release/ directories locally.
@@ -190,14 +190,14 @@ if __name__ == "__main__":
         help="Promote data (default is dry run)."
     )
     parser.add_argument(
-        "-V",
+        "-v",
         "--validate-only",
         action="store_true",
         required=False,
         help="Only validate the raw bucket structure and metadata, then exit (no download)."
     )
     parser.add_argument(
-        "-O",
+        "-o",
         "--original-only",
         action="store_true",
         required=False,
