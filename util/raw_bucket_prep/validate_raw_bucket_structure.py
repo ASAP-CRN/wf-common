@@ -85,7 +85,7 @@ MIN_FILE_SIZE_BYTES = 3
 MIN_CSV_ROWS = 2
 NUMBER_SUBDIRS = 2
 MANDATORY_FOLDERS = ['metadata', 'raw']
-MANDATORY_DISPLAY = {', '.join([f for f in MANDATORY_FOLDERS if f != 'raw'] + ['raw (or fastqs)'])}
+MANDATORY_DISPLAY = ', '.join([f for f in MANDATORY_FOLDERS if f != 'raw'] + ['raw (or fastqs)'])
 _log_divider = "=" * 80
 _number_examples = 5
 
