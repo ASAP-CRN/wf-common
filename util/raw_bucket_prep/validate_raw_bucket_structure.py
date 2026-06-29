@@ -194,6 +194,11 @@ def _normalize_filename(name: str) -> str:
     return name.lower().replace('-', '_')
 
 
+def _norm_sample_id(s: str) -> str:
+    """Lowercase and strip all separator chars for SAMPLE↔DATA fuzzy matching."""
+    return re.sub(r'[-_ ]', '', s.lower())
+
+
 def _strip_illumina_suffix(name: str) -> str:
     """
     Normalize a filename and strip its Illumina FASTQ suffix if present.
@@ -529,6 +534,7 @@ def check_three_way_consistency(
         'n_missing_bucket': 0,
         'n_in_sample_only': 0,
         'n_in_data_only': 0,
+        'n_sample_data_fuzzy': 0,
         'n_only_bucket': 0,
         'issues': [],
     }
@@ -791,6 +797,18 @@ def check_three_way_consistency(
     in_data_only = (all_data_keys - all_sample_keys) if use_sample else set()
     data_keys_to_show = in_both | in_data_only if use_sample else all_data_keys
 
+    # Fuzzy SAMPLE↔DATA matching: case + separator (_/-/ ) differences only.
+    # Strips all separator chars before comparing — e.g. "WT 2_12mo" == "WT2_12mo".
+    sample_data_fuzzy_pairs = {}  # sample_key (lower) → data_key (lower)
+    if use_sample:
+        norm_sample = {_norm_sample_id(k): k for k in in_sample_only}
+        norm_data = {_norm_sample_id(k): k for k in in_data_only}
+        for norm_key, s_key in norm_sample.items():
+            if norm_key in norm_data:
+                sample_data_fuzzy_pairs[s_key] = norm_data[norm_key]
+        in_sample_only -= set(sample_data_fuzzy_pairs.keys())
+        in_data_only -= set(sample_data_fuzzy_pairs.values())
+
     rows = []
 
     def _make_file_row(sample_id_sample, sample_id_data, entry):
@@ -823,6 +841,12 @@ def check_three_way_consistency(
             row['match_type'] = 'in_data_only'
             rows.append(row)
 
+    for s_key, d_key in sorted(sample_data_fuzzy_pairs.items()):
+        for entry in data_by_sample[d_key]:
+            row = _make_file_row(sample_ids_from_sample[s_key], entry['sample_id'], entry)
+            row['match_type'] = 'sample_id_fuzzy'
+            rows.append(row)
+
     # DATA-only mode (no SAMPLE.csv): show all data rows
     if not use_sample:
         for key in sorted(all_data_keys):
@@ -841,6 +865,7 @@ def check_three_way_consistency(
     result['rows'] = rows
     result['n_in_sample_only'] = len(in_sample_only)
     result['n_in_data_only'] = len(in_data_only)
+    result['n_sample_data_fuzzy'] = len(sample_data_fuzzy_pairs)
     result['n_only_bucket'] = len(in_bucket_only_final)
 
     for row in rows:
@@ -945,6 +970,7 @@ def render_three_way_report(outfile, result: dict, raw_label: str, data_csv_name
     n_missing = result.get('n_missing_bucket', 0)
     n_sample_only = result.get('n_in_sample_only', 0)
     n_data_only = result.get('n_in_data_only', 0)
+    n_sample_fuzzy = result.get('n_sample_data_fuzzy', 0)
     n_only_bucket = result.get('n_only_bucket', 0)
     md5_files = result.get('md5_files', [])
     tsv_path = result.get('tsv_path')
@@ -956,7 +982,9 @@ def render_three_way_report(outfile, result: dict, raw_label: str, data_csv_name
     if n_partial:
         summary_parts.append(f"{emoji_warning} **{n_partial} partial** (Illumina suffix — need renaming)")
     if n_fuzzy:
-        summary_parts.append(f"{emoji_warning} **{n_fuzzy} fuzzy** (typo)")
+        summary_parts.append(f"{emoji_warning} **{n_fuzzy} fuzzy** (filename typo)")
+    if n_sample_fuzzy:
+        summary_parts.append(f"{emoji_warning} **{n_sample_fuzzy} fuzzy** (sample_id separator/case)")
     if n_prefix:
         summary_parts.append(f"{emoji_warning} **{n_prefix} prefix match**")
     if n_extra:
@@ -971,7 +999,7 @@ def render_three_way_report(outfile, result: dict, raw_label: str, data_csv_name
     if n_only_bucket:
         summary_parts.append(f"{emoji_error} **{n_only_bucket} only in bucket**")
 
-    has_issues = any([n_partial, n_fuzzy, n_prefix, n_extra, n_missing, n_sample_only, n_data_only, n_only_bucket])
+    has_issues = any([n_partial, n_fuzzy, n_sample_fuzzy, n_prefix, n_extra, n_missing, n_sample_only, n_data_only, n_only_bucket])
     summary = " · ".join(summary_parts)
     if md5_files:
         summary += f" · *{len(md5_files)} .md5 file(s) excluded*"
@@ -989,15 +1017,16 @@ def render_three_way_report(outfile, result: dict, raw_label: str, data_csv_name
 
     # Group non-exact rows by match_type category for display
     _DISPLAY_ORDER = [
-        ('in_sample_only',       'In SAMPLE, absent from DATA'),
-        ('in_data_only_group',   'In DATA, not in SAMPLE'),
-        ('missing_in_bucket',    'Missing in bucket'),
-        ('separator_mismatch',   'Fuzzy match — separator (hyphen vs. underscore)'),
-        ('numeric_suffix_mismatch', 'Fuzzy match — numeric suffix'),
-        ('illumina_group',       'Partial match — Illumina suffix (need renaming)'),
-        ('prefix_group',         'Prefix match — verify'),
-        ('extra_group',          'Found in extra folder'),
-        ('only_in_bucket',      'Only in bucket'),
+        ('in_sample_only',          'In SAMPLE, absent from DATA'),
+        ('in_data_only_group',      'In DATA, not in SAMPLE'),
+        ('sample_data_fuzzy_group', 'Fuzzy match — SAMPLE/DATA sample_id (separator or case)'),
+        ('missing_in_bucket',       'Missing in bucket'),
+        ('separator_mismatch',      'Fuzzy match — filename separator (hyphen vs. underscore)'),
+        ('numeric_suffix_mismatch', 'Fuzzy match — filename numeric suffix'),
+        ('illumina_group',          'Partial match — Illumina suffix (need renaming)'),
+        ('prefix_group',            'Prefix match — verify'),
+        ('extra_group',             'Found in extra folder'),
+        ('only_in_bucket',          'Only in bucket'),
     ]
 
     def _row_category(row):
@@ -1006,6 +1035,8 @@ def render_three_way_report(outfile, result: dict, raw_label: str, data_csv_name
             return 'in_sample_only'
         if mt == 'in_data_only':
             return 'in_data_only_group'
+        if mt == 'sample_id_fuzzy':
+            return 'sample_data_fuzzy_group'
         if mt == 'only_in_bucket':
             return 'only_in_bucket'
         if mt == 'missing_in_bucket':
@@ -1037,6 +1068,8 @@ def render_three_way_report(outfile, result: dict, raw_label: str, data_csv_name
             return 'Not in DATA'
         if mt == 'in_data_only':
             return 'Not in SAMPLE'
+        if mt == 'sample_id_fuzzy':
+            return 'Fuzzy match — sample_id separator/case'
         if mt == 'only_in_bucket':
             return 'Only in bucket'
         if mt == 'missing_in_bucket':
@@ -1193,15 +1226,18 @@ def get_important_warnings(result: dict) -> list[str]:
     if three_way.get('data_found'):
         n_partial = three_way.get('n_partial', 0)
         n_fuzzy = three_way.get('n_fuzzy', 0)
+        n_sample_fuzzy = three_way.get('n_sample_data_fuzzy', 0)
         n_prefix = three_way.get('n_prefix', 0)
         n_found_in_extra = three_way.get('n_found_in_extra', 0)
         extra_folders = three_way.get('found_in_extra_folders', {})
-        if any([n_partial, n_fuzzy, n_prefix, n_found_in_extra]):
+        if any([n_partial, n_fuzzy, n_sample_fuzzy, n_prefix, n_found_in_extra]):
             parts = []
             if n_partial:
                 parts.append(f"{n_partial} partial match(es) (need renaming)")
             if n_fuzzy:
-                parts.append(f"{n_fuzzy} fuzzy match(es) (typo)")
+                parts.append(f"{n_fuzzy} fuzzy filename match(es) (typo)")
+            if n_sample_fuzzy:
+                parts.append(f"{n_sample_fuzzy} fuzzy sample_id match(es) (separator/case)")
             if n_prefix:
                 parts.append(f"{n_prefix} prefix match(es) (verify)")
             if n_found_in_extra:
