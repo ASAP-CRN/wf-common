@@ -313,18 +313,18 @@ def check_mandatory_column_consistency(metadata_dir: Path, mandatory_cols: dict)
         column_header : str
             The column name.
         presence_status : str
-            ✅ if all present mandatory tables contain the column, ❌ otherwise.
+            emoji_success if all present mandatory tables contain the column, emoji_error otherwise.
         values_status : str
-            ✅ exact same value set across all tables,
-            ⚠️ same after normalization (case/underscore/hyphen),
-            ❌ differ even after normalization,
-            ⚠️ if fewer than 2 tables have the column.
+            emoji_success exact same value set across all tables,
+            emoji_warning same after normalization (case/underscore/hyphen),
+            emoji_error differ even after normalization,
+            emoji_warning if fewer than 2 tables have the column.
         details : str
-            Description of issues when status is not ✅.
+            Description of issues when status is not emoji_success.
         tables_checked : list of str
             Table stems that were present and processed.
         col_found_in : dict or None
-            table_name → set of raw values; populated only when values_status is ❌.
+            table_name → set of raw values; populated only when values_status is emoji_error.
     """
     if not metadata_dir or not metadata_dir.exists():
         return []
@@ -461,22 +461,27 @@ def analyze_folder(files: list, gs_bucket: str,
     return results
 
 
-def compare_data_csv_to_raw(metadata_dir: Path, raw_files: list, data_csv_name: str,
-                             extra_folder_files: dict | None = None) -> dict:
+def check_three_way_consistency(
+    metadata_dir: Path,
+    raw_files: list,
+    data_csv_name: str,
+    extra_folder_files: dict | None = None,
+) -> dict:
     """
-    Compare the file_name column in DATA.csv against actual files in the raw/ folder.
+    Three-way consistency check: SAMPLE.sample_id vs. DATA.sample_id/file_name vs. bucket files.
 
-    .md5 files in raw/ are recorded separately and excluded from the comparison.
-    Partial matches detect Illumina-named bucket files whose sample stem matches a
-    DATA entry (not errors — files need renaming). Fuzzy matches flag likely typos:
-    separator mismatches (hyphen vs. underscore) and numeric suffix differences.
+    For each sample_id in SAMPLE.csv, verifies that matching DATA.csv rows exist and
+    that each DATA.file_name is present in the raw/ bucket. Supports exact, Illumina
+    suffix, fuzzy (separator/numeric), and prefix bucket matching.
+    If SAMPLE.csv is absent or has no sample_id column, falls back to DATA vs. bucket only.
 
     Parameters
     ----------
     metadata_dir : Path
         Local directory containing downloaded metadata CSV files.
     raw_files : list of dict
-        File-info dicts from the raw/ folder. Pass an empty list when no raw folder exists.
+        File-info dicts from the raw/ folder (keys: 'path', 'size', 'size_str').
+        Pass an empty list when no raw folder exists.
     data_csv_name : str
         Expected name of the DATA file (e.g. 'DATA.csv'), matched case-insensitively.
     extra_folder_files : dict or None, optional
@@ -486,28 +491,82 @@ def compare_data_csv_to_raw(metadata_dir: Path, raw_files: list, data_csv_name: 
     Returns
     -------
     dict
-        data_found, file_name_col_found, csv_files, bucket_files, md5_files,
-        matched, partial_matches, fuzzy_matches, prefix_matches, found_in_extra,
-        bucket_only_notes, in_csv_only, in_bucket_only, rows, issues.
+        sample_csv_found : bool
+        sample_id_col_found : bool
+        data_found : bool
+        data_sample_id_col_found : bool
+        data_file_name_col_found : bool
+        rows : list of dict
+            One entry per (sample_id, file_name) combination, plus entries for
+            sample-only, data-only, and extra-bucket cases.
+            Keys: sample_id_sample, sample_id_data, file_name, bucket_file, match_type.
+        md5_files : list of str
+        n_exact : int
+        n_partial : int
+        n_fuzzy : int
+        n_prefix : int
+        n_found_in_extra : int
+        n_missing_bucket : int
+        n_in_sample_only : int
+        n_in_data_only : int
+        n_only_bucket : int
+        issues : list of str
     """
     result = {
+        'sample_csv_found': False,
+        'sample_id_col_found': False,
         'data_found': False,
-        'file_name_col_found': False,
-        'csv_files': [],
-        'bucket_files': [],
-        'md5_files': [],
-        'matched': [],
-        'partial_matches': [],
-        'fuzzy_matches': [],
-        'prefix_matches': [],
-        'found_in_extra': {},
-        'bucket_only_notes': {},
-        'in_csv_only': [],
-        'in_bucket_only': [],
+        'data_sample_id_col_found': False,
+        'data_file_name_col_found': False,
         'rows': [],
+        'md5_files': [],
+        'n_exact': 0,
+        'n_partial': 0,
+        'n_fuzzy': 0,
+        'n_prefix': 0,
+        'n_found_in_extra': 0,
+        'found_in_extra_folders': {},
+        'n_missing_bucket': 0,
+        'n_in_sample_only': 0,
+        'n_in_data_only': 0,
+        'n_only_bucket': 0,
         'issues': [],
     }
 
+    # ── 1. Read SAMPLE.sample_id ──────────────────────────────────────
+    sample_ids_from_sample = {}  # lower → original
+    if metadata_dir and metadata_dir.exists():
+        sample_csv_path = None
+        for f in metadata_dir.iterdir():
+            if f.name.startswith('._'):
+                continue
+            if f.stem.upper() == 'SAMPLE' and f.suffix.lower() == '.csv' and f.is_file():
+                sample_csv_path = f
+                break
+        if sample_csv_path:
+            result['sample_csv_found'] = True
+            for encoding in ('utf-8', 'latin-1'):
+                try:
+                    with open(sample_csv_path, 'r', encoding=encoding) as fh:
+                        reader = csv.DictReader(fh)
+                        col = next(
+                            (k for k in (reader.fieldnames or []) if k.lower().strip() == 'sample_id'),
+                            None,
+                        )
+                        if col:
+                            result['sample_id_col_found'] = True
+                            for row in reader:
+                                val = row[col].strip()
+                                if val:
+                                    sample_ids_from_sample[val.lower()] = val
+                    break
+                except UnicodeDecodeError:
+                    continue
+                except Exception as e:
+                    result['issues'].append(f"Could not read SAMPLE.csv: {e}")
+                    break
+
+    # ── 2. Read DATA.csv ──────────────────────────────────────────────
     data_csv_path = None
     if metadata_dir and metadata_dir.exists():
         for f in metadata_dir.iterdir():
@@ -521,23 +580,36 @@ def compare_data_csv_to_raw(metadata_dir: Path, raw_files: list, data_csv_name: 
         return result
     result['data_found'] = True
 
-    csv_file_names = []
+    data_by_sample = defaultdict(list)  # lower sample_id → [{'sample_id': str, 'file_name': str}]
+    all_file_names = []
+
     for encoding in ('utf-8', 'latin-1'):
         try:
             with open(data_csv_path, 'r', encoding=encoding) as fh:
                 reader = csv.DictReader(fh)
-                file_name_key = next(
-                    (k for k in (reader.fieldnames or []) if k.lower().strip() == 'file_name'),
-                    None
+                fieldnames = reader.fieldnames or []
+                sample_id_key = next(
+                    (k for k in fieldnames if k.lower().strip() == 'sample_id'), None
                 )
-                if file_name_key is None:
-                    result['issues'].append(f"No 'file_name' column found in {data_csv_name}")
+                file_name_key = next(
+                    (k for k in fieldnames if k.lower().strip() == 'file_name'), None
+                )
+                if sample_id_key:
+                    result['data_sample_id_col_found'] = True
+                if file_name_key:
+                    result['data_file_name_col_found'] = True
+                if not sample_id_key:
+                    result['issues'].append(f"No 'sample_id' column in {data_csv_name}")
                     return result
-                result['file_name_col_found'] = True
+                if not file_name_key:
+                    result['issues'].append(f"No 'file_name' column in {data_csv_name}")
+                    return result
                 for row in reader:
-                    val = row[file_name_key].strip()
-                    if val:
-                        csv_file_names.append(val)
+                    sid = row[sample_id_key].strip()
+                    fn = row[file_name_key].strip()
+                    if sid and fn:
+                        data_by_sample[sid.lower()].append({'sample_id': sid, 'file_name': fn})
+                        all_file_names.append(fn)
             break
         except UnicodeDecodeError:
             continue
@@ -545,8 +617,7 @@ def compare_data_csv_to_raw(metadata_dir: Path, raw_files: list, data_csv_name: 
             result['issues'].append(f"Could not read {data_csv_name}: {e}")
             return result
 
-    result['csv_files'] = csv_file_names
-
+    # ── 3. Bucket file list ───────────────────────────────────────────
     bucket_file_names = []
     md5_file_names = []
     for file_info in raw_files:
@@ -555,22 +626,19 @@ def compare_data_csv_to_raw(metadata_dir: Path, raw_files: list, data_csv_name: 
             md5_file_names.append(basename)
         else:
             bucket_file_names.append(basename)
-
-    result['bucket_files'] = bucket_file_names
     result['md5_files'] = md5_file_names
 
-    csv_set = set(csv_file_names)
+    # ── 4. Bucket matching ────────────────────────────────────────────
+    csv_set = set(all_file_names)
     bucket_set = set(bucket_file_names)
     matched = sorted(csv_set & bucket_set)
     unmatched_csv = csv_set - bucket_set
     unmatched_bucket = bucket_set - csv_set
-    result['matched'] = matched
 
-    # Partial matches (Illumina suffix — not errors, files need renaming)
+    # Partial matches (Illumina suffix — files need renaming, not errors)
     partial_matches = []
     partial_csv_names = set()
     partial_bucket_names = set()
-
     if unmatched_csv and unmatched_bucket:
         _suffix_patterns = [
             (_FULL_ILLUMINA_SUFFIX_RE, 'illumina_suffix_full'),
@@ -579,42 +647,36 @@ def compare_data_csv_to_raw(metadata_dir: Path, raw_files: list, data_csv_name: 
         ]
         illumina_bucket_map = defaultdict(list)
         for name_in_bucket in unmatched_bucket:
-            name_in_bucket_norm = _normalize_filename(name_in_bucket)
+            name_norm = _normalize_filename(name_in_bucket)
             for suffix_re, match_type in _suffix_patterns:
-                name_in_bucket_norm_stripped = suffix_re.sub('', name_in_bucket_norm)
-                if name_in_bucket_norm_stripped != name_in_bucket_norm:
-                    illumina_bucket_map[name_in_bucket_norm_stripped].append((name_in_bucket, match_type))
+                stripped = suffix_re.sub('', name_norm)
+                if stripped != name_norm:
+                    illumina_bucket_map[stripped].append((name_in_bucket, match_type))
                     break
-
         for name_in_data in sorted(unmatched_csv):
-            name_in_data_norm = _normalize_filename(name_in_data)
-            stem = _csv_stem(name_in_data_norm)
+            stem = _csv_stem(_normalize_filename(name_in_data))
             if stem in illumina_bucket_map:
                 entries = sorted(illumina_bucket_map[stem], key=lambda x: x[0])
-                matched_bucket_files = [b for b, _ in entries]
+                bucket_matched = [b for b, _ in entries]
                 types = sorted({mt for _, mt in entries})
                 match_type = types[0] if len(types) == 1 else 'illumina_suffix_mixed'
                 partial_matches.append({
                     'csv_name': name_in_data,
-                    'bucket_names': matched_bucket_files,
-                    'bucket_match_types': {b: mt for b, mt in entries},
+                    'bucket_names': bucket_matched,
                     'match_type': match_type,
                 })
                 partial_csv_names.add(name_in_data)
-                partial_bucket_names.update(matched_bucket_files)
-
-    result['partial_matches'] = partial_matches
+                partial_bucket_names.update(bucket_matched)
 
     in_csv_only_set = unmatched_csv - partial_csv_names
     in_bucket_only_set = unmatched_bucket - partial_bucket_names
 
-    # Fuzzy matches (typos / separator mismatches — still errors)
+    # Fuzzy matches (typos — still errors)
     fuzzy_matches = []
     if in_csv_only_set and in_bucket_only_set:
         bucket_norm_map = {_normalize_filename(b): b for b in in_bucket_only_set}
         for csv_name in sorted(in_csv_only_set):
             csv_norm = _normalize_filename(csv_name)
-
             if csv_norm in bucket_norm_map:
                 fuzzy_matches.append({
                     'csv_name': csv_name,
@@ -622,7 +684,6 @@ def compare_data_csv_to_raw(metadata_dir: Path, raw_files: list, data_csv_name: 
                     'match_type': 'separator_mismatch',
                 })
                 continue
-
             csv_stem_val = _csv_stem(csv_norm)
             csv_ext = csv_norm[len(csv_stem_val):]
             csv_stem_stripped = re.sub(r'_\d+$', '', csv_stem_val)
@@ -642,14 +703,13 @@ def compare_data_csv_to_raw(metadata_dir: Path, raw_files: list, data_csv_name: 
                     })
                     break
 
-    result['fuzzy_matches'] = fuzzy_matches
+    fuzzy_csv_names = {fm['csv_name'] for fm in fuzzy_matches}
+    fuzzy_bucket_names = {fm['bucket_name'] for fm in fuzzy_matches}
+    remaining_csv = in_csv_only_set - fuzzy_csv_names
+    remaining_bucket = in_bucket_only_set - fuzzy_bucket_names
 
     # Prefix matches (name containment)
     prefix_matches = []
-    fuzzy_csv_names = {fm['csv_name'] for fm in fuzzy_matches}
-    fuzzy_bucket_names_set = {fm['bucket_name'] for fm in fuzzy_matches}
-    remaining_csv = in_csv_only_set - fuzzy_csv_names
-    remaining_bucket = in_bucket_only_set - fuzzy_bucket_names_set
     if remaining_csv and remaining_bucket:
         bucket_stem_map = defaultdict(list)
         for name_in_bucket in remaining_bucket:
@@ -659,9 +719,15 @@ def compare_data_csv_to_raw(metadata_dir: Path, raw_files: list, data_csv_name: 
             if not csv_stem_val:
                 continue
             for b_stem, b_names in sorted(bucket_stem_map.items()):
-                short, long_ = (csv_stem_val, b_stem) if len(csv_stem_val) <= len(b_stem) else (b_stem, csv_stem_val)
+                short, long_ = (
+                    (csv_stem_val, b_stem) if len(csv_stem_val) <= len(b_stem)
+                    else (b_stem, csv_stem_val)
+                )
                 if long_.startswith(short) and (len(long_) == len(short) or long_[len(short)] == '_'):
-                    match_type = 'DATA_prefix_of_bucket' if len(csv_stem_val) <= len(b_stem) else 'bucket_prefix_of_DATA'
+                    match_type = (
+                        'DATA_prefix_of_bucket' if len(csv_stem_val) <= len(b_stem)
+                        else 'bucket_prefix_of_DATA'
+                    )
                     prefix_matches.append({
                         'csv_name': name_in_data,
                         'bucket_names': sorted(b_names),
@@ -669,16 +735,16 @@ def compare_data_csv_to_raw(metadata_dir: Path, raw_files: list, data_csv_name: 
                     })
                     break
 
-    result['prefix_matches'] = prefix_matches
-
     prefix_csv_names = {pm['csv_name'] for pm in prefix_matches}
     prefix_bucket_names = {b for pm in prefix_matches for b in pm['bucket_names']}
-    in_csv_only = sorted(in_csv_only_set - prefix_csv_names)
-    in_bucket_only = sorted(in_bucket_only_set - prefix_bucket_names)
+    truly_missing = remaining_csv - prefix_csv_names
+    in_bucket_only_final = sorted(remaining_bucket - prefix_bucket_names)
 
-    # Extra folder lookup (e.g. spatial/ for spatial datasets)
-    if extra_folder_files:
-        remaining = list(in_csv_only)
+    # Extra folder lookup (e.g. spatial/)
+    found_in_extra = {}
+    missing_in_bucket_list = list(truly_missing)
+    if extra_folder_files and missing_in_bucket_list:
+        remaining = list(missing_in_bucket_list)
         for folder_name, folder_files in extra_folder_files.items():
             if not remaining:
                 break
@@ -694,182 +760,171 @@ def compare_data_csv_to_raw(metadata_dir: Path, raw_files: list, data_csv_name: 
                 else:
                     still_remaining.append(name)
             if found_here:
-                result['found_in_extra'][folder_name] = found_here
+                found_in_extra[folder_name] = found_here
             remaining = still_remaining
-        in_csv_only = remaining
+        missing_in_bucket_list = remaining
 
-    result['in_csv_only'] = in_csv_only
-    result['in_bucket_only'] = in_bucket_only
+    result['found_in_extra_folders'] = {k: len(v) for k, v in found_in_extra.items()}
 
-    # Notes for in_bucket_only
-    fuzzy_bucket_map = {fm['bucket_name']: fm for fm in fuzzy_matches}
-    bucket_only_notes = {}
-    for name_in_bucket in in_bucket_only:
-        if name_in_bucket in fuzzy_bucket_map:
-            fm = fuzzy_bucket_map[name_in_bucket]
-            bucket_only_notes[name_in_bucket] = f"fuzzy match with `{fm['csv_name']}` ({fm['match_type'].replace('_', ' ')})"
-            continue
-        name_in_bucket_norm = _normalize_filename(name_in_bucket)
-        name_in_bucket_norm_stripped = _strip_illumina_suffix(name_in_bucket)
-        if name_in_bucket_norm_stripped != name_in_bucket_norm:
-            stem = name_in_bucket[:len(name_in_bucket_norm_stripped)]
-            bucket_only_notes[name_in_bucket] = f"Illumina pattern — no DATA entry for `{stem}`"
-    result['bucket_only_notes'] = bucket_only_notes
-
-    # Build rows for TSV
-    fuzzy_map = {fm['csv_name']: fm for fm in fuzzy_matches}
-    rows = []
-    for name in sorted(matched):
-        rows.append({'file_name': name, 'source': 'both', 'status': 'matched', 'note': ''})
+    # ── 5. Build file_match_map ───────────────────────────────────────
+    file_match_map = {}
+    for name in matched:
+        file_match_map[name] = {'type': 'exact', 'bucket_files': [name]}
     for pm in partial_matches:
-        rows.append({
-            'file_name': pm['csv_name'], 'source': 'DATA.csv', 'status': 'partial_match',
-            'note': f"matched {len(pm['bucket_names'])} bucket file(s): {', '.join(pm['bucket_names'])}",
-        })
-        for b_name in pm['bucket_names']:
-            mt = pm['bucket_match_types'].get(b_name, pm['match_type'])
-            rows.append({
-                'file_name': b_name, 'source': 'bucket', 'status': 'partial_match',
-                'note': f"DATA.csv entry: {pm['csv_name']} ({mt})",
-            })
+        file_match_map[pm['csv_name']] = {'type': pm['match_type'], 'bucket_files': pm['bucket_names']}
+    for fm in fuzzy_matches:
+        file_match_map[fm['csv_name']] = {'type': fm['match_type'], 'bucket_files': [fm['bucket_name']]}
     for pm in prefix_matches:
+        file_match_map[pm['csv_name']] = {'type': pm['match_type'], 'bucket_files': pm['bucket_names']}
+    for folder_name, found_files in found_in_extra.items():
+        for name in found_files:
+            file_match_map[name] = {'type': f'found_in_{folder_name}', 'bucket_files': [name]}
+    for name in missing_in_bucket_list:
+        file_match_map[name] = {'type': 'missing_in_bucket', 'bucket_files': []}
+
+    # ── 6. SAMPLE ↔ DATA join and row building ────────────────────────
+    use_sample = result['sample_csv_found'] and result['sample_id_col_found']
+    all_sample_keys = set(sample_ids_from_sample.keys())
+    all_data_keys = set(data_by_sample.keys())
+    in_both = all_sample_keys & all_data_keys if use_sample else set()
+    in_sample_only = (all_sample_keys - all_data_keys) if use_sample else set()
+    in_data_only = (all_data_keys - all_sample_keys) if use_sample else set()
+    data_keys_to_show = in_both | in_data_only if use_sample else all_data_keys
+
+    rows = []
+
+    def _make_file_row(sample_id_sample, sample_id_data, entry):
+        match = file_match_map.get(entry['file_name'], {'type': 'missing_in_bucket', 'bucket_files': []})
+        bucket_file = ', '.join(match['bucket_files']) if match['bucket_files'] else '—'
+        return {
+            'sample_id_sample': sample_id_sample,
+            'sample_id_data': sample_id_data,
+            'file_name': entry['file_name'],
+            'bucket_file': bucket_file,
+            'match_type': match['type'],
+        }
+
+    for key in sorted(in_both):
+        for entry in data_by_sample[key]:
+            rows.append(_make_file_row(sample_ids_from_sample[key], entry['sample_id'], entry))
+
+    for key in sorted(in_sample_only):
         rows.append({
-            'file_name': pm['csv_name'], 'source': 'DATA.csv', 'status': 'prefix_match',
-            'note': f"prefix match: {', '.join(pm['bucket_names'])} ({pm['match_type'].replace('_', ' ')})",
+            'sample_id_sample': sample_ids_from_sample[key],
+            'sample_id_data': '—',
+            'file_name': '—',
+            'bucket_file': '—',
+            'match_type': 'in_sample_only',
         })
-        for b_name in pm['bucket_names']:
-            rows.append({
-                'file_name': b_name, 'source': 'bucket', 'status': 'prefix_match',
-                'note': f"DATA.csv entry: {pm['csv_name']} ({pm['match_type'].replace('_', ' ')})",
-            })
-    for name in in_csv_only:
-        note = ''
-        if name in fuzzy_map:
-            fm = fuzzy_map[name]
-            note = f"fuzzy match: {fm['bucket_name']} ({fm['match_type'].replace('_', ' ')})"
-        rows.append({'file_name': name, 'source': 'DATA only', 'status': 'missing_in_bucket', 'note': note})
-    for name_in_bucket in in_bucket_only:
-        rows.append({'file_name': name_in_bucket, 'source': 'bucket only', 'status': 'extra_in_bucket', 'note': ''})
+
+    for key in sorted(in_data_only):
+        for entry in data_by_sample[key]:
+            row = _make_file_row('—', entry['sample_id'], entry)
+            row['match_type'] = 'in_data_only'
+            rows.append(row)
+
+    # DATA-only mode (no SAMPLE.csv): show all data rows
+    if not use_sample:
+        for key in sorted(all_data_keys):
+            for entry in data_by_sample[key]:
+                rows.append(_make_file_row('—', entry['sample_id'], entry))
+
+    for name in in_bucket_only_final:
+        rows.append({
+            'sample_id_sample': '—',
+            'sample_id_data': '—',
+            'file_name': '—',
+            'bucket_file': name,
+            'match_type': 'only_in_bucket',
+        })
+
     result['rows'] = rows
+    result['n_in_sample_only'] = len(in_sample_only)
+    result['n_in_data_only'] = len(in_data_only)
+    result['n_only_bucket'] = len(in_bucket_only_final)
 
-    if in_csv_only:
-        result['issues'].append(f"{len(in_csv_only)} file(s) in {data_csv_name} not found in bucket")
-    if in_bucket_only:
-        result['issues'].append(f"{len(in_bucket_only)} file(s) in bucket not listed in {data_csv_name}")
+    for row in rows:
+        mt = row['match_type']
+        if mt == 'exact':
+            result['n_exact'] += 1
+        elif 'illumina' in mt:
+            result['n_partial'] += 1
+        elif mt in ('separator_mismatch', 'numeric_suffix_mismatch'):
+            result['n_fuzzy'] += 1
+        elif 'prefix' in mt:
+            result['n_prefix'] += 1
+        elif mt.startswith('found_in_'):
+            result['n_found_in_extra'] += 1
+        elif mt == 'missing_in_bucket':
+            result['n_missing_bucket'] += 1
 
-    return result
-
-
-def check_sample_id_vs_file_name(metadata_dir: Path, data_csv_name: str) -> dict:
-    """
-    Check that each sample_id in DATA.csv is a substring of its corresponding file_name stem.
-
-    Applies the same normalizations used in `compare_data_csv_to_raw`: lowercasing and
-    hyphen-to-underscore conversion, plus Illumina suffix and FASTQ extension stripping.
-    A row is a mismatch when the normalized sample_id cannot be found anywhere in the
-    normalized file_name stem.
-
-    Parameters
-    ----------
-    metadata_dir : Path
-        Local directory containing downloaded metadata CSV files.
-    data_csv_name : str
-        Expected name of the DATA file (e.g. 'DATA.csv'), matched case-insensitively.
-
-    Returns
-    -------
-    dict
-        data_found : bool
-        sample_id_col_found : bool
-        file_name_col_found : bool
-        total_rows : int
-        mismatches : list of dict
-            One entry per mismatched row: sample_id, file_name, file_stem, note.
-        issues : list of str
-    """
-    result = {
-        'data_found': False,
-        'sample_id_col_found': False,
-        'file_name_col_found': False,
-        'total_rows': 0,
-        'mismatches': [],
-        'issues': [],
-    }
-
-    data_csv_path = None
-    if metadata_dir and metadata_dir.exists():
-        for f in metadata_dir.iterdir():
-            if f.name.startswith('._'):
-                continue
-            if f.name.upper() == data_csv_name.upper() and f.is_file():
-                data_csv_path = f
-                break
-
-    if data_csv_path is None:
-        return result
-    result['data_found'] = True
-
-    for encoding in ('utf-8', 'latin-1'):
-        try:
-            with open(data_csv_path, 'r', encoding=encoding) as fh:
-                reader = csv.DictReader(fh)
-                fieldnames = reader.fieldnames or []
-                sample_id_key = next(
-                    (k for k in fieldnames if k.lower().strip() == 'sample_id'), None
-                )
-                file_name_key = next(
-                    (k for k in fieldnames if k.lower().strip() == 'file_name'), None
-                )
-                if sample_id_key is None:
-                    result['issues'].append(f"No 'sample_id' column in {data_csv_name}")
-                    return result
-                if file_name_key is None:
-                    result['issues'].append(f"No 'file_name' column in {data_csv_name}")
-                    return result
-                result['sample_id_col_found'] = True
-                result['file_name_col_found'] = True
-                for row in reader:
-                    sample_id = row[sample_id_key].strip()
-                    file_name = row[file_name_key].strip()
-                    if not sample_id or not file_name:
-                        continue
-                    result['total_rows'] += 1
-                    norm_sid = _normalize_filename(sample_id)
-                    file_stem = _csv_stem(_strip_illumina_suffix(file_name))
-                    if norm_sid not in file_stem:
-                        result['mismatches'].append({
-                            'sample_id': sample_id,
-                            'file_name': file_name,
-                            'file_stem': file_stem,
-                            'note': f"'{norm_sid}' not found in stem '{file_stem}'",
-                        })
-            break
-        except UnicodeDecodeError:
-            continue
-        except Exception as e:
-            result['issues'].append(f"Could not read {data_csv_name}: {e}")
-            return result
-
-    if result['mismatches']:
+    # ── 7. Issues ─────────────────────────────────────────────────────
+    if result['n_missing_bucket']:
         result['issues'].append(
-            f"{len(result['mismatches'])} sample_id/file_name mismatch(es) in {data_csv_name}"
+            f"{result['n_missing_bucket']} file(s) in {data_csv_name} not found in bucket"
+        )
+    if result['n_only_bucket']:
+        result['issues'].append(
+            f"{result['n_only_bucket']} file(s) in bucket not listed in {data_csv_name}"
+        )
+    if result['n_in_sample_only']:
+        result['issues'].append(
+            f"{result['n_in_sample_only']} sample_id(s) in SAMPLE.csv not found in {data_csv_name}"
+        )
+    if result['n_in_data_only']:
+        result['issues'].append(
+            f"{result['n_in_data_only']} sample_id(s) in {data_csv_name} not found in SAMPLE.csv"
         )
 
     return result
 
 
-# ── Report helpers ─────────────────────────────────────────────────────────────
-
-def render_data_comparison_report(outfile, comparison: dict, raw_label: str, data_csv_name: str) -> None:
+def write_data_inconsistencies_tsv(result: dict, tsv_path: Path) -> Path | None:
     """
-    Write the DATA vs. raw|fastqs comparison section to an open Markdown report file.
+    Write the three-way inconsistencies table to a TSV file.
+
+    Parameters
+    ----------
+    result : dict
+        Dict returned by `check_three_way_consistency`.
+    tsv_path : Path
+        Destination path for the TSV file.
+
+    Returns
+    -------
+    Path
+        Path to the written TSV, or None if there were no rows.
+    """
+    rows = result.get('rows', [])
+    if not rows:
+        return None
+    with open(tsv_path, 'w', newline='', encoding='utf-8') as fh:
+        writer = csv.writer(fh, delimiter='\t')
+        writer.writerow([
+            'SAMPLE.sample_id', 'DATA.sample_id', 'DATA.file_name',
+            'Bucket file(s)', 'Match type',
+        ])
+        for row in rows:
+            writer.writerow([
+                row['sample_id_sample'],
+                row['sample_id_data'],
+                row['file_name'],
+                row['bucket_file'],
+                row['match_type'],
+            ])
+    return tsv_path
+
+
+def render_three_way_report(outfile, result: dict, raw_label: str, data_csv_name: str) -> None:
+    """
+    Write the Sample / Data / Bucket Consistency section to a Markdown report.
 
     Parameters
     ----------
     outfile : file-like object
         Open writable file to which Markdown is appended.
-    comparison : dict
-        Dict returned by `compare_data_csv_to_raw`.
+    result : dict
+        Dict returned by `check_three_way_consistency`.
     raw_label : str
         Display label for the raw folder (e.g. 'raw' or 'fastqs').
     data_csv_name : str
@@ -879,268 +934,144 @@ def render_data_comparison_report(outfile, comparison: dict, raw_label: str, dat
     -------
     None
     """
-    matched = comparison.get('matched', [])
-    partial_matches = comparison.get('partial_matches', [])
-    prefix_matches = comparison.get('prefix_matches', [])
-    in_csv_only = comparison.get('in_csv_only', [])
-    in_bucket_only = comparison.get('in_bucket_only', [])
-    fuzzy_matches = comparison.get('fuzzy_matches', [])
-    found_in_extra = comparison.get('found_in_extra', {})
-    md5_files = comparison.get('md5_files', [])
-    tsv_path = comparison.get('tsv_path')
+    outfile.write("### Sample / Data / Bucket Consistency\n\n")
 
-    outfile.write(f"### DATA vs. Bucket\n\n")
+    n_exact = result.get('n_exact', 0)
+    n_partial = result.get('n_partial', 0)
+    n_fuzzy = result.get('n_fuzzy', 0)
+    n_prefix = result.get('n_prefix', 0)
+    n_extra = result.get('n_found_in_extra', 0)
+    extra_folders = result.get('found_in_extra_folders', {})
+    n_missing = result.get('n_missing_bucket', 0)
+    n_sample_only = result.get('n_in_sample_only', 0)
+    n_data_only = result.get('n_in_data_only', 0)
+    n_only_bucket = result.get('n_only_bucket', 0)
+    md5_files = result.get('md5_files', [])
+    tsv_path = result.get('tsv_path')
+    use_sample = result.get('sample_csv_found') and result.get('sample_id_col_found')
 
-    _n_extra_folders = sum(len(v) for v in found_in_extra.values())
-    _extra_folder_labels = ', '.join(f'{k}/' for k in found_in_extra.keys())
+    summary_parts = []
+    if n_exact:
+        summary_parts.append(f"{emoji_success} **{n_exact} exact**")
+    if n_partial:
+        summary_parts.append(f"{emoji_warning} **{n_partial} partial** (Illumina suffix — need renaming)")
+    if n_fuzzy:
+        summary_parts.append(f"{emoji_warning} **{n_fuzzy} fuzzy** (typo)")
+    if n_prefix:
+        summary_parts.append(f"{emoji_warning} **{n_prefix} prefix match**")
+    if n_extra:
+        _folder_label = ", ".join(f"{f}/" for f in sorted(extra_folders)) if extra_folders else "extra folder"
+        summary_parts.append(f"{emoji_warning} **{n_extra} found in {_folder_label}**")
+    if n_missing:
+        summary_parts.append(f"{emoji_error} **{n_missing} missing in bucket**")
+    if n_sample_only:
+        summary_parts.append(f"{emoji_error} **{n_sample_only} in SAMPLE not in DATA**")
+    if n_data_only:
+        summary_parts.append(f"{emoji_error} **{n_data_only} in DATA not in SAMPLE**")
+    if n_only_bucket:
+        summary_parts.append(f"{emoji_error} **{n_only_bucket} only in bucket**")
 
-    other_parts = []
-    if partial_matches:
-        n_bucket = sum(len(pm['bucket_names']) for pm in partial_matches)
-        other_parts.append(f"{emoji_warning} **{len(partial_matches)} partial match(es)** ({n_bucket} bucket file(s) — need renaming)")
-    if prefix_matches:
-        n_bucket_pm = sum(len(pm['bucket_names']) for pm in prefix_matches)
-        other_parts.append(f"{emoji_warning} **{len(prefix_matches)} prefix match(es)** ({n_bucket_pm} bucket file(s) — verify)")
-    if found_in_extra:
-        other_parts.append(f"{emoji_warning} **{_n_extra_folders} found in {_extra_folder_labels}**")
-    _n_missing = len(in_csv_only)
-    other_parts.append(f"{emoji_warning if _n_missing else emoji_success} **{_n_missing} missing in bucket**")
-    _n_extra = len(in_bucket_only)
-    other_parts.append(f"{emoji_warning if _n_extra else emoji_success} **{_n_extra} missing in DATA**")
-
-    _n_matched = len(matched)
-    has_warnings = any(emoji_warning in p for p in other_parts)
-    if _n_matched == 0:
-        match_emoji = emoji_error
-    else:
-        match_emoji = emoji_warning if has_warnings else emoji_success
-
-    summary_parts = [f"{match_emoji} **{_n_matched} found in both**"] + other_parts
-    _n_total = _n_matched + len(partial_matches) + _n_extra_folders + len(in_csv_only) + len(in_bucket_only)
-    summary = f"**{_n_total} file(s):** " + " · ".join(summary_parts)
+    has_issues = any([n_partial, n_fuzzy, n_prefix, n_extra, n_missing, n_sample_only, n_data_only, n_only_bucket])
+    summary = " · ".join(summary_parts)
     if md5_files:
-        summary += f" · *{len(md5_files)} .md5 file(s) excluded from comparison*"
+        summary += f" · *{len(md5_files)} .md5 file(s) excluded*"
     outfile.write(summary + "\n\n")
 
-    if not partial_matches and not prefix_matches and not in_csv_only and not in_bucket_only and not found_in_extra:
-        outfile.write("✓ All files match\n\n")
+    if not has_issues:
+        outfile.write("✓ All entries consistent\n\n")
+        if tsv_path:
+            outfile.write(f"*Full table: `{Path(tsv_path).name}`*\n\n")
         return
 
-    if partial_matches:
-        n_bucket = sum(len(pm['bucket_names']) for pm in partial_matches)
-        outfile.write(
-            f"#### Partial matches — Illumina suffix "
-            f"({len(partial_matches)} DATA entry(ies), {n_bucket} bucket file(s))\n\n"
-        )
-        outfile.write("*DATA sample name matches bucket file(s) via Illumina naming pattern (S: sample, L: lane, R/I: read/index, nnn: chunk).*  \n")
-        outfile.write("*Bucket files need renaming or DATA `file_name` values need updating.*\n\n")
-        outfile.write("| file_name in DATA | Bucket file(s) | Note |\n")
-        outfile.write("|-------------------|----------------|------|\n")
-        pm_groups = defaultdict(list)
-        for pm in partial_matches:
-            pm_groups[pm['match_type']].append(pm)
-        for match_type, group in pm_groups.items():
-            for pm in group[:_number_examples]:
-                bucket_list = ", ".join(f"`{b}`" for b in pm['bucket_names'])
-                outfile.write(f"| `{pm['csv_name']}` | {bucket_list} | {match_type.replace('_', ' ')} |\n")
-            n_hidden = len(group) - _number_examples
-            if n_hidden > 0:
-                outfile.write(f"| *... and {n_hidden} more ({match_type.replace('_', ' ')})* | | |\n")
-        outfile.write("\n")
+    rows = result.get('rows', [])
+    if not rows:
+        return
 
-    if prefix_matches:
-        n_bucket_pm = sum(len(pm['bucket_names']) for pm in prefix_matches)
-        outfile.write(
-            f"#### Prefix matches — name containment "
-            f"({len(prefix_matches)} DATA entr{'y' if len(prefix_matches) == 1 else 'ies'}, "
-            f"{n_bucket_pm} bucket file(s))\n\n"
-        )
-        outfile.write("*One name is a prefix of the other. Verify these refer to the same sample.*\n\n")
-        outfile.write("| file_name in DATA | Bucket file(s) | Direction |\n")
-        outfile.write("|-------------------|----------------|----------|\n")
-        pfx_groups = defaultdict(list)
-        for pm in prefix_matches:
-            pfx_groups[pm['match_type']].append(pm)
-        for match_type, group in pfx_groups.items():
-            for pm in group[:_number_examples]:
-                bucket_list = ", ".join(f"`{b}`" for b in pm['bucket_names'])
-                outfile.write(f"| `{pm['csv_name']}` | {bucket_list} | {match_type.replace('_', ' ')} |\n")
-            n_hidden = len(group) - _number_examples
-            if n_hidden > 0:
-                outfile.write(f"| *... and {n_hidden} more ({match_type.replace('_', ' ')})* | | |\n")
-        outfile.write("\n")
+    # Group non-exact rows by match_type category for display
+    _DISPLAY_ORDER = [
+        ('in_sample_only',       'In SAMPLE, absent from DATA'),
+        ('in_data_only_group',   'In DATA, not in SAMPLE'),
+        ('missing_in_bucket',    'Missing in bucket'),
+        ('separator_mismatch',   'Fuzzy match — separator (hyphen vs. underscore)'),
+        ('numeric_suffix_mismatch', 'Fuzzy match — numeric suffix'),
+        ('illumina_group',       'Partial match — Illumina suffix (need renaming)'),
+        ('prefix_group',         'Prefix match — verify'),
+        ('extra_group',          'Found in extra folder'),
+        ('only_in_bucket',      'Only in bucket'),
+    ]
 
-    fuzzy_map = {fm['csv_name']: fm for fm in fuzzy_matches}
-    prefix_map = {pm['csv_name']: pm for pm in prefix_matches}
+    def _row_category(row):
+        mt = row['match_type']
+        if mt == 'in_sample_only':
+            return 'in_sample_only'
+        if mt == 'in_data_only':
+            return 'in_data_only_group'
+        if mt == 'only_in_bucket':
+            return 'only_in_bucket'
+        if mt == 'missing_in_bucket':
+            return 'missing_in_bucket'
+        if mt in ('separator_mismatch', 'numeric_suffix_mismatch'):
+            return mt
+        if 'illumina' in mt:
+            return 'illumina_group'
+        if 'prefix' in mt:
+            return 'prefix_group'
+        if mt.startswith('found_in_'):
+            return 'extra_group'
+        return None
 
-    if in_csv_only:
-        outfile.write(f"#### Missing in bucket ({len(in_csv_only)})\n\n")
-        outfile.write("| file_name in DATA | Note |\n")
-        outfile.write("|-------------------|------|\n")
-        csv_groups = defaultdict(list)
-        for name in in_csv_only:
-            if name in prefix_map:
-                type_key = prefix_map[name]['match_type']
-            elif name in fuzzy_map:
-                type_key = fuzzy_map[name]['match_type']
-            else:
-                type_key = ''
-            csv_groups[type_key].append(name)
-        for type_key, group in csv_groups.items():
-            for name in group[:_number_examples]:
-                if name in prefix_map:
-                    pm = prefix_map[name]
-                    n = len(pm['bucket_names'])
-                    if n <= 2:
-                        bucket_str = ', '.join(f"`{b}`" for b in pm['bucket_names'])
-                    else:
-                        bucket_str = f"`{pm['bucket_names'][0]}` (+{n - 1} more)"
-                    note = f"prefix match: {bucket_str} ({pm['match_type'].replace('_', ' ')})"
-                elif name in fuzzy_map:
-                    fm = fuzzy_map[name]
-                    note = f"fuzzy match: `{fm['bucket_name']}` ({fm['match_type'].replace('_', ' ')})"
-                else:
-                    note = ''
-                outfile.write(f"| `{name}` | {note} |\n")
-            n_hidden = len(group) - _number_examples
-            if n_hidden > 0:
-                label = type_key.replace('_', ' ') if type_key else 'no match'
-                outfile.write(f"| *... and {n_hidden} more ({label})* | |\n")
-        outfile.write("\n")
+    groups = defaultdict(list)
+    for row in rows:
+        cat = _row_category(row)
+        if cat and row['match_type'] != 'exact':
+            groups[cat].append(row)
 
-    if found_in_extra:
-        outfile.write(f"#### Found in {_extra_folder_labels} ({_n_extra_folders})\n\n")
-        outfile.write("*Not in the raw folder but present elsewhere in the bucket.*\n\n")
-        outfile.write("| file_name | Found in |\n")
-        outfile.write("|-----------|----------|\n")
-        for folder_name, found_files in found_in_extra.items():
-            for name in sorted(found_files)[:_number_examples]:
-                outfile.write(f"| `{name}` | `{folder_name}/` |\n")
-            n_hidden = len(found_files) - _number_examples
-            if n_hidden > 0:
-                outfile.write(f"| *... and {n_hidden} more* | `{folder_name}/` |\n")
-        outfile.write("\n")
+    col_header = (
+        "| SAMPLE.sample_id | DATA.sample_id | DATA.file_name | Bucket file(s) | Note |\n"
+        "|-----------------|----------------|----------------|----------------|------|\n"
+    )
 
-    if in_bucket_only:
-        bucket_only_notes = comparison.get('bucket_only_notes', {})
-        outfile.write(f"#### Missing in DATA ({len(in_bucket_only)})\n\n")
-        outfile.write("| file_name in bucket | Note |\n")
-        outfile.write("|---------------------|------|\n")
+    def _note(row):
+        mt = row['match_type']
+        if mt == 'in_sample_only':
+            return 'Not in DATA'
+        if mt == 'in_data_only':
+            return 'Not in SAMPLE'
+        if mt == 'only_in_bucket':
+            return 'Only in bucket'
+        if mt == 'missing_in_bucket':
+            return 'Missing in bucket'
+        if mt.startswith('found_in_'):
+            folder = mt[len('found_in_'):]
+            return f'Found in {folder}/'
+        return mt.replace('_', ' ')
 
-        def _note_type(note):
-            if note.startswith('fuzzy match'):
-                return 'fuzzy match'
-            if note.startswith('Illumina pattern'):
-                return 'Illumina pattern'
-            return ''
+    wrote_table_header = False
+    for cat_key, cat_label in _DISPLAY_ORDER:
+        group = groups.get(cat_key, [])
+        if not group:
+            continue
+        if not wrote_table_header:
+            outfile.write(col_header)
+            wrote_table_header = True
+        for row in group[:_number_examples]:
+            sid_s = row['sample_id_sample']
+            sid_d = row['sample_id_data']
+            fn = f"`{row['file_name']}`" if row['file_name'] != '—' else '—'
+            bf = f"`{row['bucket_file']}`" if row['bucket_file'] != '—' else '—'
+            outfile.write(f"| {sid_s} | {sid_d} | {fn} | {bf} | {_note(row)} |\n")
+        n_hidden = len(group) - _number_examples
+        if n_hidden > 0:
+            outfile.write(f"| *... and {n_hidden} more ({cat_label})* | | | | |\n")
 
-        bucket_groups = defaultdict(list)
-        for name in in_bucket_only:
-            bucket_groups[_note_type(bucket_only_notes.get(name, ''))].append(name)
-        for type_key, group in bucket_groups.items():
-            for name in group[:_number_examples]:
-                outfile.write(f"| `{name}` | {bucket_only_notes.get(name, '')} |\n")
-            n_hidden = len(group) - _number_examples
-            if n_hidden > 0:
-                label = type_key if type_key else 'no note'
-                outfile.write(f"| *... and {n_hidden} more ({label})* | |\n")
+    if wrote_table_header:
         outfile.write("\n")
 
     if tsv_path:
-        outfile.write(f"*Full reconciliation table: `{tsv_path}`*\n\n")
+        outfile.write(f"*Full reconciliation table: `{Path(tsv_path).name}`*\n\n")
 
 
-def write_comparison_data_vs_bucket_tsv(data_comparison: dict, tsv_path: Path) -> Path:
-    """
-    Write the DATA vs. raw|fastqs reconciliation table to a TSV file.
-
-    Parameters
-    ----------
-    data_comparison : dict
-        Dict returned by `compare_data_csv_to_raw`.
-    tsv_path : Path
-        Destination path for the TSV file.
-
-    Returns
-    -------
-    Path
-        Path to the written TSV, or None if there were no rows to write.
-    """
-    matched = data_comparison.get('matched', [])
-    partial_matches = data_comparison.get('partial_matches', [])
-    prefix_matches_tsv = data_comparison.get('prefix_matches', [])
-    in_csv_only = data_comparison.get('in_csv_only', [])
-    in_bucket_only = data_comparison.get('in_bucket_only', [])
-    fuzzy_matches = data_comparison.get('fuzzy_matches', [])
-    found_in_extra = data_comparison.get('found_in_extra', {})
-    if not (matched or partial_matches or in_csv_only or in_bucket_only or found_in_extra):
-        return None
-    fuzzy_map = {fm['csv_name']: fm for fm in fuzzy_matches}
-    prefix_map_tsv = {pm['csv_name']: pm for pm in prefix_matches_tsv}
-    with open(tsv_path, 'w', newline='', encoding='utf-8') as fh:
-        writer = csv.writer(fh, delimiter='\t')
-        writer.writerow(['DATA file_name', 'Bucket file(s)', 'Note'])
-        for name in matched:
-            writer.writerow([name, name, 'Exact match'])
-        for pm in partial_matches:
-            writer.writerow([pm['csv_name'], ', '.join(pm['bucket_names']),
-                             pm['match_type'].replace('_', ' ')])
-        for name in in_csv_only:
-            if name in prefix_map_tsv:
-                pm = prefix_map_tsv[name]
-                bucket_col = ', '.join(pm['bucket_names'])
-                note = pm['match_type'].replace('_', ' ')
-            elif name in fuzzy_map:
-                fm = fuzzy_map[name]
-                bucket_col = fm['bucket_name']
-                note = f"fuzzy match ({fm['match_type'].replace('_', ' ')})"
-            else:
-                bucket_col = 'Missing in Bucket'
-                for ext in _FASTQ_EXTENSIONS:
-                    if name.lower().endswith(ext):
-                        stem = name[:-len(ext)]
-                        break
-                else:
-                    stem = Path(name).stem
-                note = f"no Bucket entry for {stem}"
-            writer.writerow([name, bucket_col, note])
-        for folder_name, found_files in found_in_extra.items():
-            for name in found_files:
-                writer.writerow([name, name, f"found in {folder_name}/"])
-        bucket_only_notes = data_comparison.get('bucket_only_notes', {})
-        for name in in_bucket_only:
-            writer.writerow(['Missing in DATA', name, bucket_only_notes.get(name, '')])
-    return tsv_path
-
-
-def write_sample_id_vs_file_name_tsv(result: dict, tsv_path: Path) -> Path:
-    """
-    Write the sample_id vs. file_name mismatch table to a TSV file.
-
-    Only rows where sample_id is not a substring of the file_name stem are written.
-
-    Parameters
-    ----------
-    result : dict
-        Dict returned by `check_sample_id_vs_file_name`.
-    tsv_path : Path
-        Destination path for the TSV file.
-
-    Returns
-    -------
-    Path
-        Path to the written TSV, or None if there were no mismatches.
-    """
-    mismatches = result.get('mismatches', [])
-    if not mismatches:
-        return None
-    with open(tsv_path, 'w', newline='', encoding='utf-8') as fh:
-        writer = csv.writer(fh, delimiter='\t')
-        writer.writerow(['sample_id', 'file_name', 'file_stem_normalized', 'note'])
-        for m in mismatches:
-            writer.writerow([m['sample_id'], m['file_name'], m['file_stem'], m['note']])
-    return tsv_path
-
+# ── Report helpers ─────────────────────────────────────────────────────────────
 
 def write_column_consistency_tsv(col_found_in: dict, tsv_path: Path, col_name: str) -> Path:
     """
@@ -1183,11 +1114,12 @@ def is_critical_issue(issue: str) -> bool:
 
     Critical conditions
     -------------------
-    - BUCKET:        Bucket not accessible
-    - METADATA:      Missing core CDE v4.x tables (missing + core)
-    - METADATA:      Mandatory column (sample_id / subject_id) inconsistent across tables
-    - RAW:/METADATA: Required folder missing (metadata/, raw/ or variant)
-    - SPATIAL:       Required spatial/ folder missing (spatial datasets only)
+    - BUCKET:          Bucket not accessible
+    - METADATA:        Missing core CDE v4.x tables (missing + core)
+    - METADATA:        Mandatory column (sample_id / subject_id) inconsistent across tables
+    - DATA_VS_BUCKET:  sample_id(s) in SAMPLE.csv have no DATA rows
+    - RAW:/METADATA:   Required folder missing (metadata/, raw/ or variant)
+    - SPATIAL:         Required spatial/ folder missing (spatial datasets only)
 
     Parameters
     ----------
@@ -1212,6 +1144,10 @@ def is_critical_issue(issue: str) -> bool:
 
     # Mandatory column (sample_id / subject_id) inconsistent across tables
     if issue_lower.startswith('metadata:') and 'has inconsistent values' in issue_lower:
+        return True
+
+    # Bucket inconsistencies
+    if "bucket inconsistencies" in issue_lower:
         return True
 
     # Required folder missing (metadata/, raw/ or variant, spatial/ for spatial datasets)
@@ -1252,30 +1188,32 @@ def get_important_warnings(result: dict) -> list[str]:
         parts = [f"'{w['found']}' → '{w['expected']}'" for w in case_warnings]
         warnings.append(f"Folder name case mismatch(es) — {', '.join(parts)}")
 
-    # DATA vs. Bucket has mismatches
-    comparison = result.get('data_csv_comparison', {})
-    if comparison.get('data_found'):
-        n_partial = len(comparison.get('partial_matches', []))
-        n_prefix = len(comparison.get('prefix_matches', []))
-        n_csv_only = len(comparison.get('in_csv_only', []))
-        n_bucket_only = len(comparison.get('in_bucket_only', []))
-        if n_partial or n_prefix or n_csv_only or n_bucket_only:
+    # Three-way inconsistencies, captured to report as important warnings or critical issues
+    three_way = result.get('three_way_check', {})
+    if three_way.get('data_found'):
+        n_partial = three_way.get('n_partial', 0)
+        n_fuzzy = three_way.get('n_fuzzy', 0)
+        n_prefix = three_way.get('n_prefix', 0)
+        n_found_in_extra = three_way.get('n_found_in_extra', 0)
+        extra_folders = three_way.get('found_in_extra_folders', {})
+        if any([n_partial, n_fuzzy, n_prefix, n_found_in_extra]):
             parts = []
             if n_partial:
                 parts.append(f"{n_partial} partial match(es) (need renaming)")
+            if n_fuzzy:
+                parts.append(f"{n_fuzzy} fuzzy match(es) (typo)")
             if n_prefix:
                 parts.append(f"{n_prefix} prefix match(es) (verify)")
-            if n_csv_only:
-                parts.append(f"{n_csv_only} DATA entries absent from bucket")
-            if n_bucket_only:
-                parts.append(f"{n_bucket_only} bucket entries absent from DATA")
-            warnings.append("DATA vs. Bucket has mismatches — " + ", ".join(parts))
+            if n_found_in_extra:
+                _folder_label = ", ".join(f"{f}/" for f in sorted(extra_folders)) if extra_folders else "extra folder"
+                parts.append(f"{n_found_in_extra} found in {_folder_label}")
+            warnings.append("Sample / Data / Bucket inconsistencies — " + ", ".join(parts))
 
     # Unexpected folders
     unexpected = result.get('unexpected_folders', {})
     if unexpected:
         names = ', '.join(f"'{v}'" for v in sorted(unexpected.values()))
-        warnings.append(f"{len(unexpected)} unexpected folder(s): {names}")
+        warnings.append(f"{len(unexpected)} unexpected folder(s) — must be manually checked: {names}")
 
     return warnings
 
@@ -1602,7 +1540,7 @@ def perform_bucket_validation(gs_bucket: str,
                 expected_names = "', '".join(RAW_ALTERNATIVES.keys())
                 results['issues'].append(f"RAW: Folder not found (REQUIRED) - expected '{expected_names}'")
 
-        # DATA vs. Bucket comparison
+        # Three-way consistency: SAMPLE.sample_id ↔ DATA.sample_id/file_name ↔ bucket files
         _has_extra_for_spatial = is_spatial and (has_spatial or has_artifacts)
         if has_metadata and (has_raw or _has_extra_for_spatial) and metadata_dir:
             extra_folder_files = None
@@ -1616,43 +1554,40 @@ def perform_bucket_validation(gs_bucket: str,
                     extra_folder_files = _extra
             _raw_files = structure[raw_folder_variant] if has_raw else []
             _raw_label = f"/{raw_folder_name}/" if has_raw else "(no raw folder)"
-            print(f"  Comparing {data_file_name} file_name column to {_raw_label} contents...")
-            data_comparison = compare_data_csv_to_raw(
+            print(f"  Running three-way consistency check (SAMPLE / {data_file_name} / {_raw_label})...")
+            three_way = check_three_way_consistency(
                 metadata_dir, _raw_files, data_file_name, extra_folder_files=extra_folder_files
             )
-            results['data_csv_comparison'] = data_comparison
+            results['three_way_check'] = three_way
 
-            if not data_comparison['data_found']:
+            if not three_way['data_found']:
                 results['issues'].append(
-                    f"DATA_VS_BUCKET: {data_file_name} not found in metadata/ - file comparison skipped"
+                    f"Sample / Data / Bucket inconsistencies —  {data_file_name} not found in metadata/ - file comparison skipped"
                 )
             else:
-                tsv_path = outdir / "data_vs_bucket.tsv"
-                tsv_written = write_comparison_data_vs_bucket_tsv(data_comparison, tsv_path)
+                tsv_path = outdir / "data_inconsistencies.tsv"
+                tsv_written = write_data_inconsistencies_tsv(three_way, tsv_path)
                 if tsv_written:
-                    print(f"  Saved {data_file_name} vs. raw/ reconciliation to: {tsv_path}")
-                    data_comparison['tsv_path'] = tsv_written
+                    print(f"  Saved consistency table to: {tsv_path}")
+                    three_way['tsv_path'] = str(tsv_written)
+                # Forward non-count errors (read errors, missing columns)
+                for issue in three_way.get('issues', []):
+                    if not re.match(r'^\d+', issue):
+                        results['issues'].append(f"Sample / Data / Bucket inconsistencies — {issue}")
 
-                if data_comparison['issues']:
-                    results['issues'].extend(
-                        [f"DATA_VS_BUCKET: {issue}" for issue in data_comparison['issues']]
-                    )
-
-        # SAMPLE_ID vs. FILE_NAME check
-        if has_metadata and metadata_dir:
-            print(f"  Checking sample_id vs. file_name consistency in {data_file_name}...")
-            sid_fname_check = check_sample_id_vs_file_name(metadata_dir, data_file_name)
-            results['sample_id_vs_file_name'] = sid_fname_check
-            if sid_fname_check['data_found'] and sid_fname_check['sample_id_col_found']:
-                if sid_fname_check['mismatches']:
-                    tsv_path = outdir / "sample_id_vs_file_name.tsv"
-                    tsv_written = write_sample_id_vs_file_name_tsv(sid_fname_check, tsv_path)
-                    if tsv_written:
-                        print(f"  Saved sample_id vs. file_name reconciliation to: {tsv_path}")
-                        sid_fname_check['tsv_path'] = str(tsv_written)
-                if sid_fname_check['issues']:
-                    results['issues'].extend(
-                        [f"SAMPLE_ID_VS_FILE_NAME: {issue}" for issue in sid_fname_check['issues']]
+                # ONE combined critical issue report
+                critical_parts = []
+                if three_way.get('n_missing_bucket'):
+                    critical_parts.append(f"{three_way['n_missing_bucket']} missing in bucket")
+                if three_way.get('n_only_bucket'):
+                    critical_parts.append(f"{three_way['n_only_bucket']} only in bucket")
+                if three_way.get('n_in_sample_only'):
+                    critical_parts.append(f"{three_way['n_in_sample_only']} in SAMPLE not in DATA")
+                if three_way.get('n_in_data_only'):
+                    critical_parts.append(f"{three_way['n_in_data_only']} in DATA not in SAMPLE")
+                if critical_parts:
+                    results['issues'].append(
+                        "Sample / Data / Bucket inconsistencies — " + ", ".join(critical_parts)
                     )
 
         # ARTIFACTS FOLDER CHECK
@@ -1869,31 +1804,11 @@ def generate_report(all_results: list, report_path: Path) -> None:
 
                 outfile.write("---\n\n")
 
-            comparison = result.get('data_csv_comparison', {})
-            if comparison.get('data_found'):
+            three_way = result.get('three_way_check', {})
+            if three_way.get('data_found'):
                 raw_variant, display_text = _get_raw_display(result)
-                render_data_comparison_report(outfile, comparison, raw_variant, data_file_name)
+                render_three_way_report(outfile, three_way, raw_variant, data_file_name)
             outfile.write("---\n\n")
-
-            sid_check = result.get('sample_id_vs_file_name', {})
-            if sid_check.get('data_found') and sid_check.get('sample_id_col_found'):
-                outfile.write("### sample_id vs. file_name Check\n\n")
-                total = sid_check.get('total_rows', 0)
-                mismatches = sid_check.get('mismatches', [])
-                tsv_ref = sid_check.get('tsv_path')
-                if mismatches:
-                    outfile.write(
-                        f"{emoji_warning} **{len(mismatches)} mismatch(es)** out of {total} rows — "
-                        f"`sample_id` not found as substring of `file_name` stem"
-                    )
-                    if tsv_ref:
-                        outfile.write(f" — see `{Path(tsv_ref).name}`")
-                    outfile.write("\n\n")
-                else:
-                    outfile.write(
-                        f"{emoji_success} All {total} `sample_id` values found as substring of `file_name` stem\n\n"
-                    )
-                outfile.write("---\n\n")
 
             for folder_name, folder_data in result.get('folders', {}).items():
                 if folder_name == 'raw':
@@ -1944,26 +1859,24 @@ def generate_report(all_results: list, report_path: Path) -> None:
 # ── Module exports ─────────────────────────────────────────────────────────────
 
 __all__ = [
-    "ASAP_BUCKET_PREFIX",
     "MIN_FILE_SIZE_BYTES",
     "MIN_CSV_ROWS",
     "MANDATORY_FOLDERS",
     "RAW_ALTERNATIVES",
     "MANDATORY_COLS_PER_TABLE",
+    "CORE_METADATA_FILES",
+    "SUPP_METADATA_FILES",
     "emoji_success",
     "emoji_error",
     "emoji_warning",
-    "download_metadata",
     "strip_metadata_suffixes",
-    "write_comparison_data_vs_bucket_tsv",
-    "write_sample_id_vs_file_name_tsv",
     "write_column_consistency_tsv",
-    "check_sample_id_vs_file_name",
+    "write_data_inconsistencies_tsv",
     "analyze_metadata",
     "check_mandatory_column_consistency",
     "analyze_folder",
-    "compare_data_csv_to_raw",
-    "render_data_comparison_report",
+    "check_three_way_consistency",
+    "render_three_way_report",
     "is_critical_issue",
     "get_important_warnings",
     "print_executive_summary",
