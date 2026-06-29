@@ -190,14 +190,14 @@ if __name__ == "__main__":
         help="Promote data (default is dry run)."
     )
     parser.add_argument(
-        "-v",
+        "-va",
         "--validate-only",
         action="store_true",
         required=False,
         help="Only validate the raw bucket structure and metadata, then exit (no download)."
     )
     parser.add_argument(
-        "-o",
+        "-or",
         "--original-only",
         action="store_true",
         required=False,
