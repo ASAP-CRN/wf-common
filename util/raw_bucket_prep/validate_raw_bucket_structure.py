@@ -60,6 +60,7 @@ from bucket_validation_utils import (
     validate_raw_bucket_and_folder_existence,
     list_bucket_structure,
     CORE_METADATA_FILES,
+    SUPP_METADATA_FILES,
     )
 from file_utils import (
     get_file_extension,
@@ -98,11 +99,19 @@ CASE_FOLDERS = ['metadata'] + list(RAW_ALTERNATIVES.keys()) + ['artifacts', 'spa
 
 data_file_name = "DATA.csv"
 
+# All recognised table stems (uppercase). Files whose stem is absent from this
+# set are flagged as unrecognised (likely a filename typo) in the report.
+_KNOWN_TABLE_STEMS = (
+    {f[:-4].upper() for f in CORE_METADATA_FILES}
+    | {f[:-4].upper() for f in SUPP_METADATA_FILES}
+    | set(TABLE_UPDATE_MAP_UPPER.keys())
+)
+
 # Mandatory column checks: each key is a column that must appear in all listed tables.
 # Only tables present in the dataset are checked; absent tables are skipped.
 MANDATORY_COLS_PER_TABLE = {
-    "sample_id": ["ASSAY", "DATA", "SAMPLE", "ASSAY_RNAseq", "PMDBS", "SPATIAL", "PROTEOMICS", "MULTISAMPLE"],
-    "subject_id": ["CLINPATH", "SAMPLE", "SUBJECT", "MOUSE", "CELL", "PROTEOMICS", "MULTISAMPLE"],
+    "sample_id": ["ASSAY", "DATA", "SAMPLE", "ASSAY_RNAseq", "PMDBS", "SPATIAL", "PROTEOMICS"],
+    "subject_id": ["CLINPATH", "SAMPLE", "SUBJECT", "MOUSE", "CELL", "PROTEOMICS"],
 }
 
 # Illumina FASTQ naming suffixes after normalization (lowercase, hyphens → underscores).
@@ -502,6 +511,8 @@ def compare_data_csv_to_raw(metadata_dir: Path, raw_files: list, data_csv_name: 
     data_csv_path = None
     if metadata_dir and metadata_dir.exists():
         for f in metadata_dir.iterdir():
+            if f.name.startswith('._'):
+                continue
             if f.name.upper() == data_csv_name.upper() and f.is_file():
                 data_csv_path = f
                 break
@@ -788,6 +799,8 @@ def check_sample_id_vs_file_name(metadata_dir: Path, data_csv_name: str) -> dict
     data_csv_path = None
     if metadata_dir and metadata_dir.exists():
         for f in metadata_dir.iterdir():
+            if f.name.startswith('._'):
+                continue
             if f.name.upper() == data_csv_name.upper() and f.is_file():
                 data_csv_path = f
                 break
@@ -1218,8 +1231,9 @@ def get_important_warnings(result: dict) -> list[str]:
     Important warning conditions
     ----------------------------
     - Folder name case mismatches (e.g. 'Metadata/' instead of 'metadata/').
-    - DATA vs. Bucket not clean: partial matches, prefix matches, or files
+    - DATA vs. Bucket has mismatches: partial matches, prefix matches, or files
       missing from either DATA or the bucket.
+    - Unexpected folders not in the list of known bucket folders.
 
     Parameters
     ----------
@@ -1238,7 +1252,7 @@ def get_important_warnings(result: dict) -> list[str]:
         parts = [f"'{w['found']}' → '{w['expected']}'" for w in case_warnings]
         warnings.append(f"Folder name case mismatch(es) — {', '.join(parts)}")
 
-    # DATA vs. Bucket not clean
+    # DATA vs. Bucket has mismatches
     comparison = result.get('data_csv_comparison', {})
     if comparison.get('data_found'):
         n_partial = len(comparison.get('partial_matches', []))
@@ -1252,10 +1266,16 @@ def get_important_warnings(result: dict) -> list[str]:
             if n_prefix:
                 parts.append(f"{n_prefix} prefix match(es) (verify)")
             if n_csv_only:
-                parts.append(f"{n_csv_only} missing in bucket")
+                parts.append(f"{n_csv_only} DATA entries absent from bucket")
             if n_bucket_only:
-                parts.append(f"{n_bucket_only} missing in DATA")
-            warnings.append("DATA vs. Bucket not clean — " + ", ".join(parts))
+                parts.append(f"{n_bucket_only} bucket entries absent from DATA")
+            warnings.append("DATA vs. Bucket has mismatches — " + ", ".join(parts))
+
+    # Unexpected folders
+    unexpected = result.get('unexpected_folders', {})
+    if unexpected:
+        names = ', '.join(f"'{v}'" for v in sorted(unexpected.values()))
+        warnings.append(f"{len(unexpected)} unexpected folder(s): {names}")
 
     return warnings
 
@@ -1477,11 +1497,18 @@ def perform_bucket_validation(gs_bucket: str,
         has_spatial = 'spatial' in structure
         spatial_folder_name = folder_name_map.get('spatial', 'spatial')
 
+        unexpected_folders = {
+            k: folder_name_map.get(k, k)
+            for k in structure
+            if k not in set(CASE_FOLDERS)
+        }
+
         results['has_metadata'] = has_metadata
         results['has_raw'] = has_raw
         results['raw_folder_variant'] = raw_folder_variant
         results['has_artifacts'] = has_artifacts
         results['has_spatial'] = has_spatial
+        results['unexpected_folders'] = unexpected_folders
 
         # METADATA CHECK
         metadata_dir = None
@@ -1501,6 +1528,7 @@ def perform_bucket_validation(gs_bucket: str,
             results['metadata'] = metadata_results
             results['metadata_renames'] = metadata_renames
             found_csv_names = set(metadata_results.get('csv_files', {}).keys())
+            found_csv_names_upper = {name.upper() for name in found_csv_names}
 
             legacy_provided = {}
             for f in found_csv_names:
@@ -1515,7 +1543,7 @@ def perform_bucket_validation(gs_bucket: str,
             for f in CORE_METADATA_FILES:
                 core_upper = f[:-4].upper()
                 label = f[:-4] if f.lower().endswith('.csv') else f
-                if f in found_csv_names or core_upper in legacy_provided:
+                if f.upper() in found_csv_names_upper or core_upper in legacy_provided:
                     file_statuses.append(f"{emoji_success} {label}")
                 else:
                     missing_core.append(f)
@@ -1768,6 +1796,9 @@ def generate_report(all_results: list, report_path: Path) -> None:
                     content_status = "—"
                 outfile.write(f"| spatial | {folder_status} | {content_status} |\n")
 
+            for folder_display in sorted(result.get('unexpected_folders', {}).values()):
+                outfile.write(f"| {folder_display} | {emoji_warning} Unexpected | — |\n")
+
             outfile.write("---\n\n")
 
             if result.get('metadata', {}).get('csv_files'):
@@ -1806,11 +1837,15 @@ def generate_report(all_results: list, report_path: Path) -> None:
                         table_name = core_upper
                         file_name_status = f"{emoji_warning} {csv_name}"
                     elif csv_name in rename_map:
-                        table_name = csv_name[:-4] if csv_name.lower().endswith('.csv') else csv_name
+                        table_name = stem_upper
                         file_name_status = f"{emoji_warning} {rename_map[csv_name]}"
                     else:
-                        table_name = csv_name[:-4] if csv_name.lower().endswith('.csv') else csv_name
-                        file_name_status = f"{emoji_success} {csv_name}"
+                        table_name = stem_upper
+                        if stem_upper not in _KNOWN_TABLE_STEMS:
+                            file_name_status = f"{emoji_error} {csv_name}"
+                        else:
+                            canonical = stem_upper + '.csv'
+                            file_name_status = f"{emoji_success if csv_name == canonical else emoji_warning} {csv_name}"
                     outfile.write(f"| {table_name} | {csv_info['row_count']} | {file_name_status} |\n")
 
                 col_check = result.get('mandatory_col_check', [])
