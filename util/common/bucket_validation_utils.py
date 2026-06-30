@@ -3,10 +3,14 @@
 # Functions to help validate expected structure of GCP Buckets containing ASAP
 # CRN Cloud datasets
 
+import os
 import logging
 import subprocess
 from pathlib import Path
 from gcloud_ops import list_dirs
+from collections import defaultdict
+
+from file_utils import parse_file_size_to_bytes
 
 logging.basicConfig(
     level=logging.INFO,
@@ -170,19 +174,23 @@ def check_original_metadata_files_in_bucket(bucket_name: str) -> bool:
     logging.error(f"No metadata files found in {metadata_dir} or {original_dir}")
     return False
 
- 
+
 def get_bucket_structure(bucket_name: str) -> tuple[dict, dict, dict]:
     """"
     Check which required, recommended, and optional directories are present in a bucket.
-    
+
+    Comparison is case-insensitive so that e.g. 'Metadata/' matches 'metadata/'.
+    Case mismatches are caught and reported separately by list_bucket_structure.
+
     Returns:
     Tuple of three dicts tracking the presence of required, recommended, and optional dirs.
     """
     bucket_dirs = list_and_format_bucket_dirs(bucket_name)
-    
-    required_results = {dir_name: dir_name in bucket_dirs for dir_name in REQUIRED_BUCKET_DIRS}
-    recommended_results = {dir_name: dir_name in bucket_dirs for dir_name in RECOMMENDED_BUCKET_DIRS}
-    optional_results = {dir_name: dir_name in bucket_dirs for dir_name in OPTIONAL_BUCKET_DIRS}
+    bucket_dirs_lower = {d.lower() for d in bucket_dirs}
+
+    required_results = {dir_name: dir_name.lower() in bucket_dirs_lower for dir_name in REQUIRED_BUCKET_DIRS}
+    recommended_results = {dir_name: dir_name.lower() in bucket_dirs_lower for dir_name in RECOMMENDED_BUCKET_DIRS}
+    optional_results = {dir_name: dir_name.lower() in bucket_dirs_lower for dir_name in OPTIONAL_BUCKET_DIRS}
 
     return required_results, recommended_results, optional_results
 
@@ -192,23 +200,26 @@ def get_missing_directories(results: dict) -> list[str]:
     return [dir_name for dir_name, exists in results.items() if not exists]
 
 
-def validate_raw_bucket_structure(bucket_name: str) -> None:
+def validate_raw_bucket_and_folder_existence(bucket_name: str) -> None:
     """
-    Validate raw bucket directory structure.
-    
+    - Check that the bucket exists and is accessible
+    - Check that all required directories are present (case-insensitively)
+    - Check for recommended directories and log warnings if missing
+    - Check for optional directories and log info if present
+
     Args:
     bucket_name: of the form gs://asap-raw-team-jakobsson-pmdbs-rnaseq
-    
+
     Raise ValueError if the bucket does not exist or required directories are missing
     """
     check_bucket_exists(bucket_name)
-    
+
     required, recommended, optional = get_bucket_structure(bucket_name)
 
     missing_required = get_missing_directories(required)
     missing_recommended = get_missing_directories(recommended)
     present_optional = [dir for dir, present in optional.items() if present]
-    
+
     # Logging results
     if missing_required:
         raise ValueError(
@@ -216,10 +227,10 @@ def validate_raw_bucket_structure(bucket_name: str) -> None:
         )
     else:
         logging.info(f"All required directories present in {bucket_name}")
-    
+
     if missing_recommended:
         logging.warning(f"MISSING recommended directories: {', '.join(missing_recommended)}")
-    
+
     if present_optional:
         logging.info(f"Optional directories found: {', '.join(present_optional)}")
 
@@ -403,3 +414,86 @@ def validate_local_release_resources_structure(
 
     logging.info(f"Local release-resources structure validated for dataset at: {release_resources_dir}")
     return validated_files
+
+
+def list_bucket_structure(gs_bucket: str, temp_dir: Path = None, save_log: bool = False,
+                          case_folders: list = None) -> tuple:
+    """
+    List gs_bucket contents recursively and organise by top-level folder.
+
+    Parameters
+    ----------
+    gs_bucket : str
+        GCS bucket URL.
+    temp_dir : Path, optional
+        Directory to save the raw gcloud ls output log.
+    save_log : bool
+        If True and `temp_dir` is provided, write gcloud output to a log file.
+    case_folders : list, optional
+        Expected lowercase folder names; any mismatch in actual case is reported.
+
+    Returns
+    -------
+    tuple
+        structure : dict
+            Lowercase folder names as keys, lists of file-info dicts as values.
+            Each file-info dict has 'path', 'size' (bytes), 'size_str'.
+        folder_name_map : dict
+            Mapping of lowercase name → actual case-preserved name from the bucket.
+        case_warnings : list of dict
+            One entry per folder with a case mismatch: {'expected': str, 'found': str}.
+    """
+    print(f"  Listing bucket structure...")
+    cmd = [
+        "gcloud", "storage", "ls",
+        "--recursive",
+        "--long",
+        "--readable-sizes",
+        gs_bucket,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+
+    if save_log and temp_dir:
+        log_file = temp_dir / "gcloud_ls_output.txt"
+        with open(log_file, 'w') as f:
+            f.write(result.stdout)
+        print(f"  Saved gcloud ls output to: {log_file}")
+
+    structure = defaultdict(list)
+    folder_name_map = {}
+    case_warnings = []
+
+    for line in result.stdout.strip().split('\n'):
+        line = line.strip()
+        if not line or line.startswith('TOTAL:') or line.endswith(':'):
+            continue
+
+        parts = line.split(None, 2)
+        if len(parts) != 3:
+            continue
+        size_str, _date_str, path = parts
+        size_bytes = parse_file_size_to_bytes(size_str)
+
+        if path.endswith('/'):
+            continue
+
+        filename = os.path.basename(path)
+        if filename.startswith('.'):
+            continue
+
+        file_info = {'path': path, 'size': size_bytes, 'size_str': size_str}
+
+        path_parts = path.replace(gs_bucket + '/', '').split('/')
+        if len(path_parts) > 1:
+            folder_original = path_parts[0]
+            folder_lower = folder_original.lower()
+            structure[folder_lower].append(file_info)
+
+            if folder_lower not in folder_name_map:
+                folder_name_map[folder_lower] = folder_original
+                if case_folders and folder_lower in case_folders and folder_original != folder_lower:
+                    case_warnings.append({'expected': folder_lower, 'found': folder_original})
+        else:
+            structure['root'].append(file_info)
+
+    return dict(structure), folder_name_map, case_warnings

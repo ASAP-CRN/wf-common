@@ -12,9 +12,9 @@
 #
 # Usage: python3 download_raw_bucket_metadata_to_local -d team-jakobsson-pmdbs-bulk-rnaseq
 # 1. -p/--promote Defaults to dry run unless this flag is added to actually perform the download
-# 2. -V/--validate-only to just check the raw bucket structure/metadata and exit
+# 2. -v/--validate-only to just check the raw bucket structure/metadata and exit
 #    (no download); this replaces the former standalone validate_raw_bucket_structure.py.
-# 3. -O/--original-only to only download metadata/original/ (post-QC structure) 
+# 3. -o/--original-only to only download metadata/original/ (post-QC structure) 
 #    instead of the full metadata/ tree. This is for scenarios where you want to 
 #    re-download just the original metadata from the bucket without overwriting 
 #    the QC'd cde/ and release/ directories locally.
@@ -36,7 +36,7 @@ from gcloud_ops import gsync, strip_team_prefix, list_dirs
 from bucket_validation_utils import (
     check_local_metadata_repo_exists,
     check_dataset_dir_exists,
-    validate_raw_bucket_structure,
+    validate_raw_bucket_and_folder_existence,
     check_original_metadata_files_in_bucket,
     detect_raw_bucket_structure
 )
@@ -73,7 +73,7 @@ def main(args):
     # Useful as a standalone pre-check before contributors' data is downloaded for QC.
     if args.validate_only:
         logging.info(f"Validating raw bucket structure for: {bucket_name}")
-        validate_raw_bucket_structure(bucket_name)
+        validate_raw_bucket_and_folder_existence(bucket_name)
         files_valid = check_original_metadata_files_in_bucket(bucket_name)
         if files_valid:
             logging.info(f"Raw bucket validation successful: {bucket_name}")
@@ -84,7 +84,7 @@ def main(args):
     # Validation checks
     check_local_metadata_repo_exists(metadata_root)
     check_dataset_dir_exists(dataset_dir)
-    validate_raw_bucket_structure(bucket_name)
+    validate_raw_bucket_and_folder_existence(bucket_name)
     
     # Detect initial submission vs post-QC structure. Cohorts don't have an initial structure.
     is_cohort = dataset_name.startswith("cohort")
@@ -190,14 +190,14 @@ if __name__ == "__main__":
         help="Promote data (default is dry run)."
     )
     parser.add_argument(
-        "-V",
+        "-va",
         "--validate-only",
         action="store_true",
         required=False,
         help="Only validate the raw bucket structure and metadata, then exit (no download)."
     )
     parser.add_argument(
-        "-O",
+        "-or",
         "--original-only",
         action="store_true",
         required=False,
