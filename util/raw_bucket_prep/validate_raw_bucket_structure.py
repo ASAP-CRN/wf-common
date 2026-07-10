@@ -3,6 +3,7 @@
 Validation of a gs://asap-raw-<dataset_id> bucket.
 
 Checks GCS bucket structure and contents:
+  • Validates that billing project is set
   • Validates existence/accessibility of bucket
   • Validates presence of folders:
     - Mandatory: raw (raw/, fastqs/ or fastq/ [with warning]), metadata/
@@ -920,7 +921,7 @@ def write_data_inconsistencies_tsv(result: dict, tsv_path: Path) -> Path | None:
     Path
         Path to the written TSV, or None if there were no rows.
     """
-    rows = result.get('rows', [])
+    rows = [r for r in result.get('rows', []) if r.get('match_type') != 'exact']
     if not rows:
         return None
     with open(tsv_path, 'w', newline='', encoding='utf-8') as fh:
@@ -1126,18 +1127,22 @@ def write_column_consistency_tsv(col_found_in: dict, tsv_path: Path, col_name: s
 
     Returns
     -------
-    Path
-        Path to the written TSV.
+    Path or None
+        Path to the written TSV, or None if there were no inconsistent rows.
     """
     all_values = sorted(set().union(*col_found_in.values()))
     table_names = sorted(col_found_in.keys())
+    data_rows = []
+    for value in all_values:
+        row = [1 if value in col_found_in[t] else 0 for t in table_names]
+        if 0 in row:
+            data_rows.append([value] + row)
+    if not data_rows:
+        return None
     with open(tsv_path, 'w', newline='', encoding='utf-8') as fh:
         writer = csv.writer(fh, delimiter='\t')
         writer.writerow([col_name] + table_names)
-        for value in all_values:
-            row = [1 if value in col_found_in[t] else 0 for t in table_names]
-            if 0 in row:
-                writer.writerow([value] + row)
+        writer.writerows(data_rows)
     return tsv_path
 
 
@@ -1431,6 +1436,19 @@ def perform_bucket_validation(gs_bucket: str,
         shutil.rmtree(temp_dir)
     temp_dir.mkdir(exist_ok=True, parents=True)
 
+    # Resolve billing project once — needed by gsutil for requester-pays buckets.
+    # gcloud storage handles this automatically; gsutil requires explicit -u PROJECT.
+    _billing_project = subprocess.run(
+        ['gcloud', 'config', 'get-value', 'project'],
+        capture_output=True, text=True,
+    ).stdout.strip()
+    if not _billing_project:
+        raise RuntimeError(
+            "No active gcloud project configured — required for "
+            "requester-pays bucket access via gsutil. "
+            "Run: gcloud config set project PROJECT_ID"
+        )
+
     try:
         try:
             validate_raw_bucket_and_folder_existence(gs_bucket)
@@ -1497,7 +1515,24 @@ def perform_bucket_validation(gs_bucket: str,
                 metadata_dir = local_metadata_dir
                 metadata_renames = strip_metadata_suffixes(local_metadata_dir)
             except subprocess.CalledProcessError as e:
-                print(f"    Warning: Could not download metadata: {e.stderr}")
+                if 'matched more than one url' in (e.stderr or '').lower():
+                    # Bucket versioning causes gcloud storage rsync to see both live and
+                    # noncurrent versions of the metadata/ placeholder object. Fall back
+                    # to gsutil rsync, which ignores noncurrent versions by default.
+                    print(f"    Retrying with gsutil (bucket versioning conflict)...")
+                    try:
+                        result = subprocess.run(
+                            ['gsutil', '-u', _billing_project, '-m', 'rsync', '-r',
+                             remote_metadata, str(local_metadata_dir)],
+                            check=True, capture_output=True, text=True,
+                        )
+                        print(result.stdout + result.stderr)
+                        metadata_dir = local_metadata_dir
+                        metadata_renames = strip_metadata_suffixes(local_metadata_dir)
+                    except subprocess.CalledProcessError as e2:
+                        print(f"    Warning: Could not download metadata: {e2.stderr}")
+                else:
+                    print(f"    Warning: Could not download metadata: {e.stderr}")
             metadata_results = analyze_metadata(metadata_dir, MIN_CSV_ROWS)
             results['metadata'] = metadata_results
             results['metadata_renames'] = metadata_renames
@@ -1537,9 +1572,10 @@ def perform_bucket_validation(gs_bucket: str,
                     )
                 if entry.get('col_found_in'):
                     tsv_path = outdir / f"{entry['column_header']}_issues.tsv"
-                    write_column_consistency_tsv(entry['col_found_in'], tsv_path, entry['column_header'])
-                    print(f"  Saved {entry['column_header']} consistency matrix to: {tsv_path}")
-                    entry['tsv_path'] = str(tsv_path)
+                    tsv_written = write_column_consistency_tsv(entry['col_found_in'], tsv_path, entry['column_header'])
+                    if tsv_written:
+                        print(f"  Saved {entry['column_header']} consistency matrix to: {tsv_path}")
+                        entry['tsv_path'] = str(tsv_path)
 
             if metadata_results['issues']:
                 results['issues'].extend([f"METADATA: {issue}" for issue in metadata_results['issues']])
