@@ -1,0 +1,5 @@
+# crn_utils — install locally: pip install -e ~/crn-utils
+gspread==6.2.1
+packaging==26.2
+pandas==3.0.3
+protobuf==7.35.1
