@@ -4,7 +4,6 @@
 import csv
 import os
 import re
-import statistics
 from pathlib import Path
 
 
@@ -58,25 +57,30 @@ def detect_csv_delimiter(file_path: Path, num_lines: int = _DELIMITER_DETECTION_
     header_line = lines[0]
     candidate_lines = lines[:max(2, min(len(lines), num_lines))]
 
+    def _field_count(line: str, delim: str) -> int:
+        try:
+            return len(next(csv.reader([line], delimiter=delim)))
+        except Exception:
+            return 0
+
+    header_field_counts = {d: _field_count(header_line, d) for d in _SUPPORTED_DELIMITERS}
+    data_lines = candidate_lines[1:]
+
     scores = {}
     for delim in _SUPPORTED_DELIMITERS:
         if delim not in header_line:
             scores[delim] = -1.0
             continue
-        counts = [line.count(delim) for line in candidate_lines]
-        if not counts:
+        n_header_fields = header_field_counts[delim]
+        if n_header_fields <= 1:
             scores[delim] = -1.0
             continue
-        median_count = statistics.median(counts)
-        if median_count <= 0:
-            scores[delim] = -1.0
+        if not data_lines:
+            scores[delim] = float(n_header_fields)
             continue
-        consistency = sum(1 for c in counts if c == median_count) / float(len(counts))
-        est_cols = header_line.count(delim) + 1
-        if est_cols <= 1:
-            scores[delim] = -1.0
-            continue
-        scores[delim] = (consistency * 100.0) + float(median_count)
+        field_match = sum(1 for line in data_lines if _field_count(line, delim) == n_header_fields)
+        consistency = field_match / len(data_lines)
+        scores[delim] = (consistency * 100.0) + float(n_header_fields)
 
     best = max(scores, key=scores.get)
     return best if scores[best] >= 0 else ","

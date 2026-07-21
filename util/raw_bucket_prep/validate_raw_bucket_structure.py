@@ -24,8 +24,7 @@ A bucket_validation.md report, including:
 Inconsistency reconciliation tables (if issues are found):
   - sample_id_issues.tsv
   - subject_id_issues.tsv
-  - data_vs_bucket.tsv
-  - sample_id_vs_file_name.tsv
+  - data_inconsistencies.tsv
 
 Usage as CLI:
 python3 validate_raw_bucket_structure.py -d team-smith-sc-rnaseq
@@ -355,7 +354,7 @@ def check_mandatory_column_consistency(metadata_dir: Path, mandatory_cols: dict)
         for t, stem in present.items():
             table_path = metadata_dir / f"{stem}.csv"
             delim = detect_csv_delimiter(table_path)
-            for enc in ('utf-8', 'latin-1'):
+            for enc in ('utf-8-sig', 'utf-8', 'latin-1'):
                 try:
                     name_to_df[t] = pd.read_csv(table_path, sep=delim, encoding=enc)
                     break
@@ -542,6 +541,7 @@ def check_three_way_consistency(
         'n_found_in_extra': 0,
         'found_in_extra_folders': {},
         'n_missing_bucket': 0,
+        'n_file_name_is_path': 0,
         'n_in_sample_only': 0,
         'n_in_data_only': 0,
         'n_sample_data_fuzzy': 0,
@@ -562,7 +562,7 @@ def check_three_way_consistency(
         if sample_csv_path:
             result['sample_csv_found'] = True
             sample_delim = detect_csv_delimiter(sample_csv_path)
-            for encoding in ('utf-8', 'latin-1'):
+            for encoding in ('utf-8-sig', 'utf-8', 'latin-1'):
                 try:
                     with open(sample_csv_path, 'r', encoding=encoding) as fh:
                         reader = csv.DictReader(fh, delimiter=sample_delim)
@@ -601,7 +601,7 @@ def check_three_way_consistency(
     all_file_names = []
 
     data_delim = detect_csv_delimiter(data_csv_path)
-    for encoding in ('utf-8', 'latin-1'):
+    for encoding in ('utf-8-sig', 'utf-8', 'latin-1'):
         try:
             with open(data_csv_path, 'r', encoding=encoding) as fh:
                 reader = csv.DictReader(fh, delimiter=data_delim)
@@ -624,9 +624,14 @@ def check_three_way_consistency(
                     return result
                 for row in reader:
                     sid = row[sample_id_key].strip()
-                    fn = row[file_name_key].strip()
+                    fn_raw = row[file_name_key].strip()
+                    fn = os.path.basename(fn_raw)
                     if sid and fn:
-                        data_by_sample[sid.lower()].append({'sample_id': sid, 'file_name': fn})
+                        data_by_sample[sid.lower()].append({
+                            'sample_id': sid,
+                            'file_name': fn,
+                            'file_name_was_path': fn != fn_raw,
+                        })
                         all_file_names.append(fn)
             break
         except UnicodeDecodeError:
@@ -826,13 +831,16 @@ def check_three_way_consistency(
     def _make_file_row(sample_id_sample, sample_id_data, entry):
         match = file_match_map.get(entry['file_name'], {'type': 'missing_in_bucket', 'bucket_files': []})
         bucket_file = ', '.join(match['bucket_files']) if match['bucket_files'] else '—'
-        return {
+        row = {
             'sample_id_sample': sample_id_sample,
             'sample_id_data': sample_id_data,
             'file_name': entry['file_name'],
             'bucket_file': bucket_file,
             'match_type': match['type'],
         }
+        if entry.get('file_name_was_path'):
+            row['file_name_was_path'] = True
+        return row
 
     for key in sorted(in_both):
         for entry in data_by_sample[key]:
@@ -895,6 +903,8 @@ def check_three_way_consistency(
         elif mt == 'missing_in_bucket':
             result['n_missing_bucket'] += 1
 
+    result['n_file_name_is_path'] = sum(1 for r in rows if r.get('file_name_was_path'))
+
     # ── 7. Issues ─────────────────────────────────────────────────────
     if result['n_missing_bucket']:
         result['issues'].append(
@@ -932,7 +942,10 @@ def write_data_inconsistencies_tsv(result: dict, tsv_path: Path) -> Path | None:
     Path
         Path to the written TSV, or None if there were no rows.
     """
-    rows = [r for r in result.get('rows', []) if r.get('match_type') != 'exact']
+    rows = [
+        r for r in result.get('rows', [])
+        if r.get('match_type') != 'exact' or r.get('file_name_was_path')
+    ]
     if not rows:
         return None
     with open(tsv_path, 'w', newline='', encoding='utf-8') as fh:
@@ -942,12 +955,15 @@ def write_data_inconsistencies_tsv(result: dict, tsv_path: Path) -> Path | None:
             'Bucket file(s)', 'Match type',
         ])
         for row in rows:
+            match_type = row['match_type']
+            if row.get('file_name_was_path'):
+                match_type += '. Match was found in a nested path'
             writer.writerow([
                 row['sample_id_sample'],
                 row['sample_id_data'],
                 row['file_name'],
                 row['bucket_file'],
-                row['match_type'],
+                match_type,
             ])
     return tsv_path
 
@@ -984,6 +1000,7 @@ def render_three_way_report(outfile, result: dict, raw_label: str, data_csv_name
     n_data_only = result.get('n_in_data_only', 0)
     n_sample_fuzzy = result.get('n_sample_data_fuzzy', 0)
     n_only_bucket = result.get('n_only_bucket', 0)
+    n_file_name_is_path = result.get('n_file_name_is_path', 0)
     md5_files = result.get('md5_files', [])
     tsv_path = result.get('tsv_path')
     use_sample = result.get('sample_csv_found') and result.get('sample_id_col_found')
@@ -991,6 +1008,8 @@ def render_three_way_report(outfile, result: dict, raw_label: str, data_csv_name
     summary_parts = []
     if n_exact:
         summary_parts.append(f"{emoji_success} **{n_exact} exact**")
+    if n_file_name_is_path:
+        summary_parts.append(f"{emoji_warning} **{n_file_name_is_path} nested paths** (not at root of raw folder)")
     if n_partial:
         summary_parts.append(f"{emoji_warning} **{n_partial} partial** (Illumina suffix — need renaming)")
     if n_fuzzy:
@@ -1011,7 +1030,7 @@ def render_three_way_report(outfile, result: dict, raw_label: str, data_csv_name
     if n_only_bucket:
         summary_parts.append(f"{emoji_error} **{n_only_bucket} only in bucket**")
 
-    has_issues = any([n_partial, n_fuzzy, n_sample_fuzzy, n_prefix, n_extra, n_missing, n_sample_only, n_data_only, n_only_bucket])
+    has_issues = any([n_partial, n_fuzzy, n_sample_fuzzy, n_prefix, n_extra, n_missing, n_sample_only, n_data_only, n_only_bucket, n_file_name_is_path])
     summary = " · ".join(summary_parts)
     if md5_files:
         summary += f" · *{len(md5_files)} .md5 file(s) excluded*"
@@ -1077,19 +1096,23 @@ def render_three_way_report(outfile, result: dict, raw_label: str, data_csv_name
     def _note(row):
         mt = row['match_type']
         if mt == 'in_sample_only':
-            return 'Not in DATA'
-        if mt == 'in_data_only':
-            return 'Not in SAMPLE'
-        if mt == 'sample_id_fuzzy':
-            return 'Fuzzy match — sample_id separator/case'
-        if mt == 'only_in_bucket':
-            return 'Only in bucket'
-        if mt == 'missing_in_bucket':
-            return 'Missing in bucket'
-        if mt.startswith('found_in_'):
+            note = 'Not in DATA'
+        elif mt == 'in_data_only':
+            note = 'Not in SAMPLE'
+        elif mt == 'sample_id_fuzzy':
+            note = 'Fuzzy match — sample_id separator/case'
+        elif mt == 'only_in_bucket':
+            note = 'Only in bucket'
+        elif mt == 'missing_in_bucket':
+            note = 'Missing in bucket'
+        elif mt.startswith('found_in_'):
             folder = mt[len('found_in_'):]
-            return f'Found in {folder}/'
-        return mt.replace('_', ' ')
+            note = f'Found in {folder}/'
+        else:
+            note = mt.replace('_', ' ')
+        if row.get('file_name_was_path'):
+            note += ' · file_name is a nested path'
+        return note
 
     wrote_table_header = False
     for cat_key, cat_label in _DISPLAY_ORDER:
@@ -1260,6 +1283,13 @@ def get_important_warnings(result: dict) -> list[str]:
                 _folder_label = ", ".join(f"{f}/" for f in sorted(extra_folders)) if extra_folders else "extra folder"
                 parts.append(f"{n_found_in_extra} found in {_folder_label}")
             warnings.append("Sample / Data / Bucket inconsistencies — " + ", ".join(parts))
+
+    # Files referenced by nested path in DATA.csv (nested subdirectories)
+    n_file_name_is_path = three_way.get('n_file_name_is_path', 0)
+    if n_file_name_is_path:
+        warnings.append(
+            f"DATA.csv file_name: {n_file_name_is_path} file(s) use nested paths, not at root of raw folder"
+        )
 
     # Non-comma delimiters in metadata files
     non_comma = result.get('non_comma_delimiter_files', [])
