@@ -46,6 +46,7 @@ from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
 import argparse
+import pandas as pd
 
 repo_root = Path(__file__).resolve().parents[2]
 metadata_root = repo_root.parent / "asap-crn-cloud-dataset-metadata"
@@ -65,11 +66,11 @@ from bucket_validation_utils import (
     )
 from file_utils import (
     get_file_extension,
-    check_csv_rows
+    check_csv_rows,
+    detect_csv_delimiter,
     )
 
 # crn-utils
-from crn_utils.util import load_tables
 from crn_utils.update_schema import get_table_update_map
 
 # asap-crn-cloud-dataset-metadata
@@ -350,8 +351,16 @@ def check_mandatory_column_consistency(metadata_dir: Path, mandatory_cols: dict)
         if not present:
             continue
 
-        tables = load_tables(metadata_dir, list(present.values()))
-        name_to_df = {t: tables[stem] for t, stem in present.items()}
+        name_to_df = {}
+        for t, stem in present.items():
+            table_path = metadata_dir / f"{stem}.csv"
+            delim = detect_csv_delimiter(table_path)
+            for enc in ('utf-8', 'latin-1'):
+                try:
+                    name_to_df[t] = pd.read_csv(table_path, sep=delim, encoding=enc)
+                    break
+                except UnicodeDecodeError:
+                    continue
 
         col_found_in = {}
         col_missing_in = []
@@ -552,10 +561,11 @@ def check_three_way_consistency(
                 break
         if sample_csv_path:
             result['sample_csv_found'] = True
+            sample_delim = detect_csv_delimiter(sample_csv_path)
             for encoding in ('utf-8', 'latin-1'):
                 try:
                     with open(sample_csv_path, 'r', encoding=encoding) as fh:
-                        reader = csv.DictReader(fh)
+                        reader = csv.DictReader(fh, delimiter=sample_delim)
                         col = next(
                             (k for k in (reader.fieldnames or []) if k.lower().strip() == 'sample_id'),
                             None,
@@ -590,10 +600,11 @@ def check_three_way_consistency(
     data_by_sample = defaultdict(list)  # lower sample_id → [{'sample_id': str, 'file_name': str}]
     all_file_names = []
 
+    data_delim = detect_csv_delimiter(data_csv_path)
     for encoding in ('utf-8', 'latin-1'):
         try:
             with open(data_csv_path, 'r', encoding=encoding) as fh:
-                reader = csv.DictReader(fh)
+                reader = csv.DictReader(fh, delimiter=data_delim)
                 fieldnames = reader.fieldnames or []
                 sample_id_key = next(
                     (k for k in fieldnames if k.lower().strip() == 'sample_id'), None
@@ -1250,6 +1261,12 @@ def get_important_warnings(result: dict) -> list[str]:
                 parts.append(f"{n_found_in_extra} found in {_folder_label}")
             warnings.append("Sample / Data / Bucket inconsistencies — " + ", ".join(parts))
 
+    # Non-comma delimiters in metadata files
+    non_comma = result.get('non_comma_delimiter_files', [])
+    if non_comma:
+        names = ', '.join(non_comma)
+        warnings.append(f"Non-comma delimiter in metadata file(s): {names}")
+
     # Unexpected folders
     unexpected = result.get('unexpected_folders', {})
     if unexpected:
@@ -1533,6 +1550,18 @@ def perform_bucket_validation(gs_bucket: str,
                         print(f"    Warning: Could not download metadata: {e2.stderr}")
                 else:
                     print(f"    Warning: Could not download metadata: {e.stderr}")
+            non_comma_files = []
+            if metadata_dir and metadata_dir.exists():
+                for csv_file in sorted(
+                    f for f in (list(metadata_dir.glob('*.csv')) + list(metadata_dir.glob('*.CSV')))
+                    if f.is_file() and not f.name.startswith('._')
+                ):
+                    delim = detect_csv_delimiter(csv_file)
+                    if delim != ',':
+                        non_comma_files.append(csv_file.name)
+            if non_comma_files:
+                results['non_comma_delimiter_files'] = non_comma_files
+
             metadata_results = analyze_metadata(metadata_dir, MIN_CSV_ROWS)
             results['metadata'] = metadata_results
             results['metadata_renames'] = metadata_renames
@@ -1747,6 +1776,9 @@ def generate_report(all_results: list, report_path: Path) -> None:
                     content_parts.append(f"{emoji_warning} {len(renames)} renamed")
                 if csv_issues:
                     content_parts.append(f"{emoji_warning} {len(csv_issues)} CSV issue(s)")
+                non_comma = result.get('non_comma_delimiter_files', [])
+                if non_comma:
+                    content_parts.append(f"{emoji_warning} {len(non_comma)} non-comma delimiter(s)")
                 content_status = " · ".join(content_parts) if content_parts else emoji_success
             else:
                 folder_status = _folder_not_found_status('metadata', set(MANDATORY_FOLDERS))
