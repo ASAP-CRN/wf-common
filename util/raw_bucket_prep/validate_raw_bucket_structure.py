@@ -127,10 +127,6 @@ _READ_ILLUMINA_SUFFIX_RE = re.compile(r'_[ri]\d+\.fastq\.gz$')
 # Ordered longest-first so '.fastq.gz' is matched before '.gz'.
 _FASTQ_EXTENSIONS = ('.fastq.gz', '.fq.gz', '.fastq', '.fq')
 
-# Suffixes stripped from metadata filenames after download so downstream code
-# always sees canonical table names (e.g. ASSAY_complete.csv → ASSAY.csv).
-_METADATA_FILE_SUFFIX_STRIP = ['_complete', '.cde_compared']
-
 emoji_success = "✅"
 emoji_error = "❌"
 emoji_warning = "⚠️"
@@ -139,11 +135,13 @@ emoji_warning = "⚠️"
 
 def strip_metadata_suffixes(metadata_dir: Path) -> list:
     """
-    Rename metadata files by stripping known non-standard suffixes.
+    Rename metadata files whose stem starts with a known table name.
 
-    Strips entries in `_METADATA_FILE_SUFFIX_STRIP` from filenames immediately
-    before the `.csv` extension (e.g. `ASSAY_complete.csv` → `ASSAY.csv`).
-    Skips macOS artefact files beginning with '._'.
+    Matches `<KNOWN_TABLE>_<anything>.csv` and `<KNOWN_TABLE>.<anything>.csv`,
+    renaming to `<KNOWN_TABLE>.csv`. The longest matching known stem wins.
+    Files already named canonically (stem in `_KNOWN_TABLE_STEMS`) are skipped,
+    as are macOS artefact files beginning with '._'.
+
     Prints a warning for each rename or skip.
 
     Parameters
@@ -160,33 +158,40 @@ def strip_metadata_suffixes(metadata_dir: Path) -> list:
     renames = []
     if not metadata_dir or not metadata_dir.exists():
         return renames
+
     for filepath in sorted(metadata_dir.iterdir()):
-        if not filepath.is_file():
+        if not filepath.is_file() or filepath.suffix.lower() != '.csv':
             continue
         if filepath.name.startswith('._'):
             continue
-        name = filepath.name
-        for suffix in _METADATA_FILE_SUFFIX_STRIP:
-            new_name = None
-            if name.lower().endswith(suffix.lower() + '.csv'):
-                new_name = name[:-(len(suffix) + 4)] + '.csv'
-            if new_name:
-                dest = filepath.parent / new_name
-                if dest.exists():
-                    renames.append({
-                        'original': name, 'renamed': new_name,
-                        'suffix': suffix, 'skipped': True,
-                        'reason': 'destination already exists',
-                    })
-                    print(f"    Warning: could not rename '{name}' → '{new_name}': destination already exists")
-                else:
-                    filepath.rename(dest)
-                    renames.append({
-                        'original': name, 'renamed': new_name,
-                        'suffix': suffix, 'skipped': False,
-                    })
-                    print(f"    Warning: renamed '{name}' → '{new_name}' (stripped suffix '{suffix}')")
-                break
+        stem_upper = filepath.stem.upper()
+        if stem_upper in _KNOWN_TABLE_STEMS:
+            continue
+        candidates = [
+            s for s in _KNOWN_TABLE_STEMS
+            if stem_upper.startswith(s + '_') or stem_upper.startswith(s + '.')
+        ]
+        if not candidates:
+            continue
+        matched_stem = max(candidates, key=len)
+        new_name = matched_stem + '.csv'
+        dest = filepath.parent / new_name
+        stripped_suffix = filepath.stem[len(matched_stem):]
+        if dest.exists():
+            renames.append({
+                'original': filepath.name, 'renamed': new_name,
+                'suffix': stripped_suffix, 'skipped': True,
+                'reason': 'destination already exists',
+            })
+            print(f"    Warning: could not rename '{filepath.name}' → '{new_name}': destination already exists")
+        else:
+            filepath.rename(dest)
+            renames.append({
+                'original': filepath.name, 'renamed': new_name,
+                'suffix': stripped_suffix, 'skipped': False,
+            })
+            print(f"    Warning: renamed '{filepath.name}' → '{new_name}' (stripped suffix '{stripped_suffix}')")
+
     return renames
 
 
