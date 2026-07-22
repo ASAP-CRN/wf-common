@@ -1,10 +1,89 @@
 #!/usr/bin/env python3
 """General-purpose functions to parse file properties (e.g. size, extension)."""
 
+import csv
 import os
 import re
 from pathlib import Path
-import csv
+
+
+_SUPPORTED_DELIMITERS = [",", ";", "\t", "|"]
+_ENCODINGS_TO_TRY = ("utf-8-sig", "utf-8", "cp1252", "latin-1")
+_DELIMITER_DETECTION_LINES = 50
+
+
+def detect_csv_delimiter(file_path: Path, num_lines: int = _DELIMITER_DETECTION_LINES) -> str:
+    """
+    Detect the delimiter used in a CSV-like file using line-level statistics.
+
+    Tries comma, semicolon, tab, and pipe. Scores each candidate by presence in
+    the header, median count per line, and consistency across lines. Falls back
+    to comma if no delimiter can be confidently identified.
+
+    Adapted from DelimiterHandler.detect_delimiter() in crn-meta-validate, with
+    all Streamlit dependencies removed.
+
+    Parameters
+    ----------
+    file_path : Path
+        Path to the file to inspect.
+    num_lines : int
+        Maximum number of non-empty lines to evaluate. Default is 50.
+
+    Returns
+    -------
+    str
+        Detected delimiter character. Defaults to ',' if detection is inconclusive.
+    """
+    try:
+        raw = file_path.read_bytes()
+    except Exception:
+        return ","
+
+    decoded = None
+    for enc in _ENCODINGS_TO_TRY:
+        try:
+            decoded = raw.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    if decoded is None:
+        decoded = raw.decode("utf-8", errors="ignore")
+
+    lines = [line for line in decoded.splitlines() if line.strip()]
+    if not lines:
+        return ","
+
+    header_line = lines[0]
+    candidate_lines = lines[:max(2, min(len(lines), num_lines))]
+
+    def _field_count(line: str, delim: str) -> int:
+        try:
+            return len(next(csv.reader([line], delimiter=delim)))
+        except Exception:
+            return 0
+
+    header_field_counts = {d: _field_count(header_line, d) for d in _SUPPORTED_DELIMITERS}
+    data_lines = candidate_lines[1:]
+
+    scores = {}
+    for delim in _SUPPORTED_DELIMITERS:
+        if delim not in header_line:
+            scores[delim] = -1.0
+            continue
+        n_header_fields = header_field_counts[delim]
+        if n_header_fields <= 1:
+            scores[delim] = -1.0
+            continue
+        if not data_lines:
+            scores[delim] = float(n_header_fields)
+            continue
+        field_match = sum(1 for line in data_lines if _field_count(line, delim) == n_header_fields)
+        consistency = field_match / len(data_lines)
+        scores[delim] = (consistency * 100.0) + float(n_header_fields)
+
+    best = max(scores, key=scores.get)
+    return best if scores[best] >= 0 else ","
 
 
 def parse_file_size_to_bytes(size_str: str) -> int:
@@ -68,6 +147,8 @@ def check_csv_rows(csv_path: Path, min_rows: int = 2) -> dict:
     """
     Check whether a CSV file has at least `min_rows` rows (header + data).
 
+    The delimiter is auto-detected via `detect_csv_delimiter`.
+
     Parameters
     ----------
     csv_path : Path
@@ -83,11 +164,12 @@ def check_csv_rows(csv_path: Path, min_rows: int = 2) -> dict:
         status : str — 'valid', 'insufficient', or 'error'
         error : str or None
     """
+    delimiter = detect_csv_delimiter(csv_path)
     try:
         for encoding in ('utf-8', 'latin-1'):
             try:
                 with open(csv_path, 'r', encoding=encoding) as f:
-                    row_count = sum(1 for _ in csv.reader(f))
+                    row_count = sum(1 for _ in csv.reader(f, delimiter=delimiter))
                 break
             except UnicodeDecodeError:
                 continue
