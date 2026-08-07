@@ -85,6 +85,7 @@ def main(args):
             source_subject_id = row.subject_id
             asap_subject_id = row.ASAP_subject_id
             batch = str(row.batch)
+            sex = str(row.sex).lower()
             fastq_R1s = literal_eval(row.fastq_R1s)
             fastq_R2s = literal_eval(row.fastq_R2s)
             fastq_I1s = literal_eval(row.fastq_I1s)
@@ -93,7 +94,7 @@ def main(args):
             source = row.source
             dataset_id = row.dataset_id
             assay = row.assay
-            asap_dataset_doi_url = row.dataset_DOI_url
+            asap_dataset_doi_url = row.dataset_doi_url
 
             if args.workflow_name == "spatial_visium_analysis":
                 visium_brightfield_image = f"gs://asap-raw-{dataset_id}/spatial/images/" + row.visium_cytassist
@@ -119,6 +120,9 @@ def main(args):
             if args.workflow_name != "sc_atacseq_analysis":
                 if not pd.isna(batch):
                     sample["batch"] = batch
+
+            if args.workflow_name == "sc_rnaseq_analysis":
+                sample["sex"] = sex
 
             if args.workflow_name == "spatial_visium_analysis":
                 sample["visium_brightfield_image"] = visium_brightfield_image
