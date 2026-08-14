@@ -49,11 +49,9 @@ import pandas as pd
 
 repo_root = Path(__file__).resolve().parents[2]
 metadata_root = repo_root.parent / "asap-crn-cloud-dataset-metadata"
-crn_utils_root = repo_root.parent / "crn-utils" / "src"
 
 sys.path.insert(0, str(repo_root / "util" / "common"))
-sys.path.insert(0, str(crn_utils_root))
-sys.path.insert(0, str(metadata_root / "utils"))
+sys.path.insert(0, str(metadata_root))
 
 # wf-common
 from gcloud_ops import gsync
@@ -69,11 +67,9 @@ from file_utils import (
     detect_csv_delimiter,
     )
 
-# crn-utils
-from crn_utils.update_schema import get_table_update_map
-
 # asap-crn-cloud-dataset-metadata
-from logging_extra import log_run_command
+from crn_cli_utils.metadata_release.update_schema import get_table_update_map
+from crn_cli_utils.common.logging_extra import log_run_command
 
 
 # ── default parameters ─────────────────────────────────────────────────
@@ -169,7 +165,9 @@ def strip_metadata_suffixes(metadata_dir: Path) -> list:
             continue
         candidates = [
             s for s in _KNOWN_TABLE_STEMS
-            if stem_upper.startswith(s + '_') or stem_upper.startswith(s + '.')
+            if stem_upper.startswith(s + '_') 
+            or stem_upper.startswith(s + '.')
+            or stem_upper.startswith(s + '-')
         ]
         if not candidates:
             continue
