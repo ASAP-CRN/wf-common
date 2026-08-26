@@ -35,6 +35,14 @@ def generate_sample_list(projects):
                         "sample_id": sample["sample_id"],
                         "dataset_doi_url": dataset_doi_url
                     })
+        elif args.workflow_name == "sc_multiome_analysis":
+            for pool in project["samples"]:
+                for sample in pool["multiplexed_samples"]:
+                    sample_list_table.append({
+                        "team_id": team_id,
+                        "sample_id": sample["sample_id"],
+                        "dataset_doi_url": dataset_doi_url
+                    })
         else:
             for sample in project["samples"]:
                 sample_id = sample["sample_id"]
@@ -52,7 +60,8 @@ def generate_sample_list(projects):
     len_sample_ids = len(sample_list_df["sample_id"])
     len_unique_sample_ids = len(sorted(sample_list_df["sample_id"].unique().tolist()))
     if len_sample_ids != len_unique_sample_ids:
-        if args.workflow_name != "sc_atacseq_analysis":
+        # Due to multiplexed samples
+        if args.workflow_name not in ("sc_atacseq_analysis", "sc_multiome_analysis"):
             raise SystemExit(
                 f"Duplicate sample IDs found\nNo. of sample IDs: {len_sample_ids}\nNo. of unique sample IDs: {len_unique_sample_ids}"
             )
@@ -84,8 +93,8 @@ def main(args):
             sample_id = row.ASAP_sample_id
             source_subject_id = row.subject_id
             asap_subject_id = row.ASAP_subject_id
-            batch = str(row.batch)
-            sex = str(row.sex).lower()
+            batch = None if pd.isna(row.batch) else str(row.batch)
+            sex = None if pd.isna(row.sex) else str(row.sex).lower()
             fastq_R1s = literal_eval(row.fastq_R1s)
             fastq_R2s = literal_eval(row.fastq_R2s)
             fastq_I1s = literal_eval(row.fastq_I1s)
@@ -117,8 +126,8 @@ def main(args):
                     "fastq_I2s": fastq_I2s,
                 }
 
-            if args.workflow_name != "sc_atacseq_analysis":
-                if not pd.isna(batch):
+            if args.workflow_name not in ("sc_atacseq_analysis", "sc_multiome_analysis"):
+                if batch is not None:
                     sample["batch"] = batch
 
             if args.workflow_name == "sc_rnaseq_analysis":
@@ -168,7 +177,6 @@ def main(args):
                         "asap_dataset_id": asap_dataset_id,
                         "asap_dataset_doi_url": asap_dataset_doi_url,
                         "slides": [slide],
-                        "run_project_cohort_analysis": run_project_cohort_analysis,
                         "raw_data_bucket": f"gs://asap-raw-{dataset_id}",
                         "staging_data_buckets": staging_data_buckets,
                     }
@@ -181,7 +189,7 @@ def main(args):
                         "asap_subject_id": asap_subject_id,
                         "sample_id": sample_id,
                     }
-                    if not pd.isna(batch):
+                    if batch is not None:
                         sample_obj["batch"] = batch
                     pool_obj = {
                         "pool_id": pool_id,
@@ -202,6 +210,25 @@ def main(args):
                         "raw_data_bucket": f"gs://asap-raw-{dataset_id}",
                         "staging_data_buckets": staging_data_buckets,
                     }
+
+                if args.workflow_name == "sc_multiome_analysis":
+                    mux_sample_obj = {
+                        "source_subject_id": source_subject_id,
+                        "asap_subject_id": asap_subject_id,
+                        "sample_id": sample_id,
+                    }
+                    if batch is not None:
+                        mux_sample_obj["batch"] = batch
+                    if sex is not None:
+                        mux_sample_obj["sex"] = sex
+                    projects[team_id]["samples"] = [{
+                        "sample_id": pool_id,
+                        "fastq_R1s": fastq_R1s,
+                        "fastq_R2s": fastq_R2s,
+                        "fastq_I1s": fastq_I1s,
+                        "fastq_I2s": fastq_I2s,
+                        "multiplexed_samples": [mux_sample_obj],
+                    }]
             else:
                 if args.workflow_name == "spatial_geomx_analysis":
                     slide = next(
@@ -217,20 +244,22 @@ def main(args):
                         projects[team_id]["slides"].append(slide)
                     else:
                         slide["samples"].append(sample)
+
                 elif args.workflow_name == "sc_atacseq_analysis":
                     existing_pool = next(
                         (p for p in projects[team_id]["pools"] if p["pool_id"] == pool_id),
                         None
                     )
+                    sample_obj = {
+                        "source_subject_id": source_subject_id,
+                        "asap_subject_id": asap_subject_id,
+                        "sample_id": sample_id,
+                    }
+                    if batch is not None:
+                        sample_obj["batch"] = batch
+
                     if existing_pool is None:
-                        sample_obj = {
-                            "source_subject_id": source_subject_id,
-                            "asap_subject_id": asap_subject_id,
-                            "sample_id": sample_id,
-                        }
-                        if not pd.isna(batch):
-                            sample_obj["batch"] = batch
-                        pool_obj = {
+                        projects[team_id]["pools"].append({
                             "pool_id": pool_id,
                             "fastq_R1s": fastq_R1s,
                             "fastq_R2s": fastq_R2s,
@@ -239,22 +268,63 @@ def main(args):
                             "fastq_I2s": fastq_I2s,
                             "samples": [sample_obj],
                             "multimodal_data": "Boolean",
-                        }
-                        projects[team_id]["pools"].append(pool_obj)
+                        })
                     else:
-                        existing_pool["fastq_R1s"].extend(r for r in fastq_R1s if r not in existing_pool["fastq_R1s"])
-                        existing_pool["fastq_R2s"].extend(r for r in fastq_R2s if r not in existing_pool["fastq_R2s"])
-                        existing_pool["fastq_R3s"].extend(r for r in fastq_R3s if r not in existing_pool["fastq_R3s"])
-                        existing_pool["fastq_I1s"].extend(r for r in fastq_I1s if r not in existing_pool["fastq_I1s"])
-                        existing_pool["fastq_I2s"].extend(r for r in fastq_I2s if r not in existing_pool["fastq_I2s"])
-                        sample_obj = {
-                            "source_subject_id": source_subject_id,
-                            "asap_subject_id": asap_subject_id,
-                            "sample_id": sample_id,
-                        }
-                        if not pd.isna(batch):
-                            sample_obj["batch"] = batch
-                        existing_pool["samples"].append(sample_obj)
+                        for fastq_key, fastqs in (
+                            ("fastq_R1s", fastq_R1s),
+                            ("fastq_R2s", fastq_R2s),
+                            ("fastq_R3s", fastq_R3s),
+                            ("fastq_I1s", fastq_I1s),
+                            ("fastq_I2s", fastq_I2s),
+                        ):
+                            existing_pool[fastq_key].extend(
+                                f for f in fastqs if f not in existing_pool[fastq_key]
+                            )
+                        if not any(
+                            s["sample_id"] == sample_id for s in existing_pool["samples"]
+                        ):
+                            existing_pool["samples"].append(sample_obj)
+
+                elif args.workflow_name == "sc_multiome_analysis":
+                    existing_pool = next(
+                        (p for p in projects[team_id]["samples"] if p["sample_id"] == pool_id),
+                        None
+                    )
+                    mux_sample_obj = {
+                        "source_subject_id": source_subject_id,
+                        "asap_subject_id": asap_subject_id,
+                        "sample_id": sample_id,
+                    }
+                    if batch is not None:
+                        mux_sample_obj["batch"] = batch
+                    if sex is not None:
+                        mux_sample_obj["sex"] = sex
+
+                    if existing_pool is None:
+                        projects[team_id]["samples"].append({
+                            "sample_id": pool_id,
+                            "fastq_R1s": fastq_R1s,
+                            "fastq_R2s": fastq_R2s,
+                            "fastq_I1s": fastq_I1s,
+                            "fastq_I2s": fastq_I2s,
+                            "multiplexed_samples": [mux_sample_obj],
+                        })
+                    else:
+                        for fastq_key, fastqs in (
+                            ("fastq_R1s", fastq_R1s),
+                            ("fastq_R2s", fastq_R2s),
+                            ("fastq_I1s", fastq_I1s),
+                            ("fastq_I2s", fastq_I2s),
+                        ):
+                            existing_pool[fastq_key].extend(
+                                f for f in fastqs if f not in existing_pool[fastq_key]
+                            )
+                        if not any(
+                            s["sample_id"] == sample_id
+                            for s in existing_pool["multiplexed_samples"]
+                        ):
+                            existing_pool["multiplexed_samples"].append(mux_sample_obj)
+
                 else:
                     projects[team_id]["samples"].append(sample)
 
@@ -338,7 +408,8 @@ if __name__ == "__main__":
             "sc_atacseq_analysis",
             "bulk_rnaseq_analysis",
             "spatial_visium_analysis",
-            "spatial_geomx_analysis"
+            "spatial_geomx_analysis",
+            "sc_multiome_analysis"
         ],
         required=True,
         help="WDL workflow name.",
