@@ -52,7 +52,7 @@ task upload_final_outputs {
 	}
 
 	runtime {
-		docker: "gcr.io/google.com/cloudsdktool/google-cloud-cli:524.0.0-slim"
+		docker: "gcr.io/google.com/cloudsdktool/google-cloud-cli:584.0.0-slim"
 		cpu: 2
 		memory: "4 GB"
 		disks: "local-disk 20 HDD"
