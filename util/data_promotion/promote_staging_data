@@ -10,7 +10,7 @@ from google.cloud import storage
 
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))
-from release_ops import unembargoed_dev_buckets_and_workflow_version_outputs, list_teams
+from release_ops import dev_buckets_and_workflow_version_outputs, list_teams
 from gcloud_ops import (
     list_dirs,
     gcopy,
@@ -76,26 +76,41 @@ def main(args):
 	namespaces = ["uat", "curated"]
 	client = storage.Client()
 
-	# Subset buckets/datasets based on workflow_name provided
-	WORKFLOW_FILTERS = {
-		"pmdbs_sc_rnaseq": ("pmdbs-sn-rnaseq", "pmdbs-sc-rnaseq"),
-		"mouse_sc_rnaseq": ("mouse-sn-rnaseq", "mouse-sc-rnaseq"),
-		"pmdbs_sc_atacseq": ("pmdbs-sn-atacseq", "pmdbs-sc-atacseq"),
-		"pmdbs_bulk_rnaseq": ("pmdbs-bulk-rnaseq",),
-		"invitro_bulk_rnaseq": ("invitro-bulk-rnaseq",),
-		"spatial_visium": ("spatial-visium",),
-		"spatial_geomx": ("spatial-geomx",),
+	# Subset buckets/datasets on the Releases Sheet's `workflow` column and on
+	# membership in this release. Datasets whose latest release predates
+	# args.release_version have nothing under <workflow>/release/<release_version>/
+	# and would otherwise fail the data integrity stage with an empty result set.
+	dev_buckets_version = dev_buckets_and_workflow_version_outputs(
+		workflow_name=args.workflow_name,
+		release_version=args.release_version,
+	)
+	if not dev_buckets_version:
+		logging.error(
+			"No datasets in the Releases Sheet have workflow=[%s] and release version [%s]; exiting",
+			args.workflow_name,
+			args.release_version,
+		)
+		sys.exit(1)
+
+	skipped = {
+		bucket: version
+		for bucket, version in dev_buckets_and_workflow_version_outputs(
+			workflow_name=args.workflow_name
+		).items()
+		if bucket not in dev_buckets_version
 	}
-	patterns = WORKFLOW_FILTERS.get(args.workflow_name)
-	dev_buckets_version = {
-		bucket: workflow_version
-		for bucket, workflow_version in unembargoed_dev_buckets_and_workflow_version_outputs.items()
-		if any(pattern in bucket for pattern in patterns)
-	}
+	if skipped:
+		logging.info(
+			"Skipping [%s] datasets not part of release [%s]:\n%s",
+			args.workflow_name,
+			args.release_version,
+			"\n".join(f"{bucket} (workflow version {version})" for bucket, version in skipped.items()),
+		)
 	logging.info(
-		"Processing buckets (workflow=%s):\n%s",
+		"Processing buckets (workflow=%s, release=%s):\n%s",
 		args.workflow_name,
-		"\n".join(dev_buckets_version.keys()) if dev_buckets_version else "(none)"
+		args.release_version,
+		"\n".join(f"{bucket} (workflow version {version})" for bucket, version in dev_buckets_version.items()),
 	)
 
 	for bucket, workflow_version in dev_buckets_version.items():
@@ -258,6 +273,7 @@ if __name__ == "__main__":
 			'mouse_sc_rnaseq',
 			'pmdbs_sc_atacseq',
 			'pmdbs_bulk_rnaseq',
+			'mouse_bulk_rnaseq',
 			'invitro_bulk_rnaseq',
 			'spatial_visium',
 			'spatial_geomx',

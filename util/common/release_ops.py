@@ -35,15 +35,44 @@ ALL_TEAMS = releases_df["team_id"].unique().tolist()
 
 ## Minor and Major Release that includes pipeline/curated outputs
 ### The latest_workflow_version column is being used to infer datasets with pipeline outputs
-unembargoed_dev_buckets_and_workflow_version_outputs = (
-	releases_df[
+def dev_buckets_and_workflow_version_outputs(workflow_name=None, release_version=None):
+	"""{dev_bucket: latest_workflow_version} for datasets that have pipeline outputs.
+
+	A `latest_workflow_version` starting with "v" is what marks a dataset as having
+	curated pipeline outputs (the alternative is the literal string "NA").
+
+	workflow_name   -- restrict to one workflow. Matches the Sheet's `workflow`
+	                   column, whose values are the same strings accepted by
+	                   `promote_staging_data --workflow-name` (e.g. mouse_sc_rnaseq).
+	release_version -- restrict to datasets actually included in that release, i.e.
+	                   the version appears in the Sheet's `all_release_versions`.
+	                   Datasets last released in an earlier version have no data under
+	                   <workflow>/release/<release_version>/ and must not be promoted.
+
+	Called with no arguments this returns every dataset with pipeline outputs, which
+	is what `clean_wdl_raw_buckets` and `promote_raw_data` consume.
+	"""
+	df = releases_df[
 		releases_df["latest_workflow_version"].str.startswith("v", na=False)
 	]
-	.sort_values("latest_workflow_version")
-	.drop_duplicates(subset="dev_buckets", keep="last")
-	.set_index("dev_buckets")["latest_workflow_version"]
-	.to_dict()
-)
+	if workflow_name is not None:
+		df = df[df["workflow"] == workflow_name]
+	if release_version is not None:
+		in_release = (
+			df["all_release_versions"]
+			.fillna("")
+			.str.split(";")
+			.apply(lambda versions: release_version in [v.strip() for v in versions])
+		)
+		df = df[in_release]
+	return (
+		df.sort_values("latest_workflow_version")
+		.drop_duplicates(subset="dev_buckets", keep="last")
+		.set_index("dev_buckets")["latest_workflow_version"]
+		.to_dict()
+	)
+
+unembargoed_dev_buckets_and_workflow_version_outputs = dev_buckets_and_workflow_version_outputs()
 ## Urgent and Minor Release or platforming exercise during a Major Release
 completed_platforming_raw_buckets = (
 	releases_df[
@@ -260,6 +289,7 @@ def list_teams():
 
 __all__ = [
     "SCOPES", "get_releases_df", "releases_df", "ALL_TEAMS",
+    "dev_buckets_and_workflow_version_outputs",
     "unembargoed_dev_buckets_and_workflow_version_outputs",
     "completed_platforming_raw_buckets",
     "ASSAY_ORDER", "HUMAN_SOURCES_ORDER", "MOUSE_SOURCES_ORDER",

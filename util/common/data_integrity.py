@@ -12,6 +12,26 @@ import pandas as pd
 from io import StringIO
 
 
+# Release provenance artifacts written by the promotion scripts themselves, not
+# dataset outputs. They are never listed in a MANIFEST, so they are exempt from
+# associated_metadata_check rather than being reported as missing metadata.
+PROVENANCE_BASENAMES = ("MANIFEST.tsv", "VERSION")
+WORKFLOW_METADATA_DIR = "workflow_metadata"
+
+
+def is_provenance_file(blob_name):
+	"""True for files the promotion tooling writes alongside the released data:
+	<release>/MANIFEST.tsv, <release>/VERSION, and everything under a
+	<release>/workflow_metadata/ directory (data promotion reports and the
+	combined MANIFEST.tsv copies kept from previous runs)."""
+	if blob_name.split("/")[-1] in PROVENANCE_BASENAMES:
+		return True
+	return (
+		f"/{WORKFLOW_METADATA_DIR}/" in blob_name
+		or blob_name.startswith(f"{WORKFLOW_METADATA_DIR}/")
+	)
+
+
 def list_gs_files(bucket, release_version, workflow_name):
 	blobs = bucket.list_blobs(prefix=workflow_name) # This skips the curated metadata and artifacts directories
 	blob_names = []
@@ -74,7 +94,7 @@ def non_empty_check(bucket, release_version, workflow_name, GREEN_CHECKMARK, RED
 def associated_metadata_check(combined_manifest_df, blob_list, GREEN_CHECKMARK, RED_X):
 	metadata_present_tests = {}
 	for file in blob_list:
-		if file.endswith("MANIFEST.tsv"):
+		if is_provenance_file(file):
 			metadata_present_tests[file] = "N/A"
 		else:
 			if any(file.split('/')[-1] in filename for filename in combined_manifest_df["filename"].tolist()):
@@ -127,6 +147,7 @@ def compare_md5_hashes(results, staging, same_files):
 
 
 __all__ = [
+    "PROVENANCE_BASENAMES", "WORKFLOW_METADATA_DIR", "is_provenance_file",
     "list_gs_files", "read_manifest_files", "md5_check", "non_empty_check",
     "associated_metadata_check", "compare_blob_names", "compare_md5_hashes",
 ]
