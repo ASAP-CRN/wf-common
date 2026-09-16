@@ -348,13 +348,19 @@ Queries the [CRN Cloud](https://cloud.parkinsonsroadmap.org) via the DNAstack CL
 ./crn_cloud_collection_summary [OPTIONS]
 
 OPTIONS
-  -h  Display this message and exit
-  -s  Grab no. of samples and subjects only (skip bucket size queries)
-  -i  A previously generated TSV to append to, skipping already-processed datasets (Note: Use only if certain that earlier datasets have not been updated)
-  -l  A file containing a list of dataset_ids to process, one per line (e.g. team-hafler-pmdbs-sn-rnaseq-pfc, cohort-pmdbs-sc-rnaseq).
-      Slug is inferred by prepending "prod-" to query the CRN Cloud.
-      team-* and cohort-* prefixes are used to classify individual vs. harmonized collections respectively.
-      If not provided, all datasets in the CRN Cloud are processed.
+    -h  Display this message and exit
+    -s  Grab no. of samples and subjects only (skip bucket size queries)
+    -i  A previously generated TSV to append to, skipping already-processed datasets (Note: Use only if certain that earlier datasets have not been updated)
+    -l  A file containing a list of dataset_ids to process, one per line (e.g. team-hafler-pmdbs-sn-rnaseq-pfc, cohort-pmdbs-sc-rnaseq).
+        Slug is inferred by prepending "prod-" to query the CRN Cloud.
+        team-* and cohort-* prefixes are used to classify individual vs. harmonized collections respectively.
+        If not provided, all datasets in the CRN Cloud are processed.
+        Slugs that are not yet published in the CRN Cloud fall back to reading the CDE
+        CSVs from their gs://asap-curated-<dataset_id> bucket (see -c / -C).
+    -c  Always read metadata from the curated bucket's CDE CSVs, including for slugs that
+        ARE published in the CRN Cloud. Use when the Explorer's SQL tables are behind the
+        curated release. Makes no dnastack calls at all.
+    -C  Disable the curated-bucket fallback: unknown collections are logged and skipped.
 ```
 
 **Notes:**

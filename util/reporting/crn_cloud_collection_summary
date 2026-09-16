@@ -30,20 +30,35 @@ cat << EOF
         Slug is inferred by prepending "prod-" to query the CRN Cloud.
         team-* and cohort-* prefixes are used to classify individual vs. harmonized collections respectively.
         If not provided, all datasets in the CRN Cloud are processed.
+        Slugs that are not yet published in the CRN Cloud fall back to reading the CDE
+        CSVs from their gs://asap-curated-<dataset_id> bucket (see -c / -C).
+    -c  Always read metadata from the curated bucket's CDE CSVs, including for slugs that
+        ARE published in the CRN Cloud. Use when the Explorer's SQL tables are behind the
+        curated release. Makes no dnastack calls at all.
+    -C  Disable the curated-bucket fallback: unknown collections are logged and skipped.
 
 EOF
 }
 
 SAMPLES_SUBJECTS_ONLY=false
+CURATED_FALLBACK=true
+CURATED_ONLY=false
 
-while getopts ":hsi:l:" OPTION; do
+while getopts ":hscCi:l:" OPTION; do
   case ${OPTION} in
     h) usage; exit 1;;
     s) SAMPLES_SUBJECTS_ONLY=true;;
+    c) CURATED_ONLY=true;;
+    C) CURATED_FALLBACK=false;;
     i) PREVIOUS_CRN_SUMMARY_TSV=$OPTARG;;
     l) DATASETS_FILE=$OPTARG;;
   esac
 done
+
+# Helper that derives CRN-Cloud-comparable metrics from a curated bucket's CDE CSVs.
+# Kept beside this script so the two move together.
+CURATED_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/curated_metadata_summary.py"
+
 
 
 # ---------------------------------------------------------------------------
@@ -174,7 +189,157 @@ expand_diagnosis_counts() {
 
 # ---------------------------------------------------------------------------
 
-dnastack use cloud.parkinsonsroadmap.org
+
+# Resolve the newest metadata/release prefix inside a curated bucket.
+# Curated buckets version their CDE exports (metadata/release/v5.1.0/SAMPLE.csv);
+# some older ones put the CSVs directly under metadata/release/.
+# Prints the gs:// prefix on success; returns 1 if no metadata is present.
+# Usage: resolve_curated_metadata_prefix <gs://asap-curated-bucket>
+resolve_curated_metadata_prefix() {
+    local curated_bucket="$1"
+    local listing latest
+
+    listing=$(gcloud storage ls "${curated_bucket}/metadata/release/" 2>/dev/null) || return 1
+
+    # Highest version subdirectory (v3.0.0 < v4.0.0 < v5.0.0 < v5.1.0)
+    latest=$(echo "$listing" | grep -E '/v[0-9][^/]*/$' | sed 's;/$;;' | sort -V | tail -1)
+    if [[ -n "$latest" ]]; then
+        echo "$latest"
+        return 0
+    fi
+
+    # Unversioned layout
+    if echo "$listing" | grep -qi '\.csv$'; then
+        echo "${curated_bucket}/metadata/release"
+        return 0
+    fi
+
+    return 1
+}
+
+# Emit one output row for a slug that is not published in the CRN Cloud, using
+# the CDE CSVs in its curated bucket instead of the collection's SQL tables.
+# Returns 1 (caller should `continue`) if no usable curated metadata exists.
+# Usage: process_curated_fallback <slug> <team_name>
+process_curated_fallback() {
+    local slug="$1"
+    local team_name="$2"
+    local dataset_id="${slug#prod-}"
+
+    local gcp_raw_bucket="gs://asap-raw-${dataset_id}"
+    local gcp_prod_bucket="gs://asap-curated-${dataset_id}"
+
+    if ! gcloud storage buckets describe "$gcp_prod_bucket" >/dev/null 2>&1; then
+        echo "[WARNING] No curated bucket for [$slug]: [$gcp_prod_bucket]; skipping" >&2
+        return 1
+    fi
+    if ! gcloud storage buckets describe "$gcp_raw_bucket" >/dev/null 2>&1; then
+        echo "  [WARN] Raw bucket does not exist: [$gcp_raw_bucket]; reporting curated only" >&2
+        gcp_raw_bucket="NA"
+    fi
+
+    local metadata_prefix
+    if ! metadata_prefix=$(resolve_curated_metadata_prefix "$gcp_prod_bucket"); then
+        echo "[WARNING] No metadata/release CSVs in [$gcp_prod_bucket]; skipping [$slug]" >&2
+        return 1
+    fi
+    echo "  Reading curated metadata from [$metadata_prefix]"
+
+    local tmpdir
+    tmpdir=$(mktemp -d /tmp/curated_meta.XXXXXX)
+    if ! gcloud storage cp "${metadata_prefix}/*.csv" "$tmpdir/" >/dev/null 2>&1; then
+        echo "[WARNING] Could not download CSVs from [$metadata_prefix]; skipping [$slug]" >&2
+        rm -rf "$tmpdir"
+        return 1
+    fi
+    if ! compgen -G "$tmpdir/*.csv" >/dev/null; then
+        echo "[WARNING] No CSVs downloaded from [$metadata_prefix]; skipping [$slug]" >&2
+        rm -rf "$tmpdir"
+        return 1
+    fi
+
+    local regions_file
+    regions_file=$(mktemp /tmp/curated_regions.XXXXXX)
+
+    local metrics
+    if ! metrics=$(python3 "$CURATED_HELPER" \
+        --slug "$slug" \
+        --metadata-dir "$tmpdir" \
+        --raw-bucket "$gcp_raw_bucket" \
+        --diag-labels-file "$_DIAG_LABELS_FILE" \
+        --subject-membership "$subject_membership_file" \
+        --sample-membership "$sample_membership_file" \
+        --brain-donor-membership "$brain_donor_membership_file" \
+        --subject-diagnosis-membership "$subject_diagnosis_membership_file" \
+        --sample-region-membership "$sample_region_membership_file" \
+        --human-ids "$_HUMAN_IDS_FILE" \
+        --mouse-ids "$_MOUSE_IDS_FILE" \
+        --cell-ids "$_CELL_IDS_FILE" \
+        --brain-donor-ids "$_BRAIN_DONOR_IDS_FILE" \
+        --sample-ids "$_SAMPLE_IDS_FILE" \
+        --regions-out "$regions_file"); then
+        echo "[WARNING] Curated metadata summary failed for [$slug]; skipping" >&2
+        rm -rf "$tmpdir" "$regions_file"
+        return 1
+    fi
+
+    # Fold this dataset's brain regions into the global unique list
+    if [[ -s "$regions_file" ]]; then
+        while IFS= read -r _region; do
+            [[ -z "$_region" ]] && continue
+            if ! echo "$unique_brain_regions" | grep -qF "$_region"; then
+                unique_brain_regions="$unique_brain_regions|$_region"
+            fi
+        done < "$regions_file"
+    fi
+    rm -rf "$tmpdir" "$regions_file"
+
+    # The helper prints two lines: the 7 scalar metrics, then the 25 diagnosis
+    # columns plus condition_counts already in output-row shape.
+    local sample_count n_subjects_unique n_samples_unique n_samples_total
+    local brain_sample_count brain_region_count brain_donor_count diagnosis_row
+    IFS=$'\t' read -r sample_count n_subjects_unique n_samples_unique n_samples_total \
+        brain_sample_count brain_region_count brain_donor_count \
+        <<< "$(sed -n 1p <<< "$metrics")"
+    diagnosis_row=$(sed -n 2p <<< "$metrics")
+
+    local gcp_raw_bucket_size gcp_prod_bucket_size
+    if "${SAMPLES_SUBJECTS_ONLY}"; then
+        gcp_raw_bucket_size="NA"
+        gcp_prod_bucket_size="NA"
+    else
+        echo "Getting GCP raw bucket size"
+        if [[ "$gcp_raw_bucket" == "NA" ]]; then
+            gcp_raw_bucket_size="NA"
+        else
+            gcp_raw_bucket_size=$(gcloud storage du -s "$gcp_raw_bucket" 2>/dev/null | grep -oE '^[0-9]+' || echo "NA")
+        fi
+        echo "Getting GCP curated bucket size"
+        gcp_prod_bucket_size=$(gcloud storage du -s "$gcp_prod_bucket" 2>/dev/null | grep -oE '^[0-9]+' || echo "NA")
+    fi
+
+    if [[ -n "${PREVIOUS_CRN_SUMMARY_TSV:-}" ]]; then
+        printf "\n" >> "$output_file"
+    fi
+    printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t" \
+        "$slug" "$gcp_raw_bucket" "$gcp_raw_bucket_size" \
+        "$gcp_prod_bucket" "$gcp_prod_bucket_size" \
+        "$team_name" "$sample_count" \
+        "$n_subjects_unique" "$n_samples_unique" "$n_samples_total" \
+        "$brain_sample_count" "$brain_region_count" "$brain_donor_count" >> "$output_file"
+    printf "%s\n" "$diagnosis_row" >> "$output_file"
+
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+
+# -c reads everything from curated buckets, so the Explorer is never contacted.
+if ! "${CURATED_ONLY}"; then
+    dnastack use cloud.parkinsonsroadmap.org
+else
+    echo "[INFO] -c: reading all metadata from curated buckets; skipping the CRN Cloud"
+fi
 
 if [[ -n "${DATASETS_FILE:-}" ]]; then
     echo "Reading dataset list from $DATASETS_FILE..."
@@ -189,6 +354,10 @@ if [[ -n "${DATASETS_FILE:-}" ]]; then
     INDIVIDUAL_DATASETS=$(echo "$ALL_DATASETS_TO_PROCESS" | grep '^prod-team-' || true)
     COHORT_DATASETS=$(echo "$ALL_DATASETS_TO_PROCESS"     | grep '^prod-cohort-' || true)
 else
+    if "${CURATED_ONLY}"; then
+        echo "[ERROR] -c requires -l: the dataset list cannot be fetched from the CRN Cloud in curated-only mode" >&2
+        exit 1
+    fi
     echo "No dataset list provided; fetching all datasets from CRN Cloud..."
     INDIVIDUAL_DATASETS=$(dnastack collections list | jq -r '.[] | select(.tags[]?.label == "Individual Dataset") | .slugName')
     COHORT_DATASETS=$(dnastack collections list | jq -r '.[] | select(.tags[]?.label == "Harmonized Collection") | .slugName')
@@ -263,11 +432,37 @@ while IFS= read -r slug; do
         unique_teams="$unique_teams $team_name"
     fi
 
+    # -c: bypass the Explorer entirely and read this dataset from its curated bucket.
+    if "${CURATED_ONLY}"; then
+        process_curated_fallback "$slug" "$team_name" || true
+        continue
+    fi
+
     echo "Fetching table list..."
-    collection_tables=$(dnastack collections query -c "$slug" \
+    # An unpublished slug makes dnastack exit 1 with UnknownCollectionError. Under
+    # `set -e` that would abort the whole run, so catch it and either fall back to
+    # the curated bucket or skip this dataset.
+    _tables_err=$(mktemp /tmp/crn_tables_err.XXXXXX)
+    if ! collection_tables=$(dnastack collections query -c "$slug" \
         "SELECT table_name FROM collections.information_schema.tables
         WHERE table_schema = '$underscored_slug'" \
-        -o csv)
+        -o csv 2>"$_tables_err"); then
+        if grep -qi "UnknownCollectionError" "$_tables_err"; then
+            rm -f "$_tables_err"
+            if ! "${CURATED_FALLBACK}"; then
+                echo "[WARNING] Unknown collection: [$slug]; skipping" >&2
+                continue
+            fi
+            echo "[INFO] [$slug] is not in the CRN Cloud — falling back to its curated bucket"
+            process_curated_fallback "$slug" "$team_name" || true
+            continue
+        fi
+        echo "[WARNING] Could not list tables for [$slug]; skipping" >&2
+        cat "$_tables_err" >&2
+        rm -f "$_tables_err"
+        continue
+    fi
+    rm -f "$_tables_err"
 
     # Cohort slugs have their own gs://asap-raw-cohort-* buckets — derive directly
     # from the slug rather than reading gcp_uri from the DATA table (which points
@@ -1012,7 +1207,8 @@ team_count=$(echo "$unique_teams" | wc -w | tr -d '[:space:]')
 echo "Total unique teams contributing: $team_count"
 echo "Teams:$unique_teams"
 echo ""
-region_count=$(echo "$unique_brain_regions" | tr '|' '\n' | grep -v '^$' | wc -l | tr -d '[:space:]')
+region_count=$(echo "$unique_brain_regions" | tr '|' '\n' | grep -v '^$' | wc -l | tr -d '[:space:]' || true)
+region_count=${region_count:-0}
 echo "Total unique brain regions (PMDBS only): $region_count"
 if [ -n "$unique_brain_regions" ]; then
     echo "Brain regions found:"
