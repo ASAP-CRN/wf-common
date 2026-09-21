@@ -95,6 +95,9 @@ def main(args):
             asap_subject_id = row.ASAP_subject_id
             batch = None if pd.isna(row.batch) else str(row.batch)
             sex = None if pd.isna(row.sex) else str(row.sex).lower()
+            brain_region_level_1 = None if pd.isna(row.region_level_1) else str(row.region_level_1).lower()
+            brain_region_level_2 = None if pd.isna(row.region_level_2) else str(row.region_level_2).lower()
+            brain_region_level_3 = None if pd.isna(row.region_level_3) else str(row.region_level_3).lower()
             fastq_R1s = literal_eval(row.fastq_R1s)
             fastq_R2s = literal_eval(row.fastq_R2s)
             fastq_I1s = literal_eval(row.fastq_I1s)
@@ -132,6 +135,9 @@ def main(args):
 
             if args.workflow_name == "sc_rnaseq_analysis":
                 sample["sex"] = sex
+                sample["brain_region_level_1"] = brain_region_level_1
+                sample["brain_region_level_2"] = brain_region_level_2
+                sample["brain_region_level_3"] = brain_region_level_3
 
             if args.workflow_name == "spatial_visium_analysis":
                 sample["visium_brightfield_image"] = visium_brightfield_image
@@ -221,6 +227,10 @@ def main(args):
                         mux_sample_obj["batch"] = batch
                     if sex is not None:
                         mux_sample_obj["sex"] = sex
+                    if brain_region_level_2 is not None:
+                        mux_sample_obj["brain_region_level_1"] = brain_region_level_1
+                        mux_sample_obj["brain_region_level_2"] = brain_region_level_2
+                        mux_sample_obj["brain_region_level_3"] = brain_region_level_3
                     projects[team_id]["samples"] = [{
                         "sample_id": pool_id,
                         "fastq_R1s": fastq_R1s,
@@ -299,6 +309,10 @@ def main(args):
                         mux_sample_obj["batch"] = batch
                     if sex is not None:
                         mux_sample_obj["sex"] = sex
+                    if brain_region_level_2 is not None:
+                        mux_sample_obj["brain_region_level_1"] = brain_region_level_1
+                        mux_sample_obj["brain_region_level_2"] = brain_region_level_2
+                        mux_sample_obj["brain_region_level_3"] = brain_region_level_3
 
                     if existing_pool is None:
                         projects[team_id]["samples"].append({
