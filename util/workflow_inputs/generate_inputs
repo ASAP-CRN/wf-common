@@ -133,7 +133,7 @@ def main(args):
                 if batch is not None:
                     sample["batch"] = batch
 
-            if args.workflow_name == "sc_rnaseq_analysis":
+            if args.workflow_name in ("sc_rnaseq_analysis", "sc_atacseq_analysis", "sc_multiome_analysis"):
                 sample["sex"] = sex
                 sample["brain_region_level_1"] = brain_region_level_1
                 sample["brain_region_level_2"] = brain_region_level_2
