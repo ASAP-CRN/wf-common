@@ -73,8 +73,9 @@ def non_empty_check(bucket, release_version, workflow_name, GREEN_CHECKMARK, RED
 
 def associated_metadata_check(combined_manifest_df, blob_list, GREEN_CHECKMARK, RED_X):
 	metadata_present_tests = {}
+	exempt_files = ("MANIFEST.tsv", "VERSION", "data_promotion_report.md")
 	for file in blob_list:
-		if file.endswith("MANIFEST.tsv"):
+		if file.endswith(exempt_files):
 			metadata_present_tests[file] = "N/A"
 		else:
 			if any(file.split('/')[-1] in filename for filename in combined_manifest_df["filename"].tolist()):
