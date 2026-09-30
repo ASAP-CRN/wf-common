@@ -34,7 +34,7 @@ task write_cohort_sample_list {
 		docker: "~{container_registry}/util:1.2.0"
 		cpu: 1
 		memory: "1 GB"
-		disks: "local-disk 10 HDD"
+		disks: "local-disk 10 SSD"
 		preemptible: 3
 		zones: zones
 	}
