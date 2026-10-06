@@ -489,7 +489,8 @@ def check_three_way_consistency(
 
     For each sample_id in SAMPLE.csv, verifies that matching DATA.csv rows exist and
     that each DATA.file_name is present in the raw/ bucket. Supports exact, Illumina
-    suffix, fuzzy (separator/numeric), and prefix bucket matching.
+    suffix, fuzzy (separator/numeric), and prefix bucket matching. As a final fallback
+    compares the sample_id vs. bucket file name.
     If SAMPLE.csv is absent or has no sample_id column, falls back to DATA vs. bucket only.
 
     Parameters
@@ -522,6 +523,8 @@ def check_three_way_consistency(
         n_partial : int
         n_fuzzy : int
         n_prefix : int
+            Includes both file_name-prefix matches and the sample_id-prefix
+            fallback (match_type "sample_id_prefix_of_bucket").
         n_found_in_extra : int
         n_missing_bucket : int
         n_in_sample_only : int
@@ -808,6 +811,32 @@ def check_three_way_consistency(
     for name in missing_in_bucket_list:
         file_match_map[name] = {'type': 'missing_in_bucket', 'bucket_files': []}
 
+    # ── 5b. sample_id-prefix fallback ───────────────────────────────────
+    # file_match_map is keyed by file_name, so it can't help when
+    # file_name is a placeholder shared by many rows (e.g. all "NA").
+    # Falls back to matching each row's sample_id as a prefix of an
+    # unclaimed bucket file. Only applies to rows still unresolved as 'missing_in_bucket'.
+    sample_prefix_fallback: dict[str, list[str]] = {}
+    if in_bucket_only_final:
+        unclaimed_bucket = set(in_bucket_only_final)
+        for key, entries in data_by_sample.items():
+            needs_fallback = any(
+                file_match_map.get(e['file_name'], {'type': 'missing_in_bucket'})['type'] == 'missing_in_bucket'
+                for e in entries
+            )
+            if not needs_fallback:
+                continue
+            sample_id_val = entries[0]['sample_id']
+            claimed = sorted(
+                b for b in unclaimed_bucket
+                if b.startswith(sample_id_val)
+                and (len(b) == len(sample_id_val) or not b[len(sample_id_val)].isalnum())
+            )
+            if claimed:
+                sample_prefix_fallback[key] = claimed
+                unclaimed_bucket -= set(claimed)
+        in_bucket_only_final = sorted(unclaimed_bucket)
+
     # ── 6. SAMPLE ↔ DATA join and row building ────────────────────────
     use_sample = result['sample_csv_found'] and result['sample_id_col_found']
     all_sample_keys = set(sample_ids_from_sample.keys())
@@ -833,6 +862,10 @@ def check_three_way_consistency(
 
     def _make_file_row(sample_id_sample, sample_id_data, entry):
         match = file_match_map.get(entry['file_name'], {'type': 'missing_in_bucket', 'bucket_files': []})
+        if match['type'] == 'missing_in_bucket':
+            fallback_files = sample_prefix_fallback.get(entry['sample_id'].lower())
+            if fallback_files:
+                match = {'type': 'sample_id_prefix_of_bucket', 'bucket_files': fallback_files}
         bucket_file = ', '.join(match['bucket_files']) if match['bucket_files'] else '—'
         row = {
             'sample_id_sample': sample_id_sample,
