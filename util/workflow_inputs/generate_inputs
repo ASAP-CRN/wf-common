@@ -183,6 +183,7 @@ def main(args):
                         "asap_dataset_id": asap_dataset_id,
                         "asap_dataset_doi_url": asap_dataset_doi_url,
                         "slides": [slide],
+                        "run_project_cohort_analysis": run_project_cohort_analysis,
                         "raw_data_bucket": f"gs://asap-raw-{dataset_id}",
                         "staging_data_buckets": staging_data_buckets,
                     }
