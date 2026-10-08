@@ -5,7 +5,7 @@
 <text x="480" y="63" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="13" fill="#1a1a1a">reporting/ — collect dataset stats and build summary tables</text>
 <rect x="20" y="94" width="206" height="66" rx="14" ry="14" fill="#0b5394" filter="url(#sh)"/>
 <text x="123.0" y="124.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">crn_cloud_collection_summary</text>
-<text x="123.0" y="140.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="9.5" font-weight="400" fill="#ffffff">source: CRN Cloud (dnastack)</text>
+<text x="123.0" y="140.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="9.5" font-weight="400" fill="#ffffff">source: released asap-curated-* buckets</text>
 <rect x="20" y="172" width="206" height="66" rx="14" ry="14" fill="#0b5394" filter="url(#sh)"/>
 <text x="123.0" y="194.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">internal_qc_dataset_</text>
 <text x="123.0" y="210.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">collection_summary</text>
@@ -19,11 +19,7 @@
 <text x="599.0" y="129.8" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">generate_dataset_</text>
 <text x="599.0" y="145.8" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#ffffff">summary_table</text>
 <text x="599.0" y="161.8" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="9.5" font-weight="400" fill="#ffffff">Pivot &amp; dedup by</text>
-<<<<<<< HEAD
 <text x="599.0" y="175.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="9.5" font-weight="400" fill="#ffffff">organism × sample source × assay</text>
-=======
-<text x="599.0" y="175.2" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="9.5" font-weight="400" fill="#ffffff">organism × tissue × assay</text>
->>>>>>> 9935f53 (A mix of Claude and my changes to restructure util dir)
 <text x="599.0" y="188.8" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="9.5" font-weight="400" fill="#ffffff">(Releases Sheet via gspread)</text>
 <rect x="734" y="102" width="206" height="104" rx="14" ry="14" fill="#9fc5e8" filter="url(#sh)"/>
 <text x="837.0" y="137.0" text-anchor="middle" font-family='Arial, Helvetica, sans-serif' font-size="12" font-weight="700" fill="#1a1a1a">Summary tables</text>

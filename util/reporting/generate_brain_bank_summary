@@ -51,11 +51,11 @@ BANK_ALIASES = {
     "imperial_uk":                                            "Imperial UK",
 }
 
-# Brain banks recognized by the CDE 4.4 controlled vocabulary. A normalized
+# Brain banks recognized by the CDE v4.5 SUBJECT.biobank_name vocabulary. A normalized
 # (post-alias) bank name not in this set triggers a warning so it can be
 # investigated and either added here or fixed upstream — but the script does
 # not error out.
-CDE_4_4_RECOGNIZED_BANKS = {
+CDE_4_5_RECOGNIZED_BANKS = {
     "Banner Sun Health Research Institute",
     "QSBB UK",
     "Cambridge Brain Bank",
@@ -65,6 +65,7 @@ CDE_4_4_RECOGNIZED_BANKS = {
     "NKI/NYUGSOM",
     "BMC",
     "Edinburgh UK",
+    "C-BIG Repository",  # added in CDE v4.5
 }
 
 
@@ -97,22 +98,22 @@ def main():
     bb_df["team"]       = bb_df["publisher_slug"].apply(team_from_slug)
     bb_df["data_type"]  = bb_df["publisher_slug"].apply(classify_data_type)
 
-    # CDE 4.4 sanity check: warn (don't fail) when a normalized bank name is
+    # CDE v4.5 sanity check: warn (don't fail) when a normalized bank name is
     # not in the CDE-recognized vocabulary. "Unknown" rows are ignored — those
     # are already a known data-quality issue surfaced via the Unknown bucket.
     unrecognized = sorted({
         b for b in bb_df["brain_bank"].unique()
-        if b not in CDE_4_4_RECOGNIZED_BANKS and b != "Unknown"
+        if b not in CDE_4_5_RECOGNIZED_BANKS and b != "Unknown"
     })
     if unrecognized:
         print()
-        print("WARNING: %d brain bank name(s) not in the CDE 4.4 recognized list:"
+        print("WARNING: %d brain bank name(s) not in the CDE v4.5 recognized list:"
               % len(unrecognized))
         for name in unrecognized:
             n_rows = (bb_df["brain_bank"] == name).sum()
             print("  - %r  (%d row(s))" % (name, n_rows))
         print("  Add an entry to BANK_ALIASES if this is a known spelling variant,")
-        print("  or to CDE_4_4_RECOGNIZED_BANKS if this is a new canonical name.")
+        print("  or to CDE_4_5_RECOGNIZED_BANKS if this is a new canonical name.")
         print()
 
     # ----- Aggregates -----

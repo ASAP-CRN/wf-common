@@ -65,11 +65,19 @@ for row in reader:
 '
 }
 
-# Locate a metadata CSV in a bucket. Tries metadata/release/<NAME> first,
-# then recursively searches metadata/ for the first match. Prints the gs://
-# path, or empty if not found.
+# Locate a metadata CSV in a bucket. Tries the newest versioned release
+# (metadata/release/<vX.Y.Z>/<NAME>, CDE v4.4/v4.5 in released buckets), then
+# metadata/release/<NAME>, then recursively searches metadata/ for the first
+# match. Prints the gs:// path, or empty if not found.
 find_metadata_csv() {
     local bucket_uri="$1" csv_name="$2"
+    local newest_release_dir
+    newest_release_dir=$(gcloud storage ls "${bucket_uri}/metadata/release/" 2>/dev/null \
+        | grep -E '/v[0-9][^/]*/$' | sed 's;/$;;' | sort -V | tail -1 || true)
+    if [[ -n "$newest_release_dir" ]] && gcloud storage ls "${newest_release_dir}/${csv_name}" &>/dev/null; then
+        echo "${newest_release_dir}/${csv_name}"
+        return 0
+    fi
     if gcloud storage ls "${bucket_uri}/metadata/release/${csv_name}" &>/dev/null; then
         echo "${bucket_uri}/metadata/release/${csv_name}"
         return 0

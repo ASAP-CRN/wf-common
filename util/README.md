@@ -23,6 +23,7 @@ util/
 │   └── archive/transfer_raw_data        # deprecated
 ├── reporting/               # collection summaries & dataset stat tables
 │   ├── crn_cloud_collection_summary
+│   ├── curated_metadata_summary.py  # per-dataset metrics helper for crn_cloud_collection_summary
 │   ├── internal_qc_dataset_collection_summary
 │   ├── generate_dataset_summary_table
 │   ├── extract_brain_bank_data
@@ -54,7 +55,7 @@ util/
 | [`promote_raw_data`](./data_promotion/promote_raw_data) | `data_promotion/` | Transfer QC'ed metadata, CRN Team contributed artifacts, and other CRN Team contributed data (e.g., spatial) from raw data buckets to staging (for Urgent releases) *or* production buckets (for Minor/Major releases). | Ability to transfer QC'ed metadata and CRN Team contributed data from raw buckets to staging/production buckets. This script is run for all releases: Urgent, Minor, and Major. It also removes the `internal-qc-data` label from the released raw buckets for Urgent releases. The rationale behind moving this type of data to production buckets (i.e., CURATED) for Urgent releases is because there are no pipeline/curated outputs, so the staging buckets are not used. The rationale behind moving this type of data to staging buckets (i.e., DEV/UAT) for Minor/Major releases is because there are pipeline/curated outputs, so the [`promote_staging_data`](./data_promotion/promote_staging_data) is used and will eventually copy the data over to production buckets. Minor releases are applicable to both here because sometimes datasets are only platformed in a Minor release, but there are other times where datasets are run through *existing* pipelines. **Note: this script must be run before [`promote_staging_data`](./data_promotion/promote_staging_data).** | `./promote_raw_data --type-of-release urgent --all-datasets --release-version v4.0.0` |
 | [`promote_staging_data`](./data_promotion/promote_staging_data) | `data_promotion/` | Promote staging data to production data buckets and apply the appropriate permissions. | Ability to run data integrity tests when trying to promote data from staging (i.e., DEV/UAT) to production buckets (i.e., CURATED). This script is only run for Minor and Major releases. It also applies the appropriate permissions to the buckets (e.g., adding Verily's ASAP Cloud Readers to released raw buckets) and removes the `internal-qc-data` label from the released raw buckets. The buckets/datasets are detected based on the workflow name provided and the workflow/pipeline version that's used to store current curated outputs in raw workflow_execution bucket. This dict, `unembargoed_dev_buckets_and_workflow_version_outputs`, is in `release_ops.py` | `./promote_staging_data -w pmdbs_sc_rnaseq --release-version v4.0.0 --collection-version v3.1.0` |
 | [`markdown_generator.py`](./common/markdown_generator.py) | `common/` | Functions that generate a Markdown report. | This script is used in the [`promote_staging_data`](./data_promotion/promote_staging_data) script to generate a Markdown report that contains data integrity results when trying to promote data from staging (i.e., DEV/UAT) to production buckets (i.e., CURATED). | NA |
-| [`crn_cloud_collection_summary`](./reporting/crn_cloud_collection_summary) | `reporting/` | Track the ASAP raw/curated buckets, size, sample breakdown, and subject breakdown in the CRN Cloud. | See [CRN Cloud Statistics](#crn-cloud-statistics) below for more details. | `./crn_cloud_collection_summary` |
+| [`crn_cloud_collection_summary`](./reporting/crn_cloud_collection_summary) | `reporting/` | Track released datasets' raw/curated buckets, size, sample breakdown, and subject breakdown, read from their curated buckets (datasets selected from the Releases sheet). | See [CRN Cloud Statistics](#crn-cloud-statistics) below for more details. | `./crn_cloud_collection_summary` |
 | [`internal_qc_dataset_collection_summary`](./reporting/internal_qc_dataset_collection_summary) | `reporting/` | Track datasets in internal QC by getting their ASAP raw buckets, size, sample, and subject breakdown in GCP. | See [CRN Cloud Statistics](#crn-cloud-statistics) below for more details. | `./internal_qc_dataset_collection_summary` |
 | [`generate_dataset_summary_table`](./reporting/generate_dataset_summary_table) | `reporting/` | Generate pivot tables of unique subject/sample counts and subject diagnosis counts by organism × sample source × assay from CRN Cloud or internal QC summary outputs. | Run after `crn_cloud_collection_summary` or `internal_qc_dataset_collection_summary` to produce summary tables for reporting. Auto-detects input source from the filename and prefixes outputs accordingly. Reads dataset metadata from the Google Releases Sheet via `get_releases_df()` when available; falls back to slug-name classification otherwise. | `python3 generate_dataset_summary_table <prefix>.<date>.tsv <prefix>.subject_dataset_membership.<date>.tsv <prefix>.sample_dataset_membership.<date>.tsv <prefix>.subject_diagnosis_membership.<date>.tsv` |
 | [`extract_brain_bank_data`](./reporting/extract_brain_bank_data) | `reporting/` | Extract brain bank (`biobank_name`) metadata for every PMDBS sample across CRN curated and/or internal QC raw buckets. | Walks `asap-curated-team-*` and `asap-raw-team-*` buckets, reads `SUBJECT.csv` + `SAMPLE.csv`, joins on `subject_id`, and emits one row per sample with its associated brain bank. Tracks attempted datasets and flags those skipped in both curated and internal QC. | `./extract_brain_bank_data` |
@@ -450,33 +451,33 @@ Utility scripts for tracking ASAP dataset statistics across the CRN Cloud and in
 
 ### `crn_cloud_collection_summary`
 
-Queries the [CRN Cloud](https://cloud.parkinsonsroadmap.org) via the DNAstack CLI to report on published individual datasets and harmonized collections. For each dataset, it retrieves the associated GCP raw and curated buckets, their sizes, sample/subject counts, brain-specific statistics, and subject diagnosis breakdown.
+Reports on released individual datasets and harmonized collections without querying the [CRN Cloud](https://cloud.parkinsonsroadmap.org) Explorer. Released datasets are taken from the Releases sheet (`Releases_src` tab, rows with a `latest_release_version`; via `release_ops.released_datasets()`). For each one, the CDE CSVs are read from the newest `gs://asap-curated-<dataset_id>/metadata/release/<version>/` (CDE v4.4 or v4.5) and summarised by [`curated_metadata_summary.py`](./reporting/curated_metadata_summary.py): GCP raw and curated buckets, their sizes, sample/subject counts, brain-specific statistics, and subject diagnosis breakdown.
 
 **Output:**
 - `crn_cloud_collection_summary.<date>.tsv`
 - `crn_cloud_collection_summary.subject_dataset_membership.<date>.tsv` — one row per subject-dataset pair (excludes cohorts)
 - `crn_cloud_collection_summary.sample_dataset_membership.<date>.tsv` — one row per sample-dataset pair (excludes cohorts)
-- `crn_cloud_collection_summary.brain_donor_dataset_membership.<date>.tsv` — one row per brain donor-dataset pair (excludes cohorts)
-- `crn_cloud_collection_summary.subject_diagnosis_membership.<date>.tsv` — one row per subject-diagnosis-dataset pair, human datasets only (CLINPATH → SUBJECT → SAMPLE `condition_id` priority order)
-- `crn_cloud_collection_summary.sample_region_dataset_membership.<date>.tsv` — one row per sample-dataset pair with brain region info (excludes cohorts; columns: `subject_id`, `asap_sample_id`, `region_level_1`, `region_level_2`, `publisher_slug`). Source priority: `SAMPLE.region_level_1` / `region_level_2` → `PMDBS.brain_region` (legacy CDE, populates `region_level_1` only). Samples without any region info are not emitted.
+- `crn_cloud_collection_summary.brain_donor_dataset_membership.<date>.tsv` — one row per brain donor-dataset pair
+- `crn_cloud_collection_summary.subject_diagnosis_membership.<date>.tsv` — one row per subject-diagnosis-dataset pair, human datasets only (CLINPATH `primary_diagnosis`, else SAMPLE `condition_id`)
+- `crn_cloud_collection_summary.sample_region_dataset_membership.<date>.tsv` — one row per sample-dataset pair with brain region info from `SAMPLE.region_level_1` / `region_level_2` (excludes cohorts; columns: `subject_id`, `asap_sample_id`, `region_level_1`, `region_level_2`, `publisher_slug`). Samples without any region info are not emitted.
 
 | Column | Description |
 |--------|-------------|
-| `publisher_slug` | Dataset slug name in the CRN Cloud |
+| `publisher_slug` | Dataset slug name in the CRN Cloud (`prod-<dataset_id>`) |
 | `gcp_raw_bucket` | GCS raw bucket URI |
 | `gcp_raw_bucket_size` | Raw bucket size in bytes |
 | `gcp_curated_bucket` | GCS curated bucket URI |
 | `gcp_curated_bucket_size` | Curated bucket size in bytes |
 | `team_name` | Contributing team name parsed from slug |
-| `n_samples` | Distinct `asap_sample_id` + `modality` count from ASSAY table; falls back to `COUNT(DISTINCT asap_sample_id)` from SAMPLE |
-| `n_subjects_unique` | `COUNT(DISTINCT <subject-id-col>)` from team SAMPLE table where `<subject-id-col>` is `asap_subject_id`, `asap_mouse_id`, `asap_cell_id`, or `subject_id` (probed in that order); deduplicated subject count |
-| `n_samples_unique` | `COUNT(DISTINCT asap_sample_id)` from team SAMPLE table (deduplicated samples) |
-| `n_samples_total` | `COUNT(*)` of team SAMPLE table — raw row count, captures replicates of the same `asap_sample_id` |
-| `n_brain_samples` | Brain sample count from PMDBS table, or from `tissue` column in SAMPLE if no PMDBS table |
-| `n_brain_regions` | Distinct brain regions in PMDBS table |
-| `n_brain_donors` | Distinct donors in CLINPATH table |
-| `n_subjects_<diagnosis>` | Subject count per primary diagnosis category (25 columns); sourced from CLINPATH or SUBJECT `primary_diagnosis` column; `0` if not applicable |
-| `condition_counts` | Raw condition value counts serialized as `condition:count\|...`; populated from SAMPLE `condition_id` or CONDITION `condition` when `primary_diagnosis` is not available |
+| `n_samples` | Distinct `ASAP_sample_id` + `modality` pairs in ASSAY; falls back to distinct `ASAP_sample_id` in SAMPLE |
+| `n_subjects_unique` | Distinct `ASAP_subject_id` in SAMPLE (the subject ID for every organism in CDE v4.x); `NA` for cohorts |
+| `n_samples_unique` | Distinct `ASAP_sample_id` in SAMPLE (deduplicated samples); `NA` for cohorts |
+| `n_samples_total` | Row count of SAMPLE — captures replicates of the same `ASAP_sample_id`; `NA` for cohorts |
+| `n_brain_samples` | Samples with `region_level_1` or `region_level_2` in SAMPLE, else samples whose `tissue` contains "brain" |
+| `n_brain_regions` | Distinct brain regions in SAMPLE (`region_level_1`, or `region_level_2` where level 1 is empty) |
+| `n_brain_donors` | CLINPATH subjects that have a SAMPLE row with `region_level_1` or `region_level_2` |
+| `n_subjects_<diagnosis>` | Subject count per primary diagnosis category (25 columns, CDE v4.5 `primary_diagnosis` vocabulary); sourced from CLINPATH `primary_diagnosis`; `0` if not applicable |
+| `condition_counts` | Raw diagnosis/condition value counts serialized as `value:count\|...`; from CLINPATH `primary_diagnosis`, or SAMPLE `condition_id` (subjects per condition) when CLINPATH has none |
 
 **Usage:**
 ```bash
@@ -487,25 +488,17 @@ OPTIONS
     -s  Grab no. of samples and subjects only (skip bucket size queries)
     -i  A previously generated TSV to append to, skipping already-processed datasets (Note: Use only if certain that earlier datasets have not been updated)
     -l  A file containing a list of dataset_ids to process, one per line (e.g. team-hafler-pmdbs-sn-rnaseq-pfc, cohort-pmdbs-sc-rnaseq).
-        Slug is inferred by prepending "prod-" to query the CRN Cloud.
-        team-* and cohort-* prefixes are used to classify individual vs. harmonized collections respectively.
-        If not provided, all datasets in the CRN Cloud are processed.
-        Slugs that are not yet published in the CRN Cloud fall back to reading the CDE
-        CSVs from their gs://asap-curated-<dataset_id> bucket (see -c / -C).
-    -c  Always read metadata from the curated bucket's CDE CSVs, including for slugs that
-        ARE published in the CRN Cloud. Use when the Explorer's SQL tables are behind the
-        curated release. Makes no dnastack calls at all.
-    -C  Disable the curated-bucket fallback: unknown collections are logged and skipped.
+        Only datasets marked as released in the Releases sheet are processed; others are logged and skipped.
+        If not provided, all released datasets are processed (team-* first, then cohort-*).
 ```
 
 **Notes:**
-- Requires `dnastack` CLI authenticated to `cloud.parkinsonsroadmap.org` and `gcloud` with appropriate permissions
+- Requires the gspread credentials for the Releases sheet ([setup](#set-up-for-pulling-data-from-live-google-spreadsheets-using-gspread)) and `gcloud` read access to the `asap-raw-*` / `asap-curated-*` buckets. The `dnastack` CLI is no longer needed.
+- The curated bucket decides which metadata version is read: the newest `metadata/release/v*` folder. If it differs from the sheet's `latest_release_version`, a warning is printed and the bucket version is used.
 - Raw bucket sizes include files used for development and may exceed what is strictly part of a release
-- Cohort collections (`cohort-*`) have their bucket derived from the slug (`gs://asap-raw-cohort-*`) rather than from the DATA table, which points to individual team buckets
-- `n_subjects` is sourced from the SUBJECT table (`asap_subject_id`), MOUSE table (`asap_mouse_id`), or CELL table (`asap_cell_id`), whichever applies; falls back to `COUNT(DISTINCT subject_id)` from SAMPLE
-- `n_samples` uses `COUNT(DISTINCT asap_sample_id, modality)` from ASSAY table if available, otherwise falls back to `COUNT(DISTINCT asap_sample_id)` from SAMPLE
-- `n_brain_donors` counts subjects in CLINPATH who also appear in PMDBS (via SAMPLE join) or have a non-null `region_level_1` in SAMPLE
-- Diagnosis counts (`n_subjects_*`) are sourced in priority order: CLINPATH → SUBJECT → SAMPLE `condition_id` → CONDITION `condition`; values not matching the fixed diagnosis vocabulary are captured in `condition_counts` instead
+- Buckets are derived from the dataset ID: `gs://asap-raw-<dataset_id>` and `gs://asap-curated-<dataset_id>` (cohorts included). A missing raw bucket is reported as `NA`; a missing curated bucket skips the dataset.
+- Cohort collections (`cohort-*`) report `n_samples`, brain, donor and diagnosis counts, but not the per-team SAMPLE counts or subject/sample/region membership rows
+- Diagnosis counts (`n_subjects_*`) come from CLINPATH `primary_diagnosis`, else SAMPLE `condition_id`; values not matching the fixed diagnosis vocabulary are captured in `condition_counts` instead. (`SUBJECT.primary_diagnosis` and `CONDITION.condition` aren't in CDE v4.4/v4.5.)
 - Subject and sample membership files contain one row per ID-dataset pair; global deduplication is performed by `generate_dataset_summary_table`
 - Use `-i` to incrementally update an existing summary file rather than reprocessing everything from scratch
 
@@ -513,7 +506,7 @@ OPTIONS
 
 ### `internal_qc_dataset_collection_summary`
 
-Scans GCP directly for `asap-raw-team-*` buckets labelled `internal-qc-data` and reports sample, subject, brain sample, brain donor, and diagnosis breakdowns by reading `SAMPLE.csv`, `PMDBS.csv`, and `CLINPATH.csv` from each bucket's metadata path. Intended for tracking datasets currently in internal QC that are not yet published to the CRN Cloud. Output column names mirror those of `crn_cloud_collection_summary` so the same `generate_dataset_summary_table` pivot script works on either source.
+Scans GCP directly for `asap-raw-team-*` buckets labelled `internal-qc-data` and reports sample, subject, brain sample, brain donor, and diagnosis breakdowns by reading `SAMPLE.csv` and `CLINPATH.csv` (plus `PMDBS.csv` for pre-CDE v4.0 metadata) from each bucket's metadata path. Intended for tracking datasets currently in internal QC that are not yet published to the CRN Cloud. Output column names mirror those of `crn_cloud_collection_summary` so the same `generate_dataset_summary_table` pivot script works on either source.
 
 **Output:**
 - `internal_qc_dataset_collection_summary.<date>.tsv` - sample breakdown and bucket size if selected
@@ -533,7 +526,7 @@ Scans GCP directly for `asap-raw-team-*` buckets labelled `internal-qc-data` and
 | `n_samples_unique` | Distinct `sample_id` count from `SAMPLE.csv` (deduplicated samples) |
 | `n_samples_total` | Raw row count of `SAMPLE.csv` (header excluded) — captures replicates of the same `sample_id` |
 | `n_brain_samples` | Brain sample count from `PMDBS.csv` if present, else count of rows in `SAMPLE.csv` where `tissue ~ /brain/i` |
-| `n_brain_donors` | Distinct donors in `CLINPATH.csv` that also appear in `PMDBS.csv` (or `SAMPLE.region_level_1` if PMDBS not present) |
+| `n_brain_donors` | Distinct donors in `CLINPATH.csv` that also appear in `PMDBS.csv` (or have `SAMPLE.region_level_1` / `region_level_2` if PMDBS not present) |
 | `n_subjects_<diagnosis>` | Per-diagnosis subject counts pulled from `CLINPATH.csv` (priority order: `primary_diagnosis` → `last_diagnosis` → `path_autopsy_dx_main` → `path_autopsy_second_dx`; any column with numeric-only values is skipped) |
 
 **Usage:**
@@ -548,9 +541,10 @@ OPTIONS
 
 **Notes:**
 - Requires `gcloud` authenticated with access to `asap-raw-team-*` buckets, plus `python3` for CSV parsing
-- Looks for `SAMPLE.csv`, `PMDBS.csv`, and `CLINPATH.csv` first at `metadata/release/<name>.csv`, then searches the full `metadata/` prefix as a fallback
+- Looks for `SAMPLE.csv` in the newest `metadata/release/<vX.Y.Z>/`, then `metadata/release/`, then searches the full `metadata/` prefix (exact filename match, so `._SAMPLE.csv` / `oldSAMPLE.csv` are ignored). `PMDBS.csv` and `CLINPATH.csv` are read from the same folder as `SAMPLE.csv`; `CLINPATH.csv` falls back to a search of `metadata/`
+- `PMDBS.csv` only exists in pre-CDE v4.0 metadata (several internal-QC buckets still have it); CDE v4.x region info is read from `SAMPLE.csv`
 - Datasets with no `SAMPLE.csv` found will report `NA` for sample and subject counts
-- All `gcloud storage cat` output is piped through a CSV normalizer that flattens multi-line quoted fields before parsing, so awk-based downstream processing is safe
+- All `gcloud storage cat` output is piped through a CSV normalizer that flattens multi-line quoted fields. The awk-based counts read a copy with commas inside fields replaced by `;`, since every CDE v4.5 region value contains one (e.g. `Substantia nigra (SN, UBERON:0002038)`)
 - Membership file column names match the CRN script's output so `generate_dataset_summary_table` accepts either source
 - The `internal-qc-data` label is checked on each bucket and the script skips buckets not currently labelled as such (so released buckets fall out of internal-QC reporting once promoted)
 
@@ -624,7 +618,7 @@ OPTIONS
 - Requires `gcloud` authenticated with access to both `asap-curated-team-*` and `asap-raw-team-*` buckets, plus `python3` for CSV parsing
 - Only PMDBS buckets are scanned — `biobank_name` is meaningful only for postmortem brain tissue datasets
 - Cohort buckets (`cohort-*`) are skipped — they aggregate across teams and do not have a per-team `SUBJECT.csv`
-- `SAMPLE.csv` and `SUBJECT.csv` are searched first at `metadata/release/<name>.csv`, then recursively across `metadata/`
+- `SAMPLE.csv` and `SUBJECT.csv` are read from the newest `metadata/release/<vX.Y.Z>/` first, then `metadata/release/<name>.csv`, then recursively across `metadata/`
 - Each `gcloud storage cat` output is piped through a CSV normalizer that flattens multi-line quoted fields (e.g., GeoMX-style sample IDs) before parsing
 - After all buckets are processed, the script summarizes counts per source (CRN curated vs. internal QC) and deduplicated totals, then lists any datasets attempted in **both** CRN curated **and** internal QC that produced no output rows (missing `SUBJECT.csv`, missing `biobank_name`, empty join, etc.)
 

@@ -73,6 +73,23 @@ def dev_buckets_and_workflow_version_outputs(workflow_name=None, release_version
 	)
 
 unembargoed_dev_buckets_and_workflow_version_outputs = dev_buckets_and_workflow_version_outputs()
+
+## Datasets published in the CRN Cloud
+def released_datasets():
+	"""{dataset_id: latest_release_version} for datasets that have been released.
+
+	A non-empty `latest_release_version` is what marks a dataset as released; rows
+	without one are planned/upcoming datasets that have no curated bucket yet.
+	Used by the reporting scripts to decide which curated buckets to read.
+	"""
+	released = releases_df["latest_release_version"].astype(str).str.strip() != ""
+	return (
+		releases_df.loc[released]
+		.drop_duplicates(subset="dataset_id", keep="last")
+		.set_index("dataset_id")["latest_release_version"]
+		.to_dict()
+	)
+
 ## Urgent and Minor Release or platforming exercise during a Major Release
 completed_platforming_raw_buckets = (
 	releases_df[
@@ -291,6 +308,7 @@ __all__ = [
     "SCOPES", "get_releases_df", "releases_df", "ALL_TEAMS",
     "dev_buckets_and_workflow_version_outputs",
     "unembargoed_dev_buckets_and_workflow_version_outputs",
+    "released_datasets",
     "completed_platforming_raw_buckets",
     "ASSAY_ORDER", "HUMAN_SOURCES_ORDER", "MOUSE_SOURCES_ORDER",
     "team_from_slug", "classify_assay", "classify_organism", "classify_source",
