@@ -42,7 +42,7 @@ util/
 | [`data_integrity.py`](./common/data_integrity.py) | `common/` | Manifest reading and MD5 / non-empty / associated-metadata checks, plus staging-vs-curated blob name and hash comparisons. | Used to validate data integrity when promoting staging data to production. | NA |
 | [`bucket_validation_utils.py`](./common/bucket_validation_utils.py) | `common/` | Functions to validate raw bucket and local metadata structure and contents before transferring data. | Checks preceding data transfers. | NA |
 | [`file_utils.py`](./common/file_utils.py) | `common/` | General-purpose functions to parse file properties (e.g. size, extension). | Checks preceding data transfers. | NA |
-| [`generate_inputs`](./workflow_inputs/generate_inputs) | `workflow_inputs/` | Generate inputs JSON for WDL pipelines. | Ability to generate the inputs JSON for WDL pipelines given a project TSV (sample information), inputs JSON template, workflow name, and cohort dataset ID. | `./generate_inputs --project-tsv lee.metadata.tsv --inputs-template inputs.json --workflow-name pmdbs_sc_rnaseq_analysis --release-version v4.0.0 --cohort-dataset-id cohort-pmdbs-sc-rnaseq` |
+| [`generate_inputs`](./workflow_inputs/generate_inputs) | `workflow_inputs/` | Generate inputs JSON for WDL pipelines. | Ability to generate the inputs JSON for WDL pipelines given a project TSV (sample information), inputs JSON template, workflow name, and cohort dataset ID. See [required project TSV columns](#generate_inputs-project-tsv-columns). | `./generate_inputs --project-tsv lee.metadata.tsv --inputs-template inputs.json --workflow-name sc_rnaseq_analysis --release-version v4.0.0 --cohort-dataset-id cohort-pmdbs-sc-rnaseq` |
 | [`validate_raw_bucket_structure.py`](./raw_bucket_prep/validate_raw_bucket_structure.py) | `raw_bucket_prep/` | Extended validation of the raw bucket structure and file contents. Check for inconsitencies in sample, subject and file names across tables. Search empty files. Produce a MD report and reconciliation TSV files. | Use to Pre-QC a dataset or as part of the full QC pipeline. The MD outfile provides an Executive Summary with critical issues (if any) | `python3 validate_raw_bucket_structure.py -d team-smith-pmdbs-sc-rnaseq` |
 | [`download_raw_bucket_metadata_to_local`](./raw_bucket_prep/download_raw_bucket_metadata_to_local) | `raw_bucket_prep/` | Validate the raw bucket structure, then sync raw bucket metadata to the local metadata directory. | Once authors have contributed their metadata to the raw bucket, this script first validates the bucket structure/metadata and then downloads the data locally so that QC can be performed. Pass `-v/--validate-only` to run just the structure/metadata checks without downloading (this replaces the former standalone `validate_raw_bucket_structure.py`). | `./download_raw_bucket_metadata_to_local -d team-jakobsson-pmdbs-bulk-rnaseq` (add `--validate-only` to check only) |
 | [`transfer_qc_metadata_to_raw_bucket`](./raw_bucket_prep/transfer_qc_metadata_to_raw_bucket) | `raw_bucket_prep/` | Sync local metadata directory to the raw bucket. | After receiving author-contributed metadata from a raw bucket, QC/processing steps must be done locally. This script is run after QC is complete, so that the locally changed metadata directories are sync'd to the raw bucket. If any later changes are made to the metadata, this script will need to be re-run to ensure that the raw bucket contains the most up to date copies of the QC'd metadata. | `./transfer_qc_metadata_to_raw_bucket -d team-jakobsson-pmdbs-bulk-rnaseq -v v4.0.0`|
@@ -56,6 +56,50 @@ util/
 | [`generate_brain_bank_summary`](./reporting/generate_brain_bank_summary) | `reporting/` | Generate brain-bank-centric summary tables (matrix + long format) from the brain bank membership TSV. | Run after `extract_brain_bank_data` to produce brain-bank-focused summaries useful for identifying well-characterized samples vs. data gaps across data types. | `python3 generate_brain_bank_summary brain_bank_membership.<date>.tsv` |
 | [`transfer_release_resources_to_raw_bucket.py`](./raw_bucket_prep/transfer_release_resources_to_raw_bucket.py) | `raw_bucket_prep/` | Sync local release-resources config/, release_stats/ and publisher_cards/ to dataset ASAP raw buckets. | After producing Publisher card text and summary figures, this script syncs locally stored files (presumably living at asap-crn-cloud-dataset-metadata/) into each dataset gs:// raw bucket. If any later changes are made to the release-resources, this script will need to be re-run to ensure that the raw bucket contains the most up to date copies. | `./transfer_release_resources_to_raw_bucket.py -i /path/to/release_<release_version>.json -p` |
 | [`clean_wdl_raw_buckets`](./data_promotion/clean_wdl_raw_buckets) | `data_promotion/` | Clean up script for GCP raw bucket workflow execution timestamp cohort analysis and downstream folders. | Removes outdated timestamp folder contents across all raw buckets in the cohort analysis and downstream folders while preserving versions. | `./clean_wdl_raw_buckets -p` |
+
+## `generate_inputs`: project TSV columns
+
+`generate_inputs` reads one or more project TSVs (`-p/--project-tsv`, tab-delimited, one row per sample) and builds the `*.projects` input of the WDL inputs JSON. Columns are accessed by name, so **every column marked "all" must be present in the TSV header, even for workflows that don't use it** (a missing column fails with an `AttributeError`). Columns marked "may be empty" can have blank values.
+
+### Columns required for all workflows
+
+| Column | Pipeline input it populates | Notes |
+| :- | :- | :- |
+| `team_id` | `project.asap_team_id` | Rows are grouped into projects by this value. Also sets the sample list filename prefix (`asap-cohort` if more than one team). |
+| `ASAP_dataset_id` | `project.asap_dataset_id` | |
+| `dataset_id` | `project.raw_data_bucket`, `project.staging_data_buckets`, cohort buckets | Used to build `gs://asap-raw-<dataset_id>` and `gs://asap-{dev,uat}-<dataset_id>`. Used as the cohort dataset ID when `--cohort-dataset-id` isn't given. |
+| `dataset_doi_url` | `project.asap_dataset_doi_url` | Also written to the sample list TSV. |
+| `embargoed` | staging env / buckets | Must be boolean (`True`/`False`). `True` means `dev` bucket only and an `inputs.dev.*` output; `False` means `dev` + `uat` buckets and an `inputs.uat.*` output. All rows in one TSV must have the same value. |
+| `ASAP_sample_id` | `sample.sample_id` | Must be unique, except for `sc_atacseq_analysis` / `sc_multiome_analysis` (multiplexed pools). |
+| `subject_id` | `source_subject_id` (ATAC/multiome only) | Required column for all workflows. |
+| `ASAP_subject_id` | `asap_subject_id` (ATAC/multiome only) | Required column for all workflows. |
+| `pool_id` | `pool.pool_id` (ATAC) / pooled `sample_id` (multiome) | Required column for all workflows. Values can be empty for non-pooled workflows. |
+| `batch` | `sample.batch` | May be empty (the key is then left out). Cast to string. |
+| `sex` | `sample.sex` | May be empty. Lowercased. Used by sc RNA-seq and multiome (not in the ATAC `Sample` struct). |
+| `region_level_1` | `sample.brain_region_level_1` | May be empty. Lowercased. Used by sc RNA-seq, sc ATAC-seq and multiome. |
+| `region_level_2` | `sample.brain_region_level_2` | Same as above. For ATAC and multiome, the region fields are only written if `region_level_2` is non-empty. |
+| `region_level_3` | `sample.brain_region_level_3` | Same as above. |
+| `fastq_R1s` | `fastq_R1s` | Python list literal string, e.g. `['gs://.../S1_R1_001.fastq.gz']` (parsed with `ast.literal_eval`). Use `[]` for none. |
+| `fastq_R2s` | `fastq_R2s` | Same format. |
+| `fastq_I1s` | `fastq_I1s` | Same format. Use `[]` if there are no index reads. |
+| `fastq_I2s` | `fastq_I2s` | Same format. Use `[]` if there are no index reads. |
+
+### Additional workflow-specific columns
+
+| Workflow (`-w`) | Column | Pipeline input it populates | Notes |
+| :- | :- | :- | :- |
+| `sc_atacseq_analysis` | `fastq_R3s` | `pool.fastq_R3s` | List literal string, same format as the other FASTQ columns. |
+| `spatial_visium_analysis` | `visium_cytassist` | `sample.visium_brightfield_image` | Filename only. Resolved to `gs://asap-raw-<dataset_id>/spatial/images/<visium_cytassist>`. |
+| `spatial_visium_analysis` | `visium_slide_ref` | `sample.visium_slide_serial_number` | |
+| `spatial_visium_analysis` | `visium_capture_area` | `sample.visium_capture_area` | |
+| `spatial_geomx_analysis` | `ASAP_geomx_slide_id` | `slide.asap_slide_id` | Samples are grouped into slides by this value. |
+| `spatial_geomx_analysis` | `geomx_annotation_file` | `slide.geomx_lab_annotation_xlsx` | Original filename. Spaces become `_`, the name gets a `cleaned_DNAstack_` prefix and an `.xlsx` extension, and it's resolved to `gs://asap-raw-<dataset_id>/spatial/annotation_files/`. |
+
+### Inputs not taken from the TSV
+
+- `run_project_cohort_analysis` comes from the `-c` flag.
+- `asap_project_sample_metadata_csv` (bulk RNA-seq, GeoMx) is built as `gs://asap-raw-<dataset_id>/metadata/release/<--release-version>/SAMPLE.csv`.
+- These placeholders must be filled in manually in the output JSON: `multimodal_sc_data` (sc RNA-seq, `"Boolean"`), `multimodal_data` (sc ATAC-seq, `"Boolean"`) and `geomx_config_ini` (GeoMx, `"File"`).
 
 ## Deprecated util scripts
 

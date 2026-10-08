@@ -131,7 +131,7 @@ def main(args):
                 if batch is not None:
                     sample["batch"] = batch
 
-            if args.workflow_name in ("sc_rnaseq_analysis", "sc_atacseq_analysis", "sc_multiome_analysis"):
+            if args.workflow_name in ("sc_rnaseq_analysis", "sc_multiome_analysis"):
                 sample["sex"] = sex
                 sample["brain_region_level_1"] = brain_region_level_1
                 sample["brain_region_level_2"] = brain_region_level_2
@@ -144,7 +144,7 @@ def main(args):
 
             if args.workflow_name == "spatial_geomx_analysis":
                 slide = {
-                    "slide_id": geomx_slide_id,
+                    "asap_slide_id": geomx_slide_id,
                     "geomx_lab_annotation_xlsx": geomx_lab_annotation_xlsx,
                     "samples": [sample]
                 }
@@ -196,6 +196,10 @@ def main(args):
                     }
                     if batch is not None:
                         sample_obj["batch"] = batch
+                    if brain_region_level_2 is not None:
+                        sample_obj["brain_region_level_1"] = brain_region_level_1
+                        sample_obj["brain_region_level_2"] = brain_region_level_2
+                        sample_obj["brain_region_level_3"] = brain_region_level_3
                     pool_obj = {
                         "pool_id": pool_id,
                         "fastq_R1s": fastq_R1s,
@@ -266,6 +270,10 @@ def main(args):
                     }
                     if batch is not None:
                         sample_obj["batch"] = batch
+                    if brain_region_level_2 is not None:
+                        sample_obj["brain_region_level_1"] = brain_region_level_1
+                        sample_obj["brain_region_level_2"] = brain_region_level_2
+                        sample_obj["brain_region_level_3"] = brain_region_level_3
 
                     if existing_pool is None:
                         projects[team_id]["pools"].append({
