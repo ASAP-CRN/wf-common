@@ -27,7 +27,10 @@ util/
 │   ├── generate_dataset_summary_table
 │   ├── extract_brain_bank_data
 │   └── generate_brain_bank_summary
-├── workflow_inputs/
+├── workflow_inputs/         # build WDL inputs JSONs from team metadata
+│   ├── common.py                # dataset ID parsing shared by the scripts below
+│   ├── get_fastq_locs.py
+│   ├── get_team_metadata.py
 │   └── generate_inputs
 └── requirements.txt
 ```
@@ -42,7 +45,9 @@ util/
 | [`data_integrity.py`](./common/data_integrity.py) | `common/` | Manifest reading and MD5 / non-empty / associated-metadata checks, plus staging-vs-curated blob name and hash comparisons. | Used to validate data integrity when promoting staging data to production. | NA |
 | [`bucket_validation_utils.py`](./common/bucket_validation_utils.py) | `common/` | Functions to validate raw bucket and local metadata structure and contents before transferring data. | Checks preceding data transfers. | NA |
 | [`file_utils.py`](./common/file_utils.py) | `common/` | General-purpose functions to parse file properties (e.g. size, extension). | Checks preceding data transfers. | NA |
-| [`generate_inputs`](./workflow_inputs/generate_inputs) | `workflow_inputs/` | Generate inputs JSON for WDL pipelines. | Ability to generate the inputs JSON for WDL pipelines given a project TSV (sample information), inputs JSON template, workflow name, and cohort dataset ID. See [required project TSV columns](#generate_inputs-project-tsv-columns). | `./generate_inputs --project-tsv lee.metadata.tsv --inputs-template inputs.json --workflow-name sc_rnaseq_analysis --release-version v4.0.0 --cohort-dataset-id cohort-pmdbs-sc-rnaseq` |
+| [`get_fastq_locs.py`](./workflow_inputs/get_fastq_locs.py) | `workflow_inputs/` | List every FASTQ in a dataset's raw bucket (`gs://asap-raw-<dataset_id>/fastqs/`). | Step 1 of [generating workflow inputs](#generating-workflow-inputs). Its output is read by `get_team_metadata.py`. | `python3 get_fastq_locs.py -d team-jakobsson-pmdbs-sn-rnaseq -o team_metadata` |
+| [`get_team_metadata.py`](./workflow_inputs/get_team_metadata.py) | `workflow_inputs/` | Join team metadata CSVs with FASTQ locations to make the per-dataset project TSV. | Step 2 of [generating workflow inputs](#generating-workflow-inputs). Also applies per-dataset sample/pool/donor exclusions and sets `embargoed`. | `python3 get_team_metadata.py -m metadata -d team-jakobsson-pmdbs-sn-rnaseq -o team_metadata` |
+| [`generate_inputs`](./workflow_inputs/generate_inputs) | `workflow_inputs/` | Generate inputs JSON for WDL pipelines. | Ability to generate the inputs JSON for WDL pipelines given a project TSV (sample information), inputs JSON template, workflow name, and cohort dataset ID. See [required project TSV columns](#3-generate_inputs-project-tsv-columns). | `./generate_inputs --project-tsv lee.metadata.tsv --inputs-template inputs.json --workflow-name sc_rnaseq_analysis --release-version v4.0.0 --cohort-dataset-id cohort-pmdbs-sc-rnaseq` |
 | [`validate_raw_bucket_structure.py`](./raw_bucket_prep/validate_raw_bucket_structure.py) | `raw_bucket_prep/` | Extended validation of the raw bucket structure and file contents. Check for inconsitencies in sample, subject and file names across tables. Search empty files. Produce a MD report and reconciliation TSV files. | Use to Pre-QC a dataset or as part of the full QC pipeline. The MD outfile provides an Executive Summary with critical issues (if any) | `python3 validate_raw_bucket_structure.py -d team-smith-pmdbs-sc-rnaseq` |
 | [`download_raw_bucket_metadata_to_local`](./raw_bucket_prep/download_raw_bucket_metadata_to_local) | `raw_bucket_prep/` | Validate the raw bucket structure, then sync raw bucket metadata to the local metadata directory. | Once authors have contributed their metadata to the raw bucket, this script first validates the bucket structure/metadata and then downloads the data locally so that QC can be performed. Pass `-v/--validate-only` to run just the structure/metadata checks without downloading (this replaces the former standalone `validate_raw_bucket_structure.py`). | `./download_raw_bucket_metadata_to_local -d team-jakobsson-pmdbs-bulk-rnaseq` (add `--validate-only` to check only) |
 | [`transfer_qc_metadata_to_raw_bucket`](./raw_bucket_prep/transfer_qc_metadata_to_raw_bucket) | `raw_bucket_prep/` | Sync local metadata directory to the raw bucket. | After receiving author-contributed metadata from a raw bucket, QC/processing steps must be done locally. This script is run after QC is complete, so that the locally changed metadata directories are sync'd to the raw bucket. If any later changes are made to the metadata, this script will need to be re-run to ensure that the raw bucket contains the most up to date copies of the QC'd metadata. | `./transfer_qc_metadata_to_raw_bucket -d team-jakobsson-pmdbs-bulk-rnaseq -v v4.0.0`|
@@ -57,11 +62,97 @@ util/
 | [`transfer_release_resources_to_raw_bucket.py`](./raw_bucket_prep/transfer_release_resources_to_raw_bucket.py) | `raw_bucket_prep/` | Sync local release-resources config/, release_stats/ and publisher_cards/ to dataset ASAP raw buckets. | After producing Publisher card text and summary figures, this script syncs locally stored files (presumably living at asap-crn-cloud-dataset-metadata/) into each dataset gs:// raw bucket. If any later changes are made to the release-resources, this script will need to be re-run to ensure that the raw bucket contains the most up to date copies. | `./transfer_release_resources_to_raw_bucket.py -i /path/to/release_<release_version>.json -p` |
 | [`clean_wdl_raw_buckets`](./data_promotion/clean_wdl_raw_buckets) | `data_promotion/` | Clean up script for GCP raw bucket workflow execution timestamp cohort analysis and downstream folders. | Removes outdated timestamp folder contents across all raw buckets in the cohort analysis and downstream folders while preserving versions. | `./clean_wdl_raw_buckets -p` |
 
-## `generate_inputs`: project TSV columns
+## Generating workflow inputs
 
-`generate_inputs` reads one or more project TSVs (`-p/--project-tsv`, tab-delimited, one row per sample) and builds the `*.projects` input of the WDL inputs JSON. Columns are accessed by name, so **every column marked "all" must be present in the TSV header, even for workflows that don't use it** (a missing column fails with an `AttributeError`). Columns marked "may be empty" can have blank values.
+The scripts in `workflow_inputs/` turn a team's metadata into a WDL inputs JSON in three steps. Run them from `util/workflow_inputs/`: `get_fastq_locs.py` and `get_team_metadata.py` import `parse_dataset_id` from the local `common.py`, which is a different module from the `util/common/` package.
 
-### Columns required for all workflows
+```
+get_fastq_locs.py      # 1. List FASTQs in each dataset's raw bucket
+get_team_metadata.py   # 2. Join metadata + FASTQs into a per-dataset project TSV
+generate_inputs        # 3. Build the WDL inputs JSON + sample list from project TSV(s)
+```
+
+```bash
+cd util/workflow_inputs
+
+# 1. FASTQ locations (needs gcloud application-default credentials)
+python3 get_fastq_locs.py -d team-jakobsson-pmdbs-sn-rnaseq -o team_metadata
+
+# 2. Project TSV
+python3 get_team_metadata.py -m metadata -d team-jakobsson-pmdbs-sn-rnaseq -o team_metadata
+
+# 3. Inputs JSON
+./generate_inputs \
+  -p team_metadata/jakobsson/pmdbs-sn-rnaseq/team-jakobsson-pmdbs-sn-rnaseq.metadata.tsv \
+  -i inputs.json \
+  -w sc_rnaseq_analysis \
+  -v v4.0.0 \
+  -b cohort-pmdbs-sc-rnaseq
+```
+
+### Dataset ID format
+
+All three scripts use the same `dataset_id`, which is also the raw bucket suffix (`gs://asap-raw-<dataset_id>`):
+
+```
+team-{team}-{source}-{assay}[-{context}]
+```
+
+For example `team-jakobsson-pmdbs-sn-rnaseq`, `team-lee-pmdbs-bulk-rnaseq-mfg` or `team-vila-pmdbs-spatial-geomx-thlc`. `common.parse_dataset_id` splits it into `team` (without the `team-` prefix), `source`, and `assay` (everything after the source, including any context). Steps 1 and 2 use these to build their directory paths.
+
+### 1. `get_fastq_locs.py`
+
+Lists blobs under `gs://asap-raw-<dataset_id>/fastqs/` and writes the `gs://` path of every `.fastq`/`.fq`(`.gz`) file, one per line.
+
+| Flag | Description | Required | Default |
+| :- | :- | :- | :- |
+| `-d / --dataset-id` | Space-delimited dataset ID(s) | Yes | — |
+| `-o / --output-dir` | Output directory | No | `team_metadata` |
+
+**Output:** `{output_dir}/{team}/{source}-{assay}/{dataset_id}.fastq_locs.txt`
+
+### 2. `get_team_metadata.py`
+
+Reads the team's metadata CSVs, matches each sample to its FASTQs (using the file from step 1), and writes the project TSV used by `generate_inputs`. Run step 1 first, with the same `-o` directory.
+
+| Flag | Description | Required | Default |
+| :- | :- | :- | :- |
+| `-m / --metadata-dir` | Directory containing team metadata | Yes | — |
+| `-d / --dataset-id` | Space-delimited dataset ID(s) | Yes | — |
+| `-o / --output-dir` | Output directory (must also contain the step 1 output) | No | `team_metadata` |
+
+**Expected metadata directory structure:**
+
+```
+{metadata_dir}/
+└── {team}/                     # team name without the "team-" prefix, e.g. jakobsson
+    └── {source}-{assay}/       # e.g. pmdbs-sn-rnaseq
+        ├── SAMPLE.csv
+        ├── SUBJECT.csv
+        ├── STUDY.csv
+        ├── DATA.csv
+        └── SPATIAL.csv         # spatial datasets only
+```
+
+**Metadata columns read:**
+
+| File | Columns | Used for |
+| :- | :- | :- |
+| `SAMPLE.csv` | `sample_id`, `ASAP_sample_id`, `ASAP_dataset_id`, `subject_id`, `ASAP_subject_id`, `replicate`, `batch`, `region_level_1`, `region_level_2`, `region_level_3`, `pool_id` | One output row per row. A blank `replicate` becomes `Rep1`, and the output `ASAP_sample_id` is `<ASAP_sample_id>_<replicate>`. `pool_id` must exist as a column; leave it blank for non-multiplexed data. |
+| `DATA.csv` | `file_name`, `replicate`, plus `sample_id` (or `ASAP_sample_id` + `pool_id` when both files have a non-blank `pool_id`) | Matching FASTQs to samples. R1/R2/R3/I1/I2 are assigned from the filename. If replicates don't match `SAMPLE.csv`, the `SAMPLE.csv` values are used. |
+| `SUBJECT.csv` | `ASAP_subject_id`, `sex` | `sex` |
+| `STUDY.csv` | `dataset_doi_url` | `dataset_doi_url` (first row) |
+| `SPATIAL.csv` | `ASAP_dataset_id`, `sample_id`, `ASAP_sample_id`, `geomx_config`, `geomx_dsp_config`, `geomx_annotation_file`, `visium_cytassist`, `visium_probe_set`, `visium_slide_ref`, `visium_capture_area` | Spatial columns. All of them must be present for both GeoMx and Visium. `ASAP_geomx_slide_id` is derived from `sample_id` and `batch`. |
+
+The script also adds `team_id` (`team-<team>`), `dataset_id`, `source`, `assay` and `embargoed`. `embargoed` is `True` unless the dataset is in the hard-coded `released_team_dataset_ids` list, so **add a dataset to that list once it's released**. Per-dataset sample, pool and donor exclusions are hard-coded in the script, each with its reason.
+
+**Output:** `{output_dir}/{team}/{source}-{assay}/{dataset_id}.metadata.tsv`. This file has every column `generate_inputs` needs (see below), plus extra columns that `generate_inputs` ignores.
+
+### 3. `generate_inputs`: project TSV columns
+
+`generate_inputs` reads one or more project TSVs (`-p/--project-tsv`, tab-delimited, one row per sample; normally the output of step 2) and builds the `*.projects` input of the WDL inputs JSON. Columns are accessed by name, so **every column marked "all" must be present in the TSV header, even for workflows that don't use it** (a missing column fails with an `AttributeError`). Columns marked "may be empty" can have blank values.
+
+#### Columns required for all workflows
 
 | Column | Pipeline input it populates | Notes |
 | :- | :- | :- |
@@ -84,7 +175,7 @@ util/
 | `fastq_I1s` | `fastq_I1s` | Same format. Use `[]` if there are no index reads. |
 | `fastq_I2s` | `fastq_I2s` | Same format. Use `[]` if there are no index reads. |
 
-### Additional workflow-specific columns
+#### Additional workflow-specific columns
 
 | Workflow (`-w`) | Column | Pipeline input it populates | Notes |
 | :- | :- | :- | :- |
@@ -95,7 +186,7 @@ util/
 | `spatial_geomx_analysis` | `ASAP_geomx_slide_id` | `slide.asap_slide_id` | Samples are grouped into slides by this value. |
 | `spatial_geomx_analysis` | `geomx_annotation_file` | `slide.geomx_lab_annotation_xlsx` | Original filename. Spaces become `_`, the name gets a `cleaned_DNAstack_` prefix and an `.xlsx` extension, and it's resolved to `gs://asap-raw-<dataset_id>/spatial/annotation_files/`. |
 
-### Inputs not taken from the TSV
+#### Inputs not taken from the TSV
 
 - `run_project_cohort_analysis` comes from the `-c` flag.
 - `asap_project_sample_metadata_csv` (bulk RNA-seq, GeoMx) is built as `gs://asap-raw-<dataset_id>/metadata/release/<--release-version>/SAMPLE.csv`.
