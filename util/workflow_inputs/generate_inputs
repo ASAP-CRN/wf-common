@@ -103,9 +103,7 @@ def main(args):
             fastq_I1s = literal_eval(row.fastq_I1s)
             fastq_I2s = literal_eval(row.fastq_I2s)
 
-            source = row.source
             dataset_id = row.dataset_id
-            assay = row.assay
             asap_dataset_doi_url = row.dataset_doi_url
 
             if args.workflow_name == "spatial_visium_analysis":

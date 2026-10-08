@@ -10,8 +10,8 @@ same metrics can be derived directly from metadata/release/<version>/*.csv.
 Differences from the SQL path that callers should be aware of:
   - CSV headers are ASAP_-prefixed CamelCase (ASAP_sample_id) whereas the SQL
     columns are lowercase (asap_sample_id). All lookups here are case-insensitive.
-  - Legacy CDE v3/v4 exports carry an unnamed pandas index as the first column.
-  - CDE v5 dropped MOUSE.csv/PMDBS.csv: subjects of every organism live in
+  - Legacy CDE v4.3/v4.4 exports carry an unnamed pandas index as the first column.
+  - CDE v4.5 dropped MOUSE.csv/PMDBS.csv: subjects of every organism live in
     SUBJECT.csv, and brain region moved to SAMPLE.region_level_1/2.
 
 Writes membership rows directly to the files passed in, and prints two
@@ -294,7 +294,7 @@ def main():
                      [f"{tsv_safe(i)}\t{tsv_safe(slug)}" for i in sample_ids])
 
     # ---- Brain samples / regions
-    # PMDBS.csv is the CDE v3/v4 source; v5 moved region onto SAMPLE.region_level_1/2.
+    # PMDBS.csv is the CDE v4.3/v4.4 source; v4.5 moved region onto SAMPLE.region_level_1/2.
     n_brain_samples = "NA"
     n_brain_regions = "NA"
     regions_seen = set()
