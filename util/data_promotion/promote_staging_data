@@ -277,6 +277,7 @@ if __name__ == "__main__":
 			'invitro_bulk_rnaseq',
 			'spatial_visium',
 			'spatial_geomx',
+			'pmdbs_sc_multiome',
 		],
 		type=str,
 		required=False,
