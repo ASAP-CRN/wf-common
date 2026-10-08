@@ -48,7 +48,7 @@ task multiqc {
 		docker: "~{container_registry}/multiqc:1.30"
 		cpu: threads
 		memory: "~{mem_gb} GB"
-		disks: "local-disk ~{disk_size} HDD"
+		disks: "local-disk ~{disk_size} SSD"
 		preemptible: 3
 		bootDiskSizeGb: 5
 		zones: zones

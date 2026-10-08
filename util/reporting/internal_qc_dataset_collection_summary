@@ -76,6 +76,20 @@ for row in reader:
 '
 }
 
+# awk -F',' can't parse quoted fields that contain commas, and every CDE v4.5 brain
+# region value does (e.g. "Substantia nigra (SN, UBERON:0002038)"), which shifts all
+# later columns (sample_id, subject_id, tissue). The awk helpers below read this copy,
+# where commas inside a field become ';' and quoting is dropped. Python consumers keep
+# reading the normalize_csv output so region/diagnosis values are written unchanged.
+# Usage: awk_csv=$(awk_safe_csv <<< "$normalized_csv")
+awk_safe_csv() {
+    python3 -c '
+import csv, sys
+for row in csv.reader(sys.stdin):
+    print(",".join(c.replace(",", ";") for c in row))
+'
+}
+
 get_unique_column_count() {
     local csv_content="$1"
     local column_name="$2"
@@ -223,15 +237,24 @@ while IFS= read -r bucket; do
     n_samples_total="NA"
     sample_csv=""
     sample_csv_dir=""
-    # First try: metadata/release/SAMPLE.csv
-    if gcloud storage ls "$gcp_raw_bucket/metadata/release/SAMPLE.csv" &>/dev/null; then
+    # First try: the newest QC'd release, metadata/release/<vX.Y.Z>/SAMPLE.csv
+    # (what transfer_qc_metadata_to_raw_bucket writes; CDE v4.x)
+    newest_release_dir=$(gcloud storage ls "$gcp_raw_bucket/metadata/release/" 2>/dev/null \
+        | grep -E '/v[0-9][^/]*/$' | sed 's;/$;;' | sort -V | tail -1 || true)
+    if [[ -n "$newest_release_dir" ]] && gcloud storage ls "$newest_release_dir/SAMPLE.csv" &>/dev/null; then
+        echo "  Found ${newest_release_dir#"$gcp_raw_bucket"/}/SAMPLE.csv"
+        sample_csv=$(gcloud storage cat "$newest_release_dir/SAMPLE.csv" | normalize_csv)
+        sample_csv_dir="$newest_release_dir"
+    # Second try: unversioned metadata/release/SAMPLE.csv
+    elif gcloud storage ls "$gcp_raw_bucket/metadata/release/SAMPLE.csv" &>/dev/null; then
         echo "  Found metadata/release/SAMPLE.csv"
         sample_csv=$(gcloud storage cat "$gcp_raw_bucket/metadata/release/SAMPLE.csv" | normalize_csv)
         sample_csv_dir="$gcp_raw_bucket/metadata/release"
     else
-    # Second try: search metadata/ for any SAMPLE.csv
+    # Third try: search metadata/ for any SAMPLE.csv (contributor submissions not yet QC'd).
+    # Match the exact filename so ._SAMPLE.csv (macOS) and oldSAMPLE.csv are skipped.
         echo "  metadata/release/SAMPLE.csv not found, searching metadata folder for SAMPLE.csv..."
-        sample_csv_loc=$(gcloud storage ls -r "$gcp_raw_bucket/metadata" 2>/dev/null | grep "SAMPLE.csv" | head -n 1 || true)
+        sample_csv_loc=$(gcloud storage ls -r "$gcp_raw_bucket/metadata" 2>/dev/null | grep '/SAMPLE\.csv$' | head -n 1 || true)
 
         if [ -n "$sample_csv_loc" ]; then
             echo "  Found SAMPLE.csv at: $sample_csv_loc"
@@ -245,10 +268,12 @@ while IFS= read -r bucket; do
     # Unique + total counts from SAMPLE.csv. "Unique" deduplicates by sample_id /
     # subject_id; n_samples_total is the raw row count of SAMPLE.csv, which
     # captures replicate rows of the same sample.
+    sample_csv_awk=""
+    [[ -n "$sample_csv" ]] && sample_csv_awk=$(awk_safe_csv <<< "$sample_csv")
     if [[ -n "$sample_csv" ]]; then
-        n_subjects_unique=$(get_unique_column_count "$sample_csv" "subject_id")
-        n_samples_unique=$(get_unique_column_count "$sample_csv" "sample_id")
-        n_samples_total=$(get_total_row_count "$sample_csv")
+        n_subjects_unique=$(get_unique_column_count "$sample_csv_awk" "subject_id")
+        n_samples_unique=$(get_unique_column_count "$sample_csv_awk" "sample_id")
+        n_samples_total=$(get_total_row_count "$sample_csv_awk")
         # Defensive: if any helper returned an empty string, fall back to NA
         [[ -z "$n_subjects_unique" ]] && n_subjects_unique="NA"
         [[ -z "$n_samples_unique"  ]] && n_samples_unique="NA"
@@ -270,22 +295,23 @@ while IFS= read -r bucket; do
         fi
 
         if [[ -n "$_dest_subject_file" ]]; then
-            get_unique_column_values "$sample_csv" "subject_id" >> "$_dest_subject_file"
+            get_unique_column_values "$sample_csv_awk" "subject_id" >> "$_dest_subject_file"
         fi
-        get_unique_column_values "$sample_csv" "sample_id" >> "$_SAMPLE_IDS_FILE"
+        get_unique_column_values "$sample_csv_awk" "sample_id" >> "$_SAMPLE_IDS_FILE"
 
         # Write membership rows: <id>\t<publisher_slug>
-        get_unique_column_values "$sample_csv" "subject_id" \
+        get_unique_column_values "$sample_csv_awk" "subject_id" \
             | awk -v slug="$publisher_slug" 'NF { print $0 "\t" slug }' \
             >> "$subject_membership_file"
-        get_unique_column_values "$sample_csv" "sample_id" \
+        get_unique_column_values "$sample_csv_awk" "sample_id" \
             | awk -v slug="$publisher_slug" 'NF { print $0 "\t" slug }' \
             >> "$sample_membership_file"
 
         # Sample region membership: one row per sample with brain region info.
         # Source priority:
-        #   1. SAMPLE.region_level_1 / region_level_2 (CDE 4.x)
-        #   2. PMDBS.brain_region (legacy CDE; populates region_level_1 only)
+        #   1. SAMPLE.region_level_1 / region_level_2 (CDE v4.x, incl. v4.5)
+        #   2. PMDBS.brain_region (CDE v3.x; populates region_level_1 only). Kept because
+        #      some internal-QC raw buckets still hold pre-v4.0 contributor metadata.
         # Samples with both levels empty after both lookups are skipped.
         pmdbs_csv_for_region=""
         if [[ -n "$sample_csv_dir" ]] && gcloud storage ls "$sample_csv_dir/PMDBS.csv" &>/dev/null; then
@@ -362,13 +388,14 @@ print(n)
 ' "$publisher_slug" "$sample_region_membership_file" "$sample_csv" "$pmdbs_csv_for_region" 2>/dev/null || true)
         echo "  Wrote ${region_rows_written:-0} sample-region rows"
 
-        # Brain sample / donor logic mirrors CRN cloud script:
+        # Brain sample / donor logic (PMDBS.csv branches only apply to pre-v4.0 metadata):
         #   1. Brain samples (independent of CLINPATH):
         #        - if PMDBS.csv exists → COUNT(DISTINCT sample_id) from PMDBS
         #        - else → COUNT(DISTINCT sample_id) from SAMPLE where lower(tissue) ~ /brain/
         #   2. Brain donors (only if CLINPATH.csv exists):
         #        - if PMDBS.csv exists → CLINPATH.subject_id ∩ SAMPLE.subject_id where SAMPLE.sample_id ∈ PMDBS
-        #        - else if SAMPLE has any non-null region_level_1 → CLINPATH.subject_id ∩ SAMPLE.subject_id where SAMPLE.region_level_1 is non-null
+        #        - else if SAMPLE has any non-null region_level_1/2 → CLINPATH.subject_id ∩ SAMPLE.subject_id where
+        #          SAMPLE.region_level_1 or region_level_2 is non-null (GeoMx datasets only fill region_level_2)
         if [[ -n "$sample_csv_dir" ]]; then
             pmdbs_loc="$sample_csv_dir/PMDBS.csv"
             clinpath_loc="$sample_csv_dir/CLINPATH.csv"
@@ -378,7 +405,8 @@ print(n)
             brain_sample_ids=""
             if gcloud storage ls "$pmdbs_loc" &>/dev/null; then
                 pmdbs_csv=$(gcloud storage cat "$pmdbs_loc" | normalize_csv)
-                brain_sample_ids=$(get_unique_column_values "$pmdbs_csv" "sample_id")
+                pmdbs_csv_awk=$(awk_safe_csv <<< "$pmdbs_csv")
+                brain_sample_ids=$(get_unique_column_values "$pmdbs_csv_awk" "sample_id")
                 if [[ -n "$brain_sample_ids" ]]; then
                     dataset_brain_samples=$(echo "$brain_sample_ids" | grep -cv '^$' || true)
                 fi
@@ -397,7 +425,7 @@ print(n)
                         sid = $s_col; gsub(/^"|"$|\r/, "", sid)
                         if (tolower(t) ~ /brain/ && sid != "") print sid
                     }
-                ' <<< "$sample_csv" | sort -u | grep -cv '^$' || true)
+                ' <<< "$sample_csv_awk" | sort -u | grep -cv '^$' || true)
                 dataset_brain_samples=${tissue_brain_count:-0}
             fi
             total_brain_samples=$(( total_brain_samples + dataset_brain_samples ))
@@ -406,7 +434,7 @@ print(n)
             # Try CLINPATH next to SAMPLE first, then fall back to a recursive search
             # in metadata/ (mirrors the SAMPLE.csv lookup pattern).
             if ! gcloud storage ls "$clinpath_loc" &>/dev/null; then
-                clinpath_loc_recursive=$(gcloud storage ls -r "$gcp_raw_bucket/metadata" 2>/dev/null | grep -i "CLINPATH.csv" | head -n 1 || true)
+                clinpath_loc_recursive=$(gcloud storage ls -r "$gcp_raw_bucket/metadata" 2>/dev/null | grep -i '/CLINPATH\.csv$' | head -n 1 || true)
                 if [[ -n "$clinpath_loc_recursive" ]]; then
                     echo "  CLINPATH.csv not next to SAMPLE.csv, found at: $clinpath_loc_recursive"
                     clinpath_loc="$clinpath_loc_recursive"
@@ -416,7 +444,8 @@ print(n)
             dataset_brain_donors=0
             if gcloud storage ls "$clinpath_loc" &>/dev/null; then
                 clinpath_csv=$(gcloud storage cat "$clinpath_loc" | normalize_csv)
-                clinpath_subjects=$(get_unique_column_values "$clinpath_csv" "subject_id")
+                clinpath_csv_awk=$(awk_safe_csv <<< "$clinpath_csv")
+                clinpath_subjects=$(get_unique_column_values "$clinpath_csv_awk" "subject_id")
 
                 # Write (subject_id, primary_diagnosis, slug) for human/PMDBS datasets — mirrors CRN logic.
                 # Use Python's csv module rather than awk -F',' because diagnosis fields can contain
@@ -505,19 +534,26 @@ print(n)
                     echo "  Wrote $diag_rows_written diagnosis rows from CLINPATH"
                 fi
 
-                # Decide which path to take: PMDBS join, region_level_1 fallback, or skip
+                # Decide which path to take: PMDBS join, region_level_1/2 fallback, or skip
                 _has_pmdbs=false
                 _has_region=false
                 [[ -n "$brain_sample_ids" ]] && _has_pmdbs=true
                 if ! "$_has_pmdbs"; then
                     _region_check=$(awk -F',' '
-                        NR==1 { for (i=1; i<=NF; i++) if ($i == "region_level_1") r_col = i; next }
-                        NR>1 && r_col {
-                            r = $r_col; gsub(/^"|"$|\r/, "", r)
-                            if (r != "" && r != "NA") { c++ }
+                        NR==1 {
+                            for (i=1; i<=NF; i++) {
+                                if ($i == "region_level_1") r1_col = i
+                                if ($i == "region_level_2") r2_col = i
+                            }
+                            next
+                        }
+                        NR>1 && (r1_col || r2_col) {
+                            r1 = r1_col ? $r1_col : ""; gsub(/^"|"$|\r/, "", r1)
+                            r2 = r2_col ? $r2_col : ""; gsub(/^"|"$|\r/, "", r2)
+                            if ((r1 != "" && r1 != "NA") || (r2 != "" && r2 != "NA")) { c++ }
                         }
                         END { print c+0 }
-                    ' <<< "$sample_csv")
+                    ' <<< "$sample_csv_awk")
                     [[ "${_region_check:-0}" -gt 0 ]] && _has_region=true
                 fi
 
@@ -549,24 +585,26 @@ print(n)
                             sub_id = $sub_col; gsub(/^"|"$|\r/, "", sub_id)
                             if (sid in is_brain && sub_id != "") print sub_id
                         }
-                    ' <<< "$sample_csv" | sort -u)
+                    ' <<< "$sample_csv_awk" | sort -u)
                     rm -f "$_brain_ids_tmp"
                 elif "$_has_region"; then
-                    # CLINPATH ∩ SAMPLE.subject_id where SAMPLE.region_level_1 is non-null
+                    # CLINPATH ∩ SAMPLE.subject_id where SAMPLE.region_level_1 or region_level_2 is non-null
                     brain_subjects=$(awk -F',' '
                         NR==1 {
                             for (i=1; i<=NF; i++) {
-                                if ($i == "subject_id")    sub_col = i
-                                if ($i == "region_level_1") r_col = i
+                                if ($i == "subject_id")     sub_col = i
+                                if ($i == "region_level_1") r1_col = i
+                                if ($i == "region_level_2") r2_col = i
                             }
                             next
                         }
-                        NR>1 && sub_col && r_col {
-                            r = $r_col; gsub(/^"|"$|\r/, "", r)
+                        NR>1 && sub_col && (r1_col || r2_col) {
+                            r1 = r1_col ? $r1_col : ""; gsub(/^"|"$|\r/, "", r1)
+                            r2 = r2_col ? $r2_col : ""; gsub(/^"|"$|\r/, "", r2)
                             sub_id = $sub_col; gsub(/^"|"$|\r/, "", sub_id)
-                            if (r != "" && r != "NA" && sub_id != "") print sub_id
+                            if (((r1 != "" && r1 != "NA") || (r2 != "" && r2 != "NA")) && sub_id != "") print sub_id
                         }
-                    ' <<< "$sample_csv" | sort -u)
+                    ' <<< "$sample_csv_awk" | sort -u)
                 fi
 
                 if [[ -n "$brain_subjects" ]] && [[ -n "$clinpath_subjects" ]]; then

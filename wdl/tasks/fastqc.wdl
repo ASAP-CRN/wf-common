@@ -58,7 +58,7 @@ task fastqc {
 		docker: "~{container_registry}/fastqc:0.12.1"
 		cpu: threads
 		memory: "~{mem_gb} GB"
-		disks: "local-disk ~{disk_size} HDD"
+		disks: "local-disk ~{disk_size} SSD"
 		preemptible: 3
 		zones: zones
 	}
