@@ -317,8 +317,8 @@ def parse_metadata_file(dataset_id, metadata_dir, output_dir):
         # gs://cromwell-output-640f238f9db54e34/harmonized_pmdbs_analysis/cb8fde91-f207-4eb1-af64-5360b47ca4c7/call-project_cohort_analysis/shard-3/cohort_analysis/591babd2-8c90-4b42-ad7b-cc6b69e0430e/call-filter_and_normalize/shard-33/filter_and_normalize-33.log
         if dataset_id == "team-sulzer-pmdbs-sn-rnaseq":
             blacklisted_samples = [
-                "ASAP_PMBDS_000238_s001_Rep1",
-                "ASAP_PMBDS_000245_s001_Rep1",
+                "ASAP_PMDBS_000238_s001_BiolRep15",
+                "ASAP_PMDBS_000245_s001_BiolRep16",
             ]
         # gs://cromwell-output-640f238f9db54e34/harmonized_pmdbs_analysis/cb8fde91-f207-4eb1-af64-5360b47ca4c7/call-project_cohort_analysis/shard-3/cohort_analysis/591babd2-8c90-4b42-ad7b-cc6b69e0430e/call-filter_and_normalize/shard-38/filter_and_normalize-38.log
         # Error in h(simpleError(msg, call)) :
@@ -326,7 +326,7 @@ def parse_metadata_file(dataset_id, metadata_dir, output_dir):
         # Calls: %>% ... get_model_pars -> as.matrix -> [ -> [ -> subCsp_ij -> intI
         # Execution halted
         # Command exited with non-zero status 1
-            blacklisted_samples.append("ASAP_PMBDS_000228_s001_Rep1")
+            blacklisted_samples.append("ASAP_PMDBS_000228_s001_BiolRep4")
         # Blacklisted from Jakobsson - issue with index files
         # https://dnastack.slack.com/archives/C05MRCXT65U/p1702408239701329
         # blacklisted_samples = ["ASAP_PMBDS_000103_s002_1", "ASAP_PMBDS_000118_s002_1"]
@@ -341,17 +341,17 @@ def parse_metadata_file(dataset_id, metadata_dir, output_dir):
         # Sample ID: 2062HC_MFG_bulk_L000_R2_001.fastq.gz
         # gs://cromwell-output-640f238f9db54e34/pmdbs_bulk_rnaseq_analysis/8e5fa101-fd6c-456e-aec2-c5832216aeff/call-upstream/shard-1/upstream/3bdb4665-317e-4980-9301-c69bfcf3af35/call-trim_and_qc/shard-5/trim_and_qc-5.log
         if dataset_id == "team-lee-pmdbs-bulk-rnaseq-mfg":
-            blacklisted_samples.append("ASAP_PMBDS_000014_s002_Rep1")
+            blacklisted_samples.append("ASAP_PMBDS_000014_s002_Rep1") # TODO update once metadata is fixed
 
         # Team Scherzer pmdbs-spatial-visium-mtg
         # One sample: [error] Image must have at least one dimension >= 2000 for standard slides
         if dataset_id == "team-scherzer-pmdbs-spatial-visium-mtg":
-            blacklisted_samples.append("ASAP_PMBDS_000016_s007_Rep1")
+            blacklisted_samples.append("ASAP_PMBDS_000016_s007_Rep1") # TODO update once metadata is fixed
 
         # Team Cragg cragg-mouse-sn-rnaseq-striatum
         # The R1 FASTQs are corrupt - exclude for now
         if dataset_id == "team-cragg-mouse-sn-rnaseq-striatum":
-            blacklisted_samples.extend(["ASAP_MOUSE_000010_s001_Rep3", "ASAP_MOUSE_000013_s001_Rep1"])
+            blacklisted_samples.extend(["ASAP_MOUSE_000010_s001_BiolRep4", "ASAP_MOUSE_000013_s001_BiolRep1"])
 
         # Team Voet voet-pmdbs-sn-atacseq-10x
         # Donors that did not pass their QC/not assigned in Vireo
