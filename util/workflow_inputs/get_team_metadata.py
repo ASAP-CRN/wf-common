@@ -398,7 +398,14 @@ def parse_metadata_file(dataset_id, metadata_dir, output_dir):
                 ("MO021f", "ASA_044"),
                 ("MO021h", "ASA_044"),
                 ("MO018e", "ASA_038"),
-                ("MO020b", "ASA_044")
+                ("MO020b", "ASA_044"),
+                ("MO018b", "ASA_038"),
+                ("MO021b", "ASA_044"),
+                ("MO019a", "ASA_106"),
+                ("MO018f", "ASA_038"),
+                ("MO020a", "ASA_044"),
+                ("MO018a", "ASA_038"),
+                ("MO019c", "ASA_106")
             }
 
         if blacklisted_samples:
