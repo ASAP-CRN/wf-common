@@ -6,7 +6,8 @@ Checks GCS bucket structure and contents:
   • Validates that billing project is set
   • Validates existence/accessibility of bucket
   • Validates presence of folders:
-    - Mandatory: raw (raw/, fastqs/ or fastq/ [with warning]), metadata/
+    - Mandatory: raw (raw/, fastqs/ or fastq/ [with warning], or one or more
+      --raw-dir-name directories merged together), metadata/
     - Optional: artifacts/
     - Special: spatial/ (for spatial datasets)
       Note: alternative raw/ names are reported as warnings.
@@ -86,13 +87,29 @@ MANDATORY_DISPLAY = ', '.join([f for f in MANDATORY_FOLDERS if f != 'raw'] + ['r
 _log_divider = "=" * 80
 _number_examples = 5
 
+# Top-level bucket metadata/ directory name overridable via --metadata-dir-name
+METADATA_DIR_NAME = 'metadata'
+_metadata_match_key = METADATA_DIR_NAME.lower()
+
+# Top-level bucket raw/ directory name(s) overridable via --raw-dir-name with a comma-delimited list.
+# Files from all matched directories are merged before the Sample / Data / Bucket consistency check.
+RAW_DIR_NAMES = ['raw']
+
 RAW_ALTERNATIVES = {
-    'raw': 'raw',
+    **{name: name for name in RAW_DIR_NAMES},
     'fastqs': 'fastqs',
     'fastq': "fastq [missing final 's']",
 }
 
-CASE_FOLDERS = ['metadata'] + list(RAW_ALTERNATIVES.keys()) + ['artifacts', 'spatial']
+# Maps lowercase folder name -> its expected display-case form.
+CASE_FOLDERS = {
+    _metadata_match_key: METADATA_DIR_NAME,
+    **{name: RAW_ALTERNATIVES[name] for name in RAW_DIR_NAMES},
+    'fastqs': 'fastqs',
+    'fastq': 'fastq',
+    'artifacts': 'artifacts',
+    'spatial': 'spatial',
+}
 
 data_file_name = "DATA.csv"
 
@@ -1457,7 +1474,7 @@ def _folder_not_found_status(folder: str, mandatory: set, override_msg: str = ''
 
 def _get_raw_display(result: dict) -> tuple:
     """
-    Return (raw_variant, display_text) for the raw folder in a QC result.
+    Return (raw_variants, display_text) for the raw folder(s) in a QC result.
 
     Parameters
     ----------
@@ -1467,12 +1484,13 @@ def _get_raw_display(result: dict) -> tuple:
     Returns
     -------
     tuple
-        raw_variant : str
+        raw_variants : list of str
         display_text : str
+            Comma-joined RAW_ALTERNATIVES display text for each matched variant.
     """
-    raw_variant = result.get('raw_folder_variant', 'raw')
-    display_text = RAW_ALTERNATIVES.get(raw_variant, raw_variant)
-    return raw_variant, display_text
+    raw_variants = result.get('raw_folder_variants', [])
+    display_text = ", ".join(RAW_ALTERNATIVES.get(v, v) for v in raw_variants)
+    return raw_variants, display_text
 
 
 # ── Orchestration ──────────────────────────────────────────────────────────────
@@ -1534,38 +1552,45 @@ def perform_bucket_validation(gs_bucket: str,
 
     try:
         try:
-            validate_raw_bucket_and_folder_existence(gs_bucket)
+            validate_raw_bucket_and_folder_existence(gs_bucket, required_dirs=[f"{METADATA_DIR_NAME}/"])
         except ValueError as e:
             results['issues'].append(f"BUCKET: {e}")
             return results
 
+        # Matching is case-insensitive for every folder here
         structure, folder_name_map, case_warnings = list_bucket_structure(
             gs_bucket, temp_dir, save_metadata, CASE_FOLDERS
         )
 
         for warning in case_warnings:
-            expected_key = warning['expected']
-            display_expected = RAW_ALTERNATIVES.get(expected_key, expected_key)
             results['issues'].append(
                 f"{warning['found'].upper()}: Folder name mismatch - "
-                f"found '{warning['found']}', expected '{display_expected}'"
+                f"found '{warning['found']}', expected '{warning['expected']}'"
             )
 
         results['case_warnings'] = case_warnings
 
-        has_metadata = 'metadata' in structure
-        metadata_folder_name = folder_name_map.get('metadata', 'metadata')
+        has_metadata = _metadata_match_key in structure
+        metadata_folder_name = folder_name_map.get(_metadata_match_key) if has_metadata else None
 
         has_raw = False
-        raw_folder_name = None
-        raw_folder_variant = None
+        raw_folder_names = {}    # variant -> actual case-preserved name
+        raw_folder_variants = []  # matched RAW_ALTERNATIVES keys, in priority order
 
-        for alt_name in RAW_ALTERNATIVES.keys():
+        for name in RAW_DIR_NAMES:
+            if name in structure:
+                has_raw = True
+                raw_folder_variants.append(name)
+                raw_folder_names[name] = folder_name_map.get(name, RAW_ALTERNATIVES[name])
+
+        # Legacy fallback names, matched the same way.
+        for alt_name in ('fastqs', 'fastq'):
             if alt_name in structure:
                 has_raw = True
-                raw_folder_name = folder_name_map.get(alt_name, alt_name)
-                raw_folder_variant = alt_name
-                break
+                raw_folder_variants.append(alt_name)
+                raw_folder_names[alt_name] = folder_name_map.get(alt_name, alt_name)
+
+        raw_files = [f for variant in raw_folder_variants for f in structure[variant]]
 
         has_artifacts = 'artifacts' in structure
         artifacts_folder_name = folder_name_map.get('artifacts', 'artifacts')
@@ -1575,12 +1600,13 @@ def perform_bucket_validation(gs_bucket: str,
         unexpected_folders = {
             k: folder_name_map.get(k, k)
             for k in structure
-            if k not in set(CASE_FOLDERS)
+            if k not in CASE_FOLDERS
         }
 
         results['has_metadata'] = has_metadata
         results['has_raw'] = has_raw
-        results['raw_folder_variant'] = raw_folder_variant
+        results['raw_folder_variants'] = raw_folder_variants
+        results['raw_folder_names'] = raw_folder_names
         results['has_artifacts'] = has_artifacts
         results['has_spatial'] = has_spatial
         results['unexpected_folders'] = unexpected_folders
@@ -1680,21 +1706,22 @@ def perform_bucket_validation(gs_bucket: str,
 
         # RAW FOLDER CHECK
         if has_raw:
-            print(f"  Analysing '{raw_folder_name}/' folder...")
-            raw_analysis = analyze_folder(structure[raw_folder_variant], gs_bucket, NUMBER_SUBDIRS, MIN_FILE_SIZE_BYTES)
+            raw_labels = ", ".join(f"'{raw_folder_names[v]}/'" for v in raw_folder_variants)
+            print(f"  Analysing {raw_labels} folder(s)...")
+            raw_analysis = analyze_folder(raw_files, gs_bucket, NUMBER_SUBDIRS, MIN_FILE_SIZE_BYTES)
             results['folders']['raw'] = raw_analysis
 
-            if (raw_folder_variant != 'raw' and
-                    '[' in RAW_ALTERNATIVES[raw_folder_variant]):
-                results['issues'].append(
-                    f"RAW: Using '{raw_folder_variant}' folder name - "
-                    f"{RAW_ALTERNATIVES[raw_folder_variant]}"
-                )
+            for variant in raw_folder_variants:
+                if variant not in RAW_DIR_NAMES and '[' in RAW_ALTERNATIVES[variant]:
+                    results['issues'].append(
+                        f"RAW: Using '{variant}' folder name - "
+                        f"{RAW_ALTERNATIVES[variant]}"
+                    )
 
-            if raw_folder_variant in ['fastq', 'fastqs'] and raw_analysis['has_subfolders']:
+            if any(v in ('fastq', 'fastqs') for v in raw_folder_variants) and raw_analysis['has_subfolders']:
                 results['issues'].append(
                     f"RAW: Contains {raw_analysis['subfolder_count']} subfolder(s) - "
-                    f"files should preferably be at the root of /{raw_folder_name}/"
+                    f"files should preferably be at the root of the raw folder(s)"
                 )
 
             if raw_analysis['potentially_empty']:
@@ -1719,8 +1746,11 @@ def perform_bucket_validation(gs_bucket: str,
                     _extra['artifacts'] = structure['artifacts']
                 if _extra:
                     extra_folder_files = _extra
-            _raw_files = structure[raw_folder_variant] if has_raw else []
-            _raw_label = f"/{raw_folder_name}/" if has_raw else "(no raw folder)"
+            _raw_files = raw_files if has_raw else []
+            _raw_label = (
+                ", ".join(f"/{raw_folder_names[v]}/" for v in raw_folder_variants)
+                if has_raw else "(no raw folder)"
+            )
             print(f"  Running three-way consistency check (SAMPLE / {data_file_name} / {_raw_label})...")
             three_way = check_three_way_consistency(
                 metadata_dir, _raw_files, data_file_name, extra_folder_files=extra_folder_files
@@ -1833,7 +1863,7 @@ def generate_report(all_results: list, report_path: Path) -> None:
             outfile.write("|-------------|---------------|----------------|\n")
 
             if result.get('has_metadata'):
-                note = _folder_mismatch_note(result['issues'], 'metadata')
+                note = _folder_mismatch_note(result['issues'], METADATA_DIR_NAME)
                 folder_status = _folder_found_status(note)
                 renames = result.get('metadata_renames', [])
                 csv_issues = result.get('metadata', {}).get('issues', [])
@@ -1849,11 +1879,12 @@ def generate_report(all_results: list, report_path: Path) -> None:
             else:
                 folder_status = _folder_not_found_status('metadata', set(MANDATORY_FOLDERS))
                 content_status = "—"
-            outfile.write(f"| metadata | {folder_status} | {content_status} |\n")
+            outfile.write(f"| {METADATA_DIR_NAME} | {folder_status} | {content_status} |\n")
 
             if result.get('has_raw'):
-                raw_variant, display_text = _get_raw_display(result)
-                note = _folder_mismatch_note(result['issues'], raw_variant)
+                raw_variants, display_text = _get_raw_display(result)
+                notes = [n for n in (_folder_mismatch_note(result['issues'], v) for v in raw_variants) if n]
+                note = "; ".join(notes)
                 if note:
                     folder_status = _folder_found_status(note)
                 elif '[' in display_text:
@@ -1867,7 +1898,7 @@ def generate_report(all_results: list, report_path: Path) -> None:
                 if raw_data.get('has_subfolders'):
                     raw_content_parts.append(f"{emoji_warning} subfolders")
                 content_status = " · ".join(raw_content_parts) if raw_content_parts else emoji_success
-                folder_name_col = raw_variant
+                folder_name_col = display_text
             else:
                 folder_name_col = 'raw'
                 folder_status = _folder_not_found_status('raw', set(MANDATORY_FOLDERS))
@@ -1976,14 +2007,14 @@ def generate_report(all_results: list, report_path: Path) -> None:
 
             three_way = result.get('three_way_check', {})
             if three_way.get('data_found'):
-                raw_variant, display_text = _get_raw_display(result)
-                render_three_way_report(outfile, three_way, raw_variant, data_file_name)
+                raw_variants, display_text = _get_raw_display(result)
+                render_three_way_report(outfile, three_way, ", ".join(raw_variants), data_file_name)
             outfile.write("---\n\n")
 
             for folder_name, folder_data in result.get('folders', {}).items():
                 if folder_name == 'raw':
-                    raw_variant, display_text = _get_raw_display(result)
-                    display_name = "Raw" if raw_variant == 'raw' else f"Raw ({display_text})"
+                    raw_variants, display_text = _get_raw_display(result)
+                    display_name = "Raw" if raw_variants == ['raw'] else f"Raw ({display_text})"
                 else:
                     display_name = folder_name.capitalize()
 
@@ -2085,10 +2116,50 @@ def main() -> int:
         help="Keep downloaded metadata files in temp directory after processing.\n"
              "Default: False (temporary files are deleted)."
     )
+    parser.add_argument(
+        "-md",
+        "--metadata-dir-name",
+        default="metadata",
+        help="Top-level bucket directory name to treat as the 'metadata' folder.\n"
+             "Default is 'metadata'."
+    )
+    parser.add_argument(
+        "-rd",
+        "--raw-dir-name",
+        default="raw",
+        help="Top-level bucket directory name(s) to treat as the preferred 'raw' data\n"
+             "folder(s). Comma-delimited for datasets that split raw data across\n"
+             "multiple directories, e.g.: -rd raw,fastqs\n"
+             "Files from all matched directories are merged for the Sample / Data /\n"
+             "Bucket consistency check. Existing accepted alternatives 'fastqs',\n"
+             "'fastq' are still recognized.\n"
+             "Default is 'raw'."
+    )
 
     args = parser.parse_args()
     save_metadata = args.save_metadata
     dataset_id = args.dataset_id
+
+    # Directory names are kept exactly as the user typed them for display
+    # but lowercased to match against the bucket structure (always lowercased).
+    global METADATA_DIR_NAME, _metadata_match_key, RAW_DIR_NAMES, RAW_ALTERNATIVES, CASE_FOLDERS
+    METADATA_DIR_NAME = args.metadata_dir_name.strip()
+    _metadata_match_key = METADATA_DIR_NAME.lower()
+    raw_dir_names_input = [n.strip() for n in args.raw_dir_name.split(',') if n.strip()]
+    RAW_DIR_NAMES = [n.lower() for n in raw_dir_names_input]
+    RAW_ALTERNATIVES = {
+        **dict(zip(RAW_DIR_NAMES, raw_dir_names_input)),
+        'fastqs': 'fastqs',
+        'fastq': "fastq [missing final 's']",
+    }
+    CASE_FOLDERS = {
+        _metadata_match_key: METADATA_DIR_NAME,
+        **{name: RAW_ALTERNATIVES[name] for name in RAW_DIR_NAMES},
+        'fastqs': 'fastqs',
+        'fastq': 'fastq',
+        'artifacts': 'artifacts',
+        'spatial': 'spatial',
+    }
 
     if not dataset_id.startswith("team-"):
         parser.error(f"--dataset-id must start with 'team-', got: '{dataset_id}'")
@@ -2107,6 +2178,8 @@ def main() -> int:
     print(f"Minimum file size threshold: {MIN_FILE_SIZE_BYTES} bytes")
     print(f"Minimum CSV rows required: {MIN_CSV_ROWS}")
     print(f"Mandatory folders: {MANDATORY_DISPLAY}")
+    print(f"Metadata directory name: {METADATA_DIR_NAME}")
+    print(f"Raw directory name(s): {', '.join(raw_dir_names_input)}")
     print(f"Subdirectory levels to display: {NUMBER_SUBDIRS}")
     print(f"Save metadata temp files: {'Yes' if save_metadata else 'No'}\n")
 
