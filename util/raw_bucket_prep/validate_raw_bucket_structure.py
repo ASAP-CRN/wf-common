@@ -87,13 +87,19 @@ MANDATORY_DISPLAY = ', '.join([f for f in MANDATORY_FOLDERS if f != 'raw'] + ['r
 _log_divider = "=" * 80
 _number_examples = 5
 
-# Top-level bucket metadata/ directory name overridable via --metadata-dir-name
+# Top-level bucket directory names
+# Note metadata is overridable via --metadata-dir-name and raw is overridable via --raw-dir-name
 METADATA_DIR_NAME = 'metadata'
-_metadata_match_key = METADATA_DIR_NAME.lower()
-
-# Top-level bucket raw/ directory name(s) overridable via --raw-dir-name with a comma-delimited list.
-# Files from all matched directories are merged before the Sample / Data / Bucket consistency check.
 RAW_DIR_NAMES = ['raw']
+ARTIFACTS_DIR_NAME = 'artifacts'
+SPATIAL_DIR_NAME = 'spatial'
+_metadata_match_key = METADATA_DIR_NAME.lower()
+_expected_top_level_dirs = {
+    "metadata": METADATA_DIR_NAME,
+    "raw": RAW_DIR_NAMES[0],
+    "artifacts": ARTIFACTS_DIR_NAME,
+    "spatial": SPATIAL_DIR_NAME
+}
 
 RAW_ALTERNATIVES = {
     **{name: name for name in RAW_DIR_NAMES},
@@ -1604,11 +1610,14 @@ def perform_bucket_validation(gs_bucket: str,
         }
 
         results['has_metadata'] = has_metadata
+        results['metadata_folder_name'] = metadata_folder_name
         results['has_raw'] = has_raw
         results['raw_folder_variants'] = raw_folder_variants
         results['raw_folder_names'] = raw_folder_names
         results['has_artifacts'] = has_artifacts
+        results['artifacts_folder_name'] = artifacts_folder_name if has_artifacts else None
         results['has_spatial'] = has_spatial
+        results['spatial_folder_name'] = spatial_folder_name if has_spatial else None
         results['unexpected_folders'] = unexpected_folders
 
         # METADATA CHECK
@@ -1859,12 +1868,13 @@ def generate_report(all_results: list, report_path: Path) -> None:
             outfile.write("---\n\n")
 
             outfile.write("### Overall Dataset Folder Status\n\n")
-            outfile.write("| Folder name | Folder status | Content status |\n")
-            outfile.write("|-------------|---------------|----------------|\n")
+            outfile.write("| Expected folder name | Found folder name | Folder status | Content status |\n")
+            outfile.write("|-----------------------|--------------------|---------------|----------------|\n")
 
             if result.get('has_metadata'):
                 note = _folder_mismatch_note(result['issues'], METADATA_DIR_NAME)
                 folder_status = _folder_found_status(note)
+                found_name = result.get('metadata_folder_name') or METADATA_DIR_NAME
                 renames = result.get('metadata_renames', [])
                 csv_issues = result.get('metadata', {}).get('issues', [])
                 content_parts = []
@@ -1877,9 +1887,10 @@ def generate_report(all_results: list, report_path: Path) -> None:
                     content_parts.append(f"{emoji_warning} {len(non_comma)} non-comma delimiter(s)")
                 content_status = " · ".join(content_parts) if content_parts else emoji_success
             else:
+                found_name = "—"
                 folder_status = _folder_not_found_status('metadata', set(MANDATORY_FOLDERS))
                 content_status = "—"
-            outfile.write(f"| {METADATA_DIR_NAME} | {folder_status} | {content_status} |\n")
+            outfile.write(f"| {_expected_top_level_dirs['metadata']} | {found_name} | {folder_status} | {content_status} |\n")
 
             if result.get('has_raw'):
                 raw_variants, display_text = _get_raw_display(result)
@@ -1898,42 +1909,47 @@ def generate_report(all_results: list, report_path: Path) -> None:
                 if raw_data.get('has_subfolders'):
                     raw_content_parts.append(f"{emoji_warning} subfolders")
                 content_status = " · ".join(raw_content_parts) if raw_content_parts else emoji_success
-                folder_name_col = display_text
+                raw_names_found = result.get('raw_folder_names', {})
+                found_name = ", ".join(raw_names_found.get(v, v) for v in raw_variants)
             else:
-                folder_name_col = 'raw'
+                found_name = "—"
                 folder_status = _folder_not_found_status('raw', set(MANDATORY_FOLDERS))
                 content_status = "—"
-            outfile.write(f"| {folder_name_col} | {folder_status} | {content_status} |\n")
+            outfile.write(f"| {_expected_top_level_dirs['raw']} | {found_name} | {folder_status} | {content_status} |\n")
 
             if result.get('has_artifacts'):
                 note = _folder_mismatch_note(result['issues'], 'artifacts')
                 folder_status = _folder_found_status(note)
+                found_name = result.get('artifacts_folder_name') or 'artifacts'
                 artifacts_data = result.get('folders', {}).get('artifacts', {})
                 if artifacts_data.get('potentially_empty'):
                     content_status = f"{emoji_warning} {len(artifacts_data['potentially_empty'])} empty file(s)"
                 else:
                     content_status = emoji_success
             else:
+                found_name = "—"
                 folder_status = _folder_not_found_status('artifacts', set(MANDATORY_FOLDERS))
                 content_status = "—"
-            outfile.write(f"| artifacts | {folder_status} | {content_status} |\n")
+            outfile.write(f"| {_expected_top_level_dirs['artifacts']} | {found_name} | {folder_status} | {content_status} |\n")
 
             if result['is_spatial']:
                 if result.get('has_spatial'):
                     note = _folder_mismatch_note(result['issues'], 'spatial')
                     folder_status = _folder_found_status(note)
+                    found_name = result.get('spatial_folder_name') or 'spatial'
                     spatial_data = result.get('folders', {}).get('spatial', {})
                     if spatial_data.get('potentially_empty'):
                         content_status = f"{emoji_warning} {len(spatial_data['potentially_empty'])} empty file(s)"
                     else:
                         content_status = emoji_success
                 else:
+                    found_name = "—"
                     folder_status = _folder_not_found_status('spatial', set(MANDATORY_FOLDERS), 'REQUIRED for spatial datasets')
                     content_status = "—"
-                outfile.write(f"| spatial | {folder_status} | {content_status} |\n")
+                outfile.write(f"| {_expected_top_level_dirs['spatial']} | {found_name} | {folder_status} | {content_status} |\n")
 
             for folder_display in sorted(result.get('unexpected_folders', {}).values()):
-                outfile.write(f"| {folder_display} | {emoji_warning} Unexpected | — |\n")
+                outfile.write(f"| — | {folder_display} | {emoji_warning} Unexpected | — |\n")
 
             outfile.write("---\n\n")
 
